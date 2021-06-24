@@ -1,0 +1,162 @@
+&GLOBAL
+  PROJECT cresol_DZVP_SR
+  #RUN_TYPE MD
+  RUN_TYPE ENERGY_FORCE
+  #RUN_TYPE cell_OPT
+  PRINT_LEVEL medium
+&END GLOBAL
+&FORCE_EVAL
+  METHOD Quickstep
+  STRESS_TENSOR  ANALYTICAL
+  &DFT
+    BASIS_SET_FILE_NAME  /home/vol00/scarf860/cc_placement/cp2k/data/BASIS_MOLOPT
+    POTENTIAL_FILE_NAME  /home/vol00/scarf860/cc_placement/cp2k/data/GTH_POTENTIALS
+    CHARGE 0
+    MULTIPLICITY 1
+  &MGRID
+      NGRIDS 4
+      CUTOFF 600
+      REL_CUTOFF 60
+  &END MGRID
+  &QS
+      EPS_DEFAULT 1.0E-10
+      extrapolation PS
+      EXTRAPOLATION_ORDER 4
+      METHOD GPW
+  &END QS
+    &SCF
+      SCF_GUESS Atomic
+      #SCF_GUESS RESTART
+      EPS_SCF 1.0E-8
+      MAX_SCF 30
+      &OT
+        MINIMIZER DIIS
+      &END OT
+      &OUTER_SCF
+        MAX_SCF 30
+        EPS_SCF 1.0E-8
+      &END OUTER_SCF
+    &END SCF
+    &XC
+   &XC_FUNCTIONAL
+      &HCTH T
+        Parameter_set 407
+      &End HCTH
+   &END XC_FUNCTIONAL
+!      &vdW_POTENTIAL
+!         DISPERSION_FUNCTIONAL PAIR_POTENTIAL
+!         &PAIR_POTENTIAL
+!            TYPE DFTD3
+!            PARAMETER_FILE_NAME  dftd3.dat
+!            REFERENCE_FUNCTIONAL PBE
+!            CALCULATE_C9_TERM  TRUE
+!            REFERENCE_C9_TERM  TRUE
+!         &END PAIR_POTENTIAL
+!      &END vdW_POTENTIAL
+    &END XC
+  &END DFT
+  &SUBSYS
+     &CELL
+A 17.712844122883897 0.0 0.0
+B 0.0 17.712844122883897  0.0
+C 0.0 0.0 17.712844122883897
+       PERIODIC  XYZ
+       MULTIPLE_UNIT_CELL  1 1 1
+       SYMMETRY cubic
+     &END CELL
+    &Topology
+       COORD_FILE_FORMAT xyz
+       COORD_FILE_NAME /home/vol00/scarf860/cc_placement/m_cresol/data/config/extxyz_32_0
+       &CENTER_COORDINATES
+       &end center_coordinates
+       MULTIPLE_UNIT_CELL 1 1 1
+    &end topology
+    &KIND C
+      BASIS_SET DZVP-MOLOPT-SR-GTH-q4
+      !BASIS_SET DZVP-MOLOPT-GTH-q4
+      !BASIS_SET TZVP-MOLOPT-GTH-q4
+      !BASIS_SET TZV2P-MOLOPT-GTH-q4
+      POTENTIAL GTH-HCTH407-q4
+    &END
+    &KIND H
+      BASIS_SET DZVP-MOLOPT-SR-GTH-q1
+      !BASIS_SET DZVP-MOLOPT-GTH-q1
+      !BASIS_SET TZVP-MOLOPT-GTH-q1
+      !BASIS_SET TZV2P-MOLOPT-GTH-q1
+      POTENTIAL GTH-HCTH407-q1
+    &END
+    &KIND O
+      BASIS_SET DZVP-MOLOPT-SR-GTH-q6
+      !BASIS_SET DZVP-MOLOPT-GTH-q6
+      !BASIS_SET TZVP-MOLOPT-GTH-q6
+      !BASIS_SET TZV2P-MOLOPT-GTH-q6
+      POTENTIAL GTH-HCTH407-q6
+    &END
+    &PRINT
+      &KINDS
+        BASIS_SET
+        POTENTIAL
+      &END KINDS
+    &END PRINT
+  &END SUBSYS
+  &print
+    &Forces Medium
+      add_last symbolic
+      filename forces_0.xyz
+    &end forces
+     &stress_tensor
+     &end stress_tensor
+  &end print
+&END FORCE_EVAL
+&MOTION
+   &MD
+     ENSEMBLE  NPT_F
+     STEPS  10
+     TIMESTEP     0.5
+     TEMPERATURE     300.0
+     &BAROSTAT
+       PRESSURE     1.0
+       TIMECON      10.0
+      TEMPERATURE     300.0
+       TEMP_TOL     30.0
+       &THERMOSTAT
+         TYPE  NOSE
+         &NOSE
+           LENGTH  3
+           YOSHIDA  3
+           TIMECON     5.0
+           MTS  3
+         &END NOSE
+       &END THERMOSTAT
+     &END BAROSTAT
+     &THERMOSTAT
+       &CSVR
+         TIMECON     5.0
+       &END CSVR
+     &END THERMOSTAT
+  &end md
+  &GEO_OPT
+    TYPE MINIMIZATION
+    MAX_DR    1.0E-03
+    MAX_FORCE 1.0E-03
+    RMS_DR    1.0E-03
+    RMS_FORCE 1.0E-03
+    MAX_ITER 10000
+    OPTIMIZER BFGS
+    &CG
+      RESTART_LIMIT 9.0E-01
+    &END CG
+  &END GEO_OPT
+  &CELL_OPT
+     keep_symmetry .true.
+     TYPE  DIRECT_CELL_OPT
+    OPTIMIZER LBFGS
+  &end cell_opt
+  &PRINT
+    &TRAJECTORY
+      LOG_PRINT_KEY T
+      FORMAT XYZ
+      ADD_LAST NUMERIC
+    &END TRAJECTORY
+  &END PRINT
+&END MOTION
