@@ -4,9 +4,9 @@
 # These keywords are (almost) always required.
 number_of_elements              3              # Number of elements.
 elements                        H C O          # Specification of elements.
-#atom_energy                     H  0.0         # Free atom reference energy (H).
-#atom_energy                     C  0.0         # Free atom reference energy (C).
-#atom_energy                     O  0.0         # Free atom reference energy (O).
+atom_energy                     H  -0.375123082666         # Free atom reference energy (H).
+atom_energy                     C  -5.3357274934          # Free atom reference energy (C).
+atom_energy                     O  -15.83361742537279         # Free atom reference energy (O).
 cutoff_type                     6 0.0          # Cutoff type (optional argument: shift parameter alpha). Cubic polynomial.
 #scale_symmetry_functions                       # Scale all symmetry functions with min/max values.
 scale_symmetry_functions_sigma                 # Scale all symmetry functions with sigma. Normal distribution about 0, variance 1.

@@ -2,6 +2,16 @@
 Read data from file and convert it to other formats so it can be used as input
 for the next stage of the pipeline.
 
+ASE uses units of:
+    Length: Angstrom
+    Energy: eV
+    Force:  eV / Ang
+
+cp2k uses units of:
+    Length: Angstrom
+    Energy: Ha
+    Force:  Ha / Bohr
+
 TODO set up the import properly so we don't have to manually run this:
 
 import sys
@@ -13,7 +23,7 @@ from os.path import isfile
 import re
 
 from ase.io import read, write
-from scipy.constants import physical_constants
+from ase.units import create_units
 
 from sfparamgen import SymFuncParamGenerator
 
@@ -29,50 +39,10 @@ class Data:
     """
 
     def __init__(self, data_directory: str):
+        self.units = create_units('2014')
         self.data_directory = data_directory
         self.trajectory = None
 
-    def read_trajectory(self, file_trajectory: str):
-        """
-        Reads `file_trajectory` and stores the trajectory object.
-
-        Parameters
-        ----------
-        file_trajectory : str
-            File containing a trajectory of atom configurations
-
-        Examples
-        --------
-        from data import Data
-        d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/')
-        d.read_trajectory('m-cresol-npt-360K.history')
-        """
-        format_in = 'dlp-history'
-        self.trajectory = read(self.data_directory + file_trajectory,
-                               format=format_in, index=':')
-
-    def write_xyz(self, file_xyz: str):
-        """
-        Writes a loaded trajectory to file as a series of xyz files.
-
-        Parameters
-        ----------
-        file_xyz : str
-            File name to write the xyz to. Will be formatted with the frame
-            number, so should contain `'{}'` as part of the string.
-
-        Examples
-        --------
-        d.write_xyz('xyz_360K/{}.xyz')
-        """
-        format_out = 'extxyz'
-
-        for i, config in enumerate(self.trajectory):
-            config.wrap()
-            write(self.data_directory + file_xyz.format(i),
-                  config,
-                  format=format_out,
-                  columns=['symbols', 'positions'])
 
     def _min_n_config(self, n_provided: int):
         """
@@ -87,8 +57,8 @@ class Data:
         Returns
         -------
         int
-            The minimum of `n_provided` and the length of `self.trajectory` if
-            it exists.
+            The minimum of `n_provided` and the length of `self.trajectory`
+            they exist. Returns `0` if both are `None`.
         """
         if n_provided is not None and self.trajectory is not None:
             n_config = min(n_provided, len(self.trajectory))
@@ -101,48 +71,138 @@ class Data:
 
         return n_config
 
-    def write_cp2k(self, file_batch: str, file_input: str, file_xyz: str,
-                   n_config: int=None, **kwargs):
+
+    def read_trajectory(self,
+                        file_trajectory: str,
+                        format_in: str='dlp-history',
+                        unit_in: str='Ang'):
         """
-        Writes .inp files and batch scripts for running cp2k from `n_config`
-        .xyz files. Can set supported settings using `**kwargs`, in which case
-        template file(s) will be formatted to contain the values provided.
+        Reads `file_trajectory` and stores the trajectory. By default length
+        units of Ang are assumed, so if this is not the case then `unit_in`
+        should be specified to allow conversion. The resulting
+        `self.trajectory` will be in 'Ang'.
 
         Parameters
         ----------
-        file_batch : str
-            File name to write the batch scripts to. Will be formatted with the
-            frame number and any other `**kwargs`, so should contain '{}' as
-            part of the string. There should already be a template of this file
-            with 'template' instead of '{}' containing the details of the file
-            that do not need formatting.
-        file_input : str
-            File name to write the cp2k input files to. Will be formatted with the
-            frame number and any other `**kwargs`, so should contain '{}' as
-            part of the string. There should already be a template of this file
-            with 'template' instead of '{}' containing the details of the file
-            that do not need formatting.
-        file_xyz : str
-            File name to read the xyz files from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
+        file_trajectory : str
+            File containing a trajectory of atom configurations
+        format_in : str, optional
+            File format for the ASE reader. Default is 'dlp-history'.
+        unit_in: str, optional
+            Length unit for the trajectory. Default is 'Ang'.
+
+        Examples
+        --------
+        >>> from data import Data
+        >>> d = Data('path/to/example_directory')
+        >>> d.read_trajectory('example.history')
+        >>> len(d.trajectory)
+        101
+        """
+        trajectory = read(self.data_directory + file_trajectory,
+                               format=format_in, index=':')
+
+        if unit_in != 'Ang':
+            for frame in trajectory:
+                cell = frame.get_cell()
+                positions = frame.get_positions()
+                frame.set_cell(cell * self.units[unit_in])
+                frame.set_positions(positions * self.units[unit_in])
+        
+        self.trajectory = trajectory
+
+    def write_xyz(self, file_xyz: str='xyz/{}.xyz', unit_out: str='Ang'):
+        """
+        Writes a loaded trajectory to file as a series of xyz files, optionally
+        converting the units 
+
+        Parameters
+        ----------
+        file_xyz : str, optional
+            Formatable file name to write the atomic co-ordinates to. Will be
+            formatted with the frame number, so should contain `'{}'` as part
+            of the string. Default is 'xyz/{}.xyz'.
+        unit_out: str, optional
+            Length unit for the xyz files. Default is 'Ang'.
+
+        Examples
+        --------
+        >>> from data import Data
+        >>> d = Data('path/to/example_directory')
+        >>> d.read_trajectory('example.history')
+        >>> d.write_xyz('xyz/{}.xyz')
+        """
+        format_out = 'extxyz'
+        for i, frame in enumerate(self.trajectory):
+            # Wrap coordinates to ensure all are positive and within the cell
+            frame.wrap()
+            if unit_out != 'Ang':
+                positions = frame.get_positions()
+                frame.set_positions(positions / self.units[unit_out])
+
+            write(self.data_directory + file_xyz.format(i),
+                  frame,
+                  format=format_out,
+                  columns=['symbols', 'positions'])
+
+
+    def write_cp2k(self,
+                   file_batch: str='scripts/{}.bat',
+                   file_input: str='cp2k_input/{}.inp',
+                   file_xyz: str='xyz/{}.xyz',
+                   n_config: int=None,
+                   **kwargs):
+        """
+        Writes .inp files and batch scripts for running cp2k from `n_config`
+        .xyz files. Can set supported settings using `**kwargs`, in which case
+        template file(s) will be formatted to contain the values provided. Note
+        that the .xyz files should be in 'Ang'
+
+        Parameters
+        ----------
+        file_batch : str, optional
+            Formatable file name to write the batch scripts to. Will be
+            formatted with the frame number and any other `**kwargs`, so should
+            contain '{}' as part of the string. There should already be a
+            template of this file with 'template' instead of '{}' containing
+            the details of the system that will remain constant across all
+            frames and so do not need formatting. Default is 'scripts/{}.bat'.
+        file_input : str, optional
+            Formatable file name to write the cp2k input files to. Will be
+            formatted with the frame number and any other `**kwargs`, so should
+            contain '{}' as part of the string. There should already be a
+            template of this file with 'template' instead of '{}' containing
+            the details of the file that do not need formatting. Default is
+            'cp2k_input/{}.inp'.
+        file_xyz : str, optional
+            Formatable file name to read the xyz files from. Will be formatted
+            with the frame number, so should contain '{}' as part of the string.
+            Default is 'xyz/{}.xyz'.
         n_config: int, optional
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
         **kwargs:
-          - cutoff: tuple of float
-          - relcutoff: tuple of float
+            Arguments to be used in formatting the cp2k input file. The
+            template provided should contain a formatable string at the
+            relevant location in the file. Each should be a tuple containing
+            one or more values to run cp2k with:
+              - cutoff: tuple of float
+              - relcutoff: tuple of float
 
         Examples
         --------
-from data import Data
-d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/')
-d.write_cp2k(file_batch='360K_frames/scripts/cp2k_batch_{}.bash',
-                file_input='360K_frames/cp2k_input/cresol_{}.inp',
-                file_xyz='xyz_360K/{}.xyz',
-                n_config=101,
-                cutoff=(600,),
-                relcutoff=(60,))
+        To write 100 cp2k input files with specific values for `cutoff` and
+        `relcutoff`:
+            >>> from data import Data
+            >>> d = Data('path/to/example_directory')
+            >>> d.write_cp2k(n_config=100, cutoff=(600,), relcutoff=(60,))
+        
+        To create a "grid" of 20 input files with varying `cutoff` and
+        `relcutoff` but for a single frame:
+            >>> d.write_cp2k(n_config=1,
+                             cutoff=(400, 500, 600, 700, 800),
+                             relcutoff=(40, 50, 60, 70))
         """
         with open(self.data_directory + file_input.format('template')) as f_template:
             input_template = f_template.read()
@@ -187,32 +247,39 @@ d.write_cp2k(file_batch='360K_frames/scripts/cp2k_batch_{}.bash',
                     with open(self.data_directory + file_batch.format(file_id), 'w') as f:
                         f.write(batch_template.format(file_id=file_id, **format_dict))
 
-    def print_cp2k(self, file_output: str, n_config: int=None, **kwargs):
+
+    def print_cp2k(self,
+                   file_output: str='cp2k_output/{}.log',
+                   n_config: int=None,
+                   **kwargs):
         """
         Print the final energy, time taken, and grid allocation for given cp2k
         settings. Formatted for a .md table.
 
         Parameters
         ----------
-        file_output : str
-            File name to read the cp2k output from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
+        file_output : str, optional
+            Formatable file name to read the cp2k output from. Will be
+            formatted with the frame number and any other `**kwargs`, so should contain '{}' as part of the string. Default is 'cp2k_output/{}.log'.
         n_config: int, optional
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
         **kwargs:
-          - cutoff: tuple of float
-          - relcutoff: tuple of float
+            Arguments to be used in formatting the name of the cp2k output file(s). Each should be a tuple containing
+            one or more values:
+              - cutoff: tuple of float
+              - relcutoff: tuple of float
 
         Examples
         --------
-        from data import Data
-        d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/')
-        d.print_cp2k(file_output='cutoff/cp2k_output/cresol_{}.log', n_config=1,
-                     cutoff=(400, 500, 600, 700, 800, 900, 1000, 1100, 1200,
-                             1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000,
-                             2100, 2200, 2300, 2400))
+        >>> from data import Data
+        >>> d = Data('path/to/example_directory')
+        >>> d.print_cp2k(file_output='cutoff/cp2k_output/{}.log',
+                         n_config=1,
+                         cutoff=(400, 500, 600, 700, 800, 900, 1000, 1100, 1200,
+                                 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000,
+                                 2100, 2200, 2300, 2400))
         """
         n_config = self._min_n_config(n_config)
         file_id_template = 'n_{i}'
@@ -267,24 +334,32 @@ d.write_cp2k(file_batch='360K_frames/scripts/cp2k_batch_{}.bash',
                         msg_out += ' | '.join(m_grid)
                         print(msg_out + ' |')
 
-    def write_n2p2_data(self, file_log: str, file_forces: str, file_xyz: str,
-                        file_input: str, n_config: int=None):
+
+    def write_n2p2_data(self,
+                        file_cp2k_out: str='cp2k_output/{}.log',
+                        file_cp2k_forces: str='cp2k_output/{}-forces-1_0.xyz',
+                        file_xyz: str='xyz/{}.xyz',
+                        file_n2p2_input: str='n2p2/input.data',
+                        n_config: int=None,
+                        n2p2_units: dict={'length': 'Bohr',
+                                          'energy': 'Ha',
+                                          'force': 'Ha / Bohr'}):
         """
         Reads xyz and cp2k output data, and writes it to file as n2p2 input
         data in the following format:
 
-        begin
-        comment <comment>
-        lattice <ax> <ay> <az>
-        lattice <bx> <by> <bz>
-        lattice <cx> <cy> <cz>
-        atom <x1> <y1> <z1> <e1> <c1> <n1> <fx1> <fy1> <fz1>
-        atom <x2> <y2> <z2> <e2> <c2> <n2> <fx2> <fy2> <fz2>
-        ...
-        atom <xn> <yn> <zn> <en> <cn> <nn> <fxn> <fyn> <fzn>
-        energy <energy>
-        charge <charge>
-        end
+            begin
+            comment <comment>
+            lattice <ax> <ay> <az>
+            lattice <bx> <by> <bz>
+            lattice <cx> <cy> <cz>
+            atom <x1> <y1> <z1> <e1> <c1> <n1> <fx1> <fy1> <fz1>
+            atom <x2> <y2> <z2> <e2> <c2> <n2> <fx2> <fy2> <fz2>
+            ...
+            atom <xn> <yn> <zn> <en> <cn> <nn> <fxn> <fyn> <fzn>
+            energy <energy>
+            charge <charge>
+            end
 
         If `file_input` already exists, then it will not be overwritten but
         appended to. This allows multiple directories of xyz and cp2k output to
@@ -292,46 +367,42 @@ d.write_cp2k(file_batch='360K_frames/scripts/cp2k_batch_{}.bash',
 
         Parameters
         ----------
-        file_log : str
-            File name to read the cp2k output from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
-        file_forces : str
-            File name to read the cp2k forces from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
-        file_xyz : str
-            File name to read the xyz files from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
-        file_input : str
-            File name to write the n2p2 data to.
+        file_cp2k_out : str, optional
+            Formatable file name to read the cp2k output from. Will be formatted with the
+            frame number, so should contain '{}' as part of the string. Default is 'cp2k_output/{}.log'.
+        file_cp2k_forces : str, optional
+            Formatable file name to read the cp2k forces from. Will be formatted with the
+            frame number, so should contain '{}' as part of the string. Default is 'cp2k_output/{}-forces-1_0.xyz'.
+        file_xyz : str, optional
+            Formatable file name to read the xyz files from. Will be formatted with the
+            frame number, so should contain '{}' as part of the string. Default is 'xyz/{}.xyz'.
+        file_n2p2_input : str, optional
+            File name to write the n2p2 data to. Default is 'n2p2/input.data'.
         n_config: int, optional
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
+        n2p2_units: dict, optional
+            The units to use for n2p2. No specific units are required, however
+            they should be consistent (i.e. positional data and symmetry
+            functions can use 'Ang' or 'Bohr' provided both do). Default is
+            `{'length': 'Bohr', 'energy': 'Ha', 'force': 'Ha / Bohr'}`.
 
         Examples
         --------
-from data import Data
-d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/')
-d.write_n2p2_data(file_log='nvt_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60.log',
-                  file_forces='nvt_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60-forces-1_0.xyz',
-                  file_xyz='xyz/extxyz_32_{}',
-                  file_input='all_frames/n2p2/input.data',
-                  n_config=101)
-d.write_n2p2_data(file_log='320K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60.log',
-                  file_forces='320K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60-forces-1_0.xyz',
-                  file_xyz='xyz_320K/{}.xyz',
-                  file_input='all_frames/n2p2/input.data',
-                  n_config=101)
-d.write_n2p2_data(file_log='340K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60.log',
-                  file_forces='340K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60-forces-1_0.xyz',
-                  file_xyz='xyz_340K/{}.xyz',
-                  file_input='all_frames/n2p2/input.data',
-                  n_config=101)
-d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60.log',
-                  file_forces='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcutoff_60-forces-1_0.xyz',
-                  file_xyz='xyz_360K/{}.xyz',
-                  file_input='all_frames/n2p2/input.data',
-                  n_config=101)
+        To write the output from two directories to single n2p2 input:
+            >>> from data import Data
+            >>> d = Data('/path/to/examples/')
+            >>> d.write_n2p2_data(file_cp2k_out='example_1/cp2k_output/{}.log',
+            >>>                   file_cp2k_forces='example_1/cp2k_output/{}-forces-1_0.xyz',
+            >>>                   file_xyz='example_1/xyz/{}.xyz',
+            >>>                   file_input='examples_combined/n2p2/input.data',
+            >>>                   n_config=101)
+            >>> d.write_n2p2_data(file_cp2k_out='example_2/cp2k_output/{}.log',
+            >>>                   file_cp2k_forces='example_2/cp2k_output/{}-forces-1_0.xyz',
+            >>>                   file_xyz='example_2/xyz/{}.xyz',
+            >>>                   file_input='examples_combined/n2p2/input.data',
+            >>>                   n_config=101)
         """
         text = ''
         n = self._min_n_config(n_config)
@@ -341,13 +412,14 @@ d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcu
                 n_atoms = int(xyz_lines[0].strip())
                 header_list = xyz_lines[1].split('"')
                 lattice_list = header_list[1].split()
-                for j, lattice in enumerate(lattice_list):
-                    lattice_list[j] = float(lattice) * 1e-10 / physical_constants['Bohr radius'][0]
+                if n2p2_units['length'] != 'Ang':
+                    for j, lattice in enumerate(lattice_list):
+                        lattice_list[j] = float(lattice) / self.units[n2p2_units['length']]
 
-            with open(self.data_directory + file_forces.format(i)) as f:
+            with open(self.data_directory + file_cp2k_forces.format(i)) as f:
                 force_lines = f.readlines()
 
-            with open(self.data_directory + file_log.format(i)) as f:
+            with open(self.data_directory + file_cp2k_out.format(i)) as f:
                 energy = None
                 lines = f.readlines()
                 for j, line in enumerate(lines):
@@ -358,19 +430,27 @@ d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcu
                         total_charge = lines[j+3+n_atoms+1].split()[-1]
                 
             if energy is None:
-                raise ValueError('Energy not found in {}'.format(file_log))
+                raise ValueError('Energy not found in {}'.format(file_cp2k_out))
+            if n2p2_units['energy'] != 'Ha':
+                # cp2k output is in Ha
+                energy = float(energy) * self.units['Ha'] / self.units[n2p2_units['energy']]
 
             text += 'begin\n'
-            text += 'comment config_index={} units=Hartree and Bohr radii\n'.format(i)
+            text += 'comment config_index={0} units={1}\n'.format(i, n2p2_units)
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[0], lattice_list[1], lattice_list[2])
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[3], lattice_list[4], lattice_list[5])
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[6], lattice_list[7], lattice_list[8])
             for j in range(n_atoms):
                 atom_xyz = xyz_lines[j + 2].split()
                 for k, position in enumerate(atom_xyz[1:], 1):
-                    atom_xyz[k] = float(position) * 1e-10 / physical_constants['Bohr radius'][0]
+                    atom_xyz[k] = float(position) / self.units[n2p2_units['length']]
 
                 force = force_lines[j + 4].split()[-3:]
+                if n2p2_units['force'] != 'Ha / Bohr':
+                    # cp2k output is in Ha / Bohr
+                    for i in range(force):
+                        force[i] = float(force) * self.units['Ha'] / self.units['Bohr'] / self.units[n2p2_units['energy']]
+
                 charge = charge_lines[j].split()[-1]
                 text += 'atom {1} {2} {3} {0} {4} 0.0 {5} {6} {7}\n'.format(*atom_xyz + [charge] + force)
 
@@ -378,26 +458,35 @@ d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcu
             text += 'charge {}\n'.format(total_charge)
             text += 'end\n'
         
-        if isfile(self.data_directory + file_input):
-            with open(self.data_directory + file_input, 'a') as f:
+        if isfile(self.data_directory + file_n2p2_input):
+            with open(self.data_directory + file_n2p2_input, 'a') as f:
                 f.write(text)
         else:
-            with open(self.data_directory + file_input, 'w') as f:
+            with open(self.data_directory + file_n2p2_input, 'w') as f:
                 f.write(text)
 
-    def write_n2p2_nn(self, file_template: str, elements: list, r_cutoff: float,
-                      type: str, rule: str, n_pairs: int, mode: str,
-                      zetas: list=[], r_lower: float=None, r_upper: float=None,
-                      file_nn: str='input.nn'):
+
+    def write_n2p2_nn(self,
+                      elements: list,
+                      r_cutoff: float,
+                      type: str,
+                      rule: str,
+                      mode: str,
+                      n_pairs: int,
+                      zetas: list=[],
+                      r_lower: float=None, 
+                      r_upper: float=None,
+                      file_template: str='n2p2/input.nn.template',
+                      file_nn: str='n2p2/input.nn'):
         """
         Based on `file_template`, write the input.nn file for n2p2 with
         symmetry functions generated using the provided arguments.
 
+        Note that all distances (`r_cutoff`, `r_lower`, `r_upper`) should have
+        the same units as the n2p2 `input.data` file (by default, Bohr).
+
         Parameters
         ----------
-        file_template : str
-            File name to read the cp2k output from. Will be formatted with the
-            frame number, so should contain '{}' as part of the string.
         elements: list of str
             List of the elements present in the system, expressed using their
             chemical symbol.
@@ -407,12 +496,12 @@ d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcu
             The type of symmetry function to generate.
         rule: {'imbalzano2018', 'gastegger2018'}
             The ruleset used to determine how to chose values for r_shift and eta.
-        n_pairs: int
-            The number of symmetry functions to generate. Specifically,
-            `n_pairs` values for eta and r_shift are generated.
         mode: {'center', 'shift'}
             Whether the symmetry functions are centred or are shifted relative
             to the central atom.
+        n_pairs: int
+            The number of symmetry functions to generate. Specifically,
+            `n_pairs` values for eta and r_shift are generated.
         zetas: list of int, optional
             Not used for radial functions. Default is `[]`.
         r_lower: float, optional
@@ -423,230 +512,42 @@ d.write_n2p2_data(file_log='360K_frames/cp2k_output/cresol_n_{}_cutoff_600_relcu
             Not used for the 'imbalzano2018' ruleset. For 'gastegger2018', this
             sets either the maximum r_shift value or the minimum eta value for
             modes 'shift' and 'center' respectively. Default is `None`.
+        file_template : str, optional
+            The file to read the general network architecture from (i.e.
+            everything except the symmetry functions). Default is
+            'n2p2/input.nn.template'.
         file_nn: str, optional
             The file to write the output to. If the file already exists, then
             it is appended to with the new symmetry functions. If it does not,
             then it is created and the text from `file_template` is written to
-            it before the symmetry functions are written.
+            it before the symmetry functions are written. Default is
+            'n2p2/input.nn'..
 
         Examples
         --------
-import sys
-sys.path.append('/home/vol00/scarf860/cc_placement/CC_HDNNP/src')
-from data import Data
-d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/all_frames/n2p2/')
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=5)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=5,
-                zetas=[1])
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=5,
-                zetas=[1])
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=5)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=5,
-                zetas=[1])
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=5,
-                zetas=[1])
-
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=10)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=10,
-                zetas=[1, 4, 16])
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='imbalzano2018',
-                mode='center',
-                n_pairs=10,
-                zetas=[1, 4, 16])
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=10)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=10,
-                zetas=[1, 4, 16])
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='imbalzano_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='imbalzano2018',
-                mode='shift',
-                n_pairs=10,
-                zetas=[1, 4, 16])
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='gastegger2018',
-                mode='center',
-                n_pairs=10,
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='gastegger2018',
-                mode='center',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_center/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='gastegger2018',
-                mode='center',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='radial',
-                rule='gastegger2018',
-                mode='shift',
-                n_pairs=10,
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_narrow',
-                rule='gastegger2018',
-                mode='shift',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_shift/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='angular_wide',
-                rule='gastegger2018',
-                mode='shift',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_center_weighted/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='weighted_radial',
-                rule='gastegger2018',
-                mode='center',
-                n_pairs=10,
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_center_weighted/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='weighted_angular',
-                rule='gastegger2018',
-                mode='center',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_shift_weighted/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='weighted_radial',
-                rule='gastegger2018',
-                mode='shift',
-                n_pairs=10,
-                r_lower=1.0)
-d.write_n2p2_nn(file_template='input.nn.template',
-                file_nn='gastegger_shift_weighted/input.nn',
-                elements=['H', 'C', 'O'],
-                r_cutoff=12.0,
-                type='weighted_angular',
-                rule='gastegger2018',
-                mode='shift',
-                n_pairs=10,
-                zetas=[1],
-                r_lower=1.0)
-
-
-
+        To write multiple sets of symmetry functions to the same file:
+            >>> from data import Data
+            >>> d = Data('path/to/example_directory')
+            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
+                                r_cutoff=12.0,
+                                type='radial',
+                                rule='imbalzano2018',
+                                mode='center',
+                                n_pairs=10)
+            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
+                                r_cutoff=12.0,
+                                type='angular_narrow',
+                                rule='imbalzano2018',
+                                mode='center',
+                                n_pairs=10,
+                                zetas=[1, 4])
+            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
+                                r_cutoff=12.0,
+                                type='angular_wide',
+                                rule='imbalzano2018',
+                                mode='center',
+                                n_pairs=10,
+                                zetas=[1, 4])
         """
         generator = SymFuncParamGenerator(elements=elements, r_cutoff = r_cutoff)
         generator.symfunc_type = type
@@ -666,3 +567,101 @@ d.write_n2p2_nn(file_template='input.nn.template',
                 f.write(template_text)
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
+
+
+    def write_lammps_data(self,
+                          file_xyz: str,
+                          file_data: str='lammps/lammps.data',
+                          lammps_unit_style: str='electron'):
+        """
+        Reads data from xyz format and writes it for LAMMPS.
+
+        Parameters
+        ----------
+        file_xyz : str
+            Complete file name to read the xyz positions from.
+        file_data: str, optional
+            Complete file name to write the LAMMPS formatted positions to.
+            Default is 'lammps/lammps.data'.
+        lammps_unit_style: str, optional
+            The LAMMPS unit system to use. The xyz is assumed to be in ASE
+            default units (i.e. 'Ang' for length). Default is 'electron'.
+        """
+        format_in = 'xyz'
+        format_out = 'lammps-data'
+        atoms = read(self.data_directory + file_xyz, format=format_in)
+        write(self.data_directory + file_data, atoms, format=format_out, units=lammps_unit_style)
+
+
+    def write_lammps_pair(self,
+                          elements: list,
+                          r_cutoff: float,
+                          file_template: str='lammps/template.lmp',
+                          file_out: str='lammps/md.lmp',
+                          n2p2_directory: str='n2p2',
+                          lammps_unit_style: str='electron'):
+        """
+        Writes the pair commands 'pair_style' and 'pair_coeff' to `file_out`,
+        with the rest of the LAMMPS commands to be contained in `file_template`
+        along with '{pair_commands}' to allow formatting that section to the
+        following:
+
+            pair_style nnp dir {n2p2_directory} showew no showewsum 10 resetew no maxew 100 emap {elements_map}
+            pair_coeff * * {r_cutoff}
+        
+        `r_cutoff` must be given in the same units as were used to train the
+        network ('Bohr' by default) regardless of `lammps_unit_style`. The
+        default argument for `lammps_unit_style`, 'electron', also uses 'Bohr'.
+        For other unit styles a conversion will be applied automatically to
+        account for both length and energies.
+
+        Parameters
+        ----------
+        elements: list of str
+            List of the elements present in the system, expressed using their
+            chemical symbol.
+        r_cutoff: float
+            The cutoff distance for the symmetry functions.
+        file_template: str, optional
+            Complete file name of the template for `file_out`. Should contain
+            '{pair_commands}' to allow formatting. Default is
+            'lammps/template.lmp'.
+        file_template: str, optional
+            Complete file name of the output file. Default is 'lammps/md.lmp'.
+        n2p2_directory: str, optional
+            Directory containing all the n2p2 files needed by the LAMMPS/n2p2
+            interface. Default is 'n2p2'.
+        lammps_unit_style: str, optional
+            The LAMMPS unit system to use. Default is 'electron'.
+        """
+        with open(self.data_directory + file_template) as f:
+            template_text = f.read()
+        
+        elements.sort()
+        elements_map = '"'
+        for i, element in enumerate(elements):
+            elements_map += '{0}:{1},'.format(i, element)
+        elements_map = elements_map[:-1] + '"'
+
+        pair_style = 'pair_style nnp dir {0} showew no showewsum 10 resetew no maxew 100 emap {1}'.format(n2p2_directory, elements_map)
+
+        # TODO implement this
+        lammps_units = {'electron': {'length': 1, 'energy': 1},
+                        'real': {'length': 1, 'energy': 1},
+                        'metal': {'length': 1, 'energy': 1},
+                        'si': {'length': 1, 'energy': 1},
+                        'cgs': {'length': 1, 'energy': 1},
+                        'micro': {'length': 1, 'energy': 1},
+                        'nano': {'length': 1, 'energy': 1}}
+        if lammps_unit_style == 'electron':
+            # No conversion required
+            pass
+        else:
+            raise ValueError('`lammps_unit_style={}` not recognised',
+                             lammps_unit_style)
+
+        pair_coeff = 'pair_coeff * * {}'.format(r_cutoff)
+        output_text = template_text.format(pair_commands=pair_style + '\n' + pair_coeff)
+
+        with open(self.data_directory + file_out, 'w') as f:
+            f.write(output_text)

@@ -18,7 +18,7 @@ def prepare_cp2k():
     After this, all batch scripts should be run in order to generate the cp2k
     output files for force and energy values
     """
-    d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/example_directory/')
+    d = Data('../')
     d.read_trajectory('example_trajectory.history')
     d.write_xyz('xyz/{}.xyz')
     d.write_cp2k(file_batch='scripts/cp2k_batch_{}.bat',
@@ -37,7 +37,7 @@ def prepare_n2p2():
 
     After this, n2p2 commands should be run as usual.
     """
-    d = Data('/home/vol00/scarf860/cc_placement/CC_HDNNP/examples/example_directory/')
+    d = Data('../')
     d.write_n2p2_data(file_log='cp2k_output/example_n_{}_cutoff_600_relcutoff_60.log',
                       file_forces='cp2k_output/example_n_{}_cutoff_600_relcutoff_60-forces-1_0.xyz',
                       file_xyz='xyz/{}.xyz',
@@ -99,3 +99,16 @@ def prepare_n2p2():
                     mode='shift',
                     n_pairs=5,
                     zetas=[1])
+
+def prepare_lammps():
+    """
+    Finally prepare the files needed for LAMMPS:
+      - Data file (.data)
+      - LAMMPS input script (.lmp)
+
+    After this, LAMMPS can be run using the learnt potential for the LAMMPS
+    pair command.
+    """
+    d = Data('../')
+    d.write_lammps_data(file_xyz='xyz/0.xyz')
+    d.write_lammps_pair(elements=['H', 'C', 'O'], r_cutoff=12.)
