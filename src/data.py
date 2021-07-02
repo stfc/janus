@@ -19,6 +19,7 @@ sys.path.append('/home/vol00/scarf860/cc_placement/CC_HDNNP/src')
 
 """
 
+from glob import glob
 from os.path import isfile
 import re
 
@@ -33,15 +34,23 @@ class Data:
 
     Parameters
     ----------
+    elements : dict
+        Elements appearing in the system. Keys should be the chemical symbol
+        (`str`) and the value the atomic number (`int`).
     data_directory : str
         All file names passed to other function will be appended to
         `data_directory`
+    n2p2_bin : str
+        File path to the n2p2 bin directory.
     """
 
-    def __init__(self, data_directory: str):
+    def __init__(self, elements: dict, data_directory: str, n2p2_bin: str):
         self.units = create_units('2014')
+        # TODO update relevant scripts with new attributes: n2p2_bin
+        self.elements = elements
         self.data_directory = data_directory
         self.trajectory = None
+        self.n2p2_bin = n2p2_bin
 
 
     def _min_n_config(self, n_provided: int):
@@ -147,19 +156,24 @@ class Data:
 
 
     def write_cp2k(self,
+                   file_bash: str='scripts/all.bash',
                    file_batch: str='scripts/{}.bat',
                    file_input: str='cp2k_input/{}.inp',
                    file_xyz: str='xyz/{}.xyz',
                    n_config: int=None,
-                   **kwargs):
+                   **kwargs) -> str:
         """
         Writes .inp files and batch scripts for running cp2k from `n_config`
         .xyz files. Can set supported settings using `**kwargs`, in which case
         template file(s) will be formatted to contain the values provided. Note
-        that the .xyz files should be in 'Ang'
+        that the .xyz files should be in 'Ang'. Returns the command for running
+        all cp2k files.
 
         Parameters
         ----------
+        file_bash : str, optional
+            File name to write a utility script which submits all of the batch
+            scripts created by this function. Default is 'scripts/all.bash'.
         file_batch : str, optional
             Formatable file name to write the batch scripts to. Will be
             formatted with the frame number and any other `**kwargs`, so should
@@ -189,6 +203,11 @@ class Data:
             one or more values to run cp2k with:
               - cutoff: tuple of float
               - relcutoff: tuple of float
+
+        Returns
+        -------
+        str
+            Command to run `file_bash`, which in turn will submit all batch scripts.
 
         Examples
         --------
@@ -225,6 +244,7 @@ class Data:
         else:
             relcutoff_values = [None]
 
+        batch_scripts = []
         for i in range(n_config):
             format_dict = {'i': i}
             with open(self.data_directory + file_xyz.format(i)) as f:
@@ -244,14 +264,22 @@ class Data:
                     with open(self.data_directory + file_input.format(file_id), 'w') as f:
                         f.write(input_template.format(file_id=file_id, **format_dict))
 
+                    batch_scripts.append(self.data_directory + file_batch.format(file_id))
                     with open(self.data_directory + file_batch.format(file_id), 'w') as f:
                         f.write(batch_template.format(file_id=file_id, **format_dict))
 
+        bash_text = 'sbatch '
+        bash_text += '\nsbatch '.join(batch_scripts)
+        with open(self.data_directory + file_bash) as f:
+            f.write(bash_text)
 
-    def print_cp2k(self,
-                   file_output: str='cp2k_output/{}.log',
-                   n_config: int=None,
-                   **kwargs):
+        return 'bash {}'.format(self.data_directory + file_bash)
+
+    def print_cp2k_table(self,
+                         file_output: str='cp2k_output/{}.log',
+                         n_config: int=None,
+                         n_mpi: int=1,
+                         **kwargs):
         """
         Print the final energy, time taken, and grid allocation for given cp2k
         settings. Formatted for a .md table.
@@ -260,11 +288,15 @@ class Data:
         ----------
         file_output : str, optional
             Formatable file name to read the cp2k output from. Will be
-            formatted with the frame number and any other `**kwargs`, so should contain '{}' as part of the string. Default is 'cp2k_output/{}.log'.
+            formatted with the frame number and any other `**kwargs`, so should
+            contain '{}' as part of the string.
+            Default is 'cp2k_output/{}.log'.
         n_config: int, optional
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
+        n_mpi: int, optional
+            The number of MPI processes used for cp2k. Default is `1`.
         **kwargs:
             Arguments to be used in formatting the name of the cp2k output file(s). Each should be a tuple containing
             one or more values:
@@ -275,11 +307,12 @@ class Data:
         --------
         >>> from data import Data
         >>> d = Data('path/to/example_directory')
-        >>> d.print_cp2k(file_output='cutoff/cp2k_output/{}.log',
-                         n_config=1,
-                         cutoff=(400, 500, 600, 700, 800, 900, 1000, 1100, 1200,
-                                 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000,
-                                 2100, 2200, 2300, 2400))
+        >>> d.print_cp2k_table(file_output='cutoff/cp2k_output/{}.log',
+                               n_config=1,
+                               cutoff=(400, 500, 600, 700, 800, 900, 1000,
+                                       1100, 1200, 1300, 1400, 1500, 1600,
+                                       1700, 1800, 1900, 2000, 2100, 2200,
+                                       2300, 2400))
         """
         n_config = self._min_n_config(n_config)
         file_id_template = 'n_{i}'
@@ -298,6 +331,11 @@ class Data:
             msg += '  {relcutoff} | '
         else:
             relcutoff_values = [None]
+
+        # Print table header:
+        print('| Cutoff |  Relative Cutoff | Processes '
+              '| Energy                | t/step (s) | t total (s) '
+              '| Grid 1 | Grid 2 | Grid 3 | Grid 4 |')
 
         for i in range(n_config):
             for cutoff in cutoff_values:
@@ -327,10 +365,11 @@ class Data:
                         except TypeError:
                             time_per_step = None
                         msg_out = msg.format(**format_dict)
-                        msg_out += '        1 | {energy} | {time_per_step} |    {total_time} | '.format(energy=energy,
-                                                                                                    time_per_step=time_per_step,
-                                                                                                    total_time=total_time,
-                                                                                                    **format_dict)
+                        msg_out += '        {n_mpi} | {energy} | {time_per_step} |    {total_time} | '.format(n_mpi=n_mpi,
+                                                                                                              energy=energy,
+                                                                                                              time_per_step=time_per_step,
+                                                                                                              total_time=total_time,
+                                                                                                              **format_dict)
                         msg_out += ' | '.join(m_grid)
                         print(msg_out + ' |')
 
@@ -467,7 +506,6 @@ class Data:
 
 
     def write_n2p2_nn(self,
-                      elements: list,
                       r_cutoff: float,
                       type: str,
                       rule: str,
@@ -487,9 +525,6 @@ class Data:
 
         Parameters
         ----------
-        elements: list of str
-            List of the elements present in the system, expressed using their
-            chemical symbol.
         r_cutoff: float
             The cutoff distance for the symmetry functions.
         type: {'radial', 'angular_narrow', 'angular_wide', 'weighted_radial', 'weighted_angular'}
@@ -528,28 +563,26 @@ class Data:
         To write multiple sets of symmetry functions to the same file:
             >>> from data import Data
             >>> d = Data('path/to/example_directory')
-            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
-                                r_cutoff=12.0,
+            >>> d.write_n2p2_nn(r_cutoff=12.0,
                                 type='radial',
                                 rule='imbalzano2018',
                                 mode='center',
                                 n_pairs=10)
-            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
-                                r_cutoff=12.0,
+            >>> d.write_n2p2_nn(r_cutoff=12.0,
                                 type='angular_narrow',
                                 rule='imbalzano2018',
                                 mode='center',
                                 n_pairs=10,
                                 zetas=[1, 4])
-            >>> d.write_n2p2_nn(elements=['H', 'C', 'O'],
-                                r_cutoff=12.0,
+            >>> d.write_n2p2_nn(r_cutoff=12.0,
                                 type='angular_wide',
                                 rule='imbalzano2018',
                                 mode='center',
                                 n_pairs=10,
                                 zetas=[1, 4])
         """
-        generator = SymFuncParamGenerator(elements=elements, r_cutoff = r_cutoff)
+        generator = SymFuncParamGenerator(elements=self.elements.keys(),
+                                          r_cutoff = r_cutoff)
         generator.symfunc_type = type
         generator.zetas = zetas
 
@@ -567,6 +600,82 @@ class Data:
                 f.write(template_text)
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
+
+
+    def write_n2p2_scripts(self,
+                           n_scaling_bins: int=500,
+                           range_threshold: float=1e-4,
+                           file_template: str='scripts/template.bat',
+                           file_prune: str='scripts/n2p2_prune.bat',
+                           file_train: str='scripts/n2p2_train.bat',
+                           file_nn: str='n2p2/input.nn'):
+        """
+        Write batch script for scaling and pruning symmetry functions, and for
+        training the network. Returns the command to submit the scripts.
+
+        Parameters
+        ----------
+        n_scaling_bins: int, optional
+            Number of bins for symmetry function histograms. Default is `500`.
+        range_threshold: float, optional
+            Symmetry functions with ranges below this will be "pruned" and not
+            used in the training. Default is `1e-4`.
+        file_template: str, optional
+            File location of template to use for batch scripts. Default is
+            'scripts/template.bat'.
+        file_prune: str, optional
+            File location to write scaling and pruning batch script to.
+            Default is 'scripts/n2p2_prune.bat'.
+        file_train: str, optional
+            File location to write training batch script to.
+            Default is 'scripts/n2p2_train.bat'.
+        file_nn: str, optional
+            File location of n2p2 file defining the neural network. Default is
+            n2p2/input.nn'.
+
+        Returns
+        -------
+        str
+            Command to run the scaling and pruning batch script.
+        """
+        with open(self.data_directory + file_template) as f:
+            template_text = f.read()
+        
+        n2p2_directory = '/'.join(file_nn.split('/')[:-1])
+        output_text = template_text.format(job_name='n2p2_scale_prune')
+        output_text += '\cd {}'.format(self.data_directory + n2p2_directory)
+        output_text += '\nsrun {0}nnp-scaling {1}'.format(self.n2p2_bin,
+                                                          n_scaling_bins)
+        output_text += '\nsrun {0}nnp-prune range {1}'.format(self.n2p2_bin,
+                                                              range_threshold)
+        output_text += '\nmv {} {}.unpruned'.format(self.data_directory + file_nn)
+        output_text += '\nmv output-prune-range.nn {}'.format(self.data_directory + file_nn)
+
+        with open(self.data_directory + file_prune, 'w') as f:
+            f.write(output_text)
+
+        glob(self.data_directory + n2p2_directory + 'weights.*.*.out')
+        glob(self.data_directory + n2p2_directory + 'weights.*.000000.out')
+        output_text = template_text.format(job_name='n2p2_train')
+        output_text += '\cd {}'.format(self.data_directory + n2p2_directory)
+        output_text += '\nsrun {0}nnp-train'.format(self.n2p2_bin)
+        # Need to rename the weights files to use the network once trained
+        for atomic_number in self.elements.values():
+            # File names always have the element as 3 digits, e.g. Hydrogen is
+            # 001, so need to format accordingly
+            atomic_number_str = str(atomic_number)
+            atomic_number_str =  (3 - len(atomic_number_str)) * '0' + atomic_number_str
+            weights = glob(self.data_directory + n2p2_directory + 'weights.{}.*.out'.format(atomic_number_str))
+            weights.sort()
+            # TODO currently assume the most recent set of weights, implement some more complex criteria?
+            output_text += '\ncp {0} weights.{1}.data'.format(weights[-1], atomic_number_str)
+
+        with open(self.data_directory + file_train, 'w') as f:
+            f.write(output_text)
+
+        return 'sbatch {0}\nsbatch {1}\n'.format(self.data_directory + file_prune,
+                                                 self.data_directory + file_train)
+
 
 
     def write_lammps_data(self,
@@ -587,14 +696,13 @@ class Data:
             The LAMMPS unit system to use. The xyz is assumed to be in ASE
             default units (i.e. 'Ang' for length). Default is 'electron'.
         """
-        format_in = 'xyz'
+        format_in = 'extxyz'
         format_out = 'lammps-data'
         atoms = read(self.data_directory + file_xyz, format=format_in)
         write(self.data_directory + file_data, atoms, format=format_out, units=lammps_unit_style)
 
 
     def write_lammps_pair(self,
-                          elements: list,
                           r_cutoff: float,
                           file_template: str='lammps/template.lmp',
                           file_out: str='lammps/md.lmp',
@@ -609,17 +717,10 @@ class Data:
             pair_style nnp dir {n2p2_directory} showew no showewsum 10 resetew no maxew 100 emap {elements_map}
             pair_coeff * * {r_cutoff}
         
-        `r_cutoff` must be given in the same units as were used to train the
-        network ('Bohr' by default) regardless of `lammps_unit_style`. The
-        default argument for `lammps_unit_style`, 'electron', also uses 'Bohr'.
-        For other unit styles a conversion will be applied automatically to
-        account for both length and energies.
+        `r_cutoff` must be given in the LAMMPS units regardless of what was used for training.
 
         Parameters
         ----------
-        elements: list of str
-            List of the elements present in the system, expressed using their
-            chemical symbol.
         r_cutoff: float
             The cutoff distance for the symmetry functions.
         file_template: str, optional
@@ -637,31 +738,41 @@ class Data:
         with open(self.data_directory + file_template) as f:
             template_text = f.read()
         
+        elements = self.elements.keys()
         elements.sort()
         elements_map = '"'
         for i, element in enumerate(elements):
-            elements_map += '{0}:{1},'.format(i, element)
+            elements_map += '{0}:{1},'.format(i + 1, element)
         elements_map = elements_map[:-1] + '"'
 
         pair_style = 'pair_style nnp dir {0} showew no showewsum 10 resetew no maxew 100 emap {1}'.format(n2p2_directory, elements_map)
 
-        # TODO implement this
         lammps_units = {'electron': {'length': 1, 'energy': 1},
-                        'real': {'length': 1, 'energy': 1},
-                        'metal': {'length': 1, 'energy': 1},
-                        'si': {'length': 1, 'energy': 1},
-                        'cgs': {'length': 1, 'energy': 1},
-                        'micro': {'length': 1, 'energy': 1},
-                        'nano': {'length': 1, 'energy': 1}}
+                        'real': {'length': 1 / self.units['Bohr'],
+                                 'energy': self.units['kcal']  / (self.units['Ha'] * self.units['mol'])},
+                        'metal': {'length': 1 / self.units['Bohr'],
+                                  'energy': 1 / self.units['Ha']},
+                        'si': {'length': 1e10 / self.units['Bohr'],
+                               'energy': self.units['kJ'] / (self.units['Ha'] * 1e3)},
+                        'cgs': {'length': 1e8 / self.units['Bohr'],
+                                'energy': self.units['kJ'] / (self.units['Ha'] * 1e10)},
+                        'micro': {'length': 1e4 / self.units['Bohr'],
+                                  'energy': self.units['kJ'] / (self.units['Ha'] * 1e15)},
+                        'nano': {'length': 1e1 / self.units['Bohr'],
+                                 'energy': self.units['kJ'] / (self.units['Ha'] * 1e21)}}
+
         if lammps_unit_style == 'electron':
             # No conversion required
             pass
+        elif lammps_unit_style in lammps_units:
+            pair_style += ' cflength {length} cfenergy {energy}'.format(**lammps_units[lammps_unit_style])
         else:
             raise ValueError('`lammps_unit_style={}` not recognised',
                              lammps_unit_style)
 
         pair_coeff = 'pair_coeff * * {}'.format(r_cutoff)
-        output_text = template_text.format(pair_commands=pair_style + '\n' + pair_coeff)
+        output_text = template_text.format(pair_commands=pair_style + '\n' + pair_coeff,
+                                           lammps_unit_style=lammps_unit_style)
 
         with open(self.data_directory + file_out, 'w') as f:
             f.write(output_text)

@@ -22,11 +22,11 @@ def prepare_cp2k():
     d.read_trajectory('example_trajectory.history')
     d.write_xyz('xyz/{}.xyz')
     d.write_cp2k(file_batch='scripts/cp2k_batch_{}.bat',
-                file_input='cp2k_input/example_{}.inp',
-                file_xyz='xyz/{}.xyz',
-                n_config=101,
-                cutoff=(600,),
-                relcutoff=(60,))
+                 file_input='cp2k_input/example_{}.inp',
+                 file_xyz='xyz/{}.xyz',
+                 n_config=101,
+                 cutoff=(600,),
+                 relcutoff=(60,))
 
 
 def prepare_n2p2():
@@ -110,5 +110,5 @@ def prepare_lammps():
     pair command.
     """
     d = Data('../')
-    d.write_lammps_data(file_xyz='xyz/0.xyz')
-    d.write_lammps_pair(elements=['H', 'C', 'O'], r_cutoff=12.)
+    d.write_lammps_data(file_xyz='xyz/0.xyz', lammps_unit_style='metal')
+    d.write_lammps_pair(elements=['H', 'C', 'O'], r_cutoff=12., lammps_unit_style='metal')
