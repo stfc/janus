@@ -1,0 +1,8 @@
+[flake8]
+select = B,BLK,C,E,F,I,S,W
+max-complexity = 10
+max-line-length = 100
+ignore = E203,W503
+application-import-names = cc_hdnnp,tests
+import-order-style = google
+per-file-ignores = tests/*:S101
