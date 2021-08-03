@@ -9,7 +9,20 @@ python = "^3.6"
 ase = "^3.22.0"
 
 [tool.poetry.dev-dependencies]
+pytest = "^6.2.4"
+coverage = {extras = ["toml"], version = "^5.5"}
+pytest-cov = "^2.12.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.paths]
+source = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["cc_hdnnp"]
+
+[tool.coverage.report]
+show_missing = true
