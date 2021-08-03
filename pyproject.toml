@@ -10,7 +10,7 @@ ase = "^3.22.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
-coverage = {extras = ["toml"], version = "^5.5"}
+coverage = {extras = ["toml"], version = "^6.0b1"}
 pytest-cov = "^2.12.1"
 nox = "^2021.6.12"
 black = "^21.7b0"

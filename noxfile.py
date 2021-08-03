@@ -1,5 +1,6 @@
-import nox
 import tempfile
+
+import nox
 
 
 nox.options.sessions = "lint", "tests", "safety"
@@ -11,6 +12,7 @@ def install_with_constraints(session, *args, **kwargs):
         session.run(
             "poetry",
             "export",
+            "--without-hashes",
             "--dev",
             "--format=requirements.txt",
             f"--output={requirements.name}",
@@ -22,18 +24,20 @@ def install_with_constraints(session, *args, **kwargs):
 @nox.session(python="3.6")
 def tests(session):
     session.run("poetry", "install", "--no-dev", external=True)
-    session.run("pytest", "--cov")
+    session.run("pytest", "tests", "--cov")
 
 
 @nox.session(python="3.6")
 def lint(session):
     args = session.posargs or locations
-    install_with_constraints(session,
-                             "flake8",
-                             "flake8-bandit",
-                             "flake8-black",
-                             "flake8-bugbear",
-                             "flake8-import-order")
+    install_with_constraints(
+        session,
+        "flake8",
+        "flake8-bandit",
+        "flake8-black",
+        "flake8-bugbear",
+        "flake8-import-order",
+    )
     session.run("flake8", *args)
 
 
@@ -42,6 +46,7 @@ def black(session):
     args = session.posargs or locations
     install_with_constraints(session, "black")
     session.run("black", *args)
+
 
 @nox.session(python="3.6")
 def safety(session):

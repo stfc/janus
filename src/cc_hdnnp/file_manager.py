@@ -20,17 +20,17 @@ def join_paths(*paths: str):
         The complete filepath.
     """
 
-    complete_path = ''
+    complete_path = ""
     for i, path in enumerate(paths):
         if i > 0:
-            if path[0] == '/':
+            if path[0] == "/":
                 complete_path += path
             else:
-                complete_path += '/' + path
+                complete_path += "/" + path
 
-        if path[-1] == '/':
+        if path[-1] == "/":
             complete_path += path[:-1]
         else:
             complete_path += path[:-1]
-    
+
     return complete_path

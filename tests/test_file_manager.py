@@ -12,4 +12,4 @@ def test_join_paths_no_args():
     passed.
     """
 
-    assert join_paths() == ''
+    assert join_paths() == ""
