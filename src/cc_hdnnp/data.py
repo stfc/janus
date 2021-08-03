@@ -22,10 +22,12 @@ sys.path.append('/home/vol00/scarf860/cc_placement/CC_HDNNP/src')
 from glob import glob
 from os.path import isfile
 import re
+from typing import List
 
 from ase.io import read, write
 from ase.units import create_units
 
+from file_manager import join_paths
 from sfparamgen import SymFuncParamGenerator
 
 class Data:
@@ -44,13 +46,28 @@ class Data:
         File path to the n2p2 bin directory.
     """
 
-    def __init__(self, elements: dict, data_directory: str, n2p2_bin: str):
+    def __init__(self, elements: dict, data_directory: str, n2p2_bin: str,
+                 structure_names: List[str],
+                 active_learning_directory: str=None):
+                #  n2p2_directory: str=None):
         self.units = create_units('2014')
         # TODO update relevant scripts with new attributes: n2p2_bin
         self.elements = elements
         self.data_directory = data_directory
         self.trajectory = None
         self.n2p2_bin = n2p2_bin
+        # TODO unify this with
+        self.structure_names = structure_names
+
+        if active_learning_directory is not None:
+            self.active_learning_directory = active_learning_directory
+        else:
+            self.active_learning_directory = join_paths(data_directory, 'active_learning')
+
+        # if n2p2_directory is not None:
+        #     self.n2p2_directory = active_learn_directory
+        # else:
+        #     self.n2p2_directory = data_directory + 'n2p2'
 
 
     def _min_n_config(self, n_provided: int):
@@ -108,8 +125,8 @@ class Data:
         >>> len(d.trajectory)
         101
         """
-        trajectory = read(self.data_directory + file_trajectory,
-                               format=format_in, index=':')
+        trajectory = read(join_paths(self.data_directory, file_trajectory),
+                          format=format_in, index=':')
 
         if unit_in != 'Ang':
             for frame in trajectory:
@@ -119,6 +136,55 @@ class Data:
                 frame.set_positions(positions * self.units[unit_in])
         
         self.trajectory = trajectory
+
+
+    def convert_n2p2_xyz(self,
+                         file_structure: str,
+                         file_xyz: str,
+                         unit_in: str='Bohr'):
+        """
+        Reads `file_structure` and writes it as a series of xyz files. By default length
+        units of Bohr are assumed, so if this is not the case then `unit_in`
+        should be specified to allow conversion. The xyz files will be in Ang.
+
+        Parameters
+        ----------
+        file_structure : str
+            File containing a series of structures.
+        unit_in: str, optional
+            Length unit for the trajectory. Default is 'Ang'.
+
+        Returns
+        -------
+        Atoms or list of Atoms
+        """
+        with open(file_structure) as f:
+            lines = f.readlines()
+
+        i = 0
+        for line in lines:
+            if line.strip() == 'begin':
+                atoms = []
+                lattice = []
+            elif line.split()[0] == 'lattice':
+                for j in (1, 2, 3):
+                    lattice.append(str(float(line.split()[j]) * self.units[unit_in]))
+            elif line.split()[0] == 'atom':
+                atom = [line.split()[4],
+                        str(float(line.split()[1]) * self.units[unit_in]),
+                        str(float(line.split()[2]) * self.units[unit_in]),
+                        str(float(line.split()[3]) * self.units[unit_in])]
+                atoms.append(atom)
+            elif line.strip() == 'end':
+                text = str(len(atoms))
+                text += '\nLattice="{}" Properties=species:S:1:pos:R:3 pbc="T T T"'.format(' '.join(lattice))
+                for atom in atoms:
+                    text += '\n' + ' '.join(atom)
+                with open(file_xyz.format(i), 'w') as f:
+                    f.write(text)
+                i += 1
+
+
 
     def write_xyz(self, file_xyz: str='xyz/{}.xyz', unit_out: str='Ang'):
         """
@@ -149,88 +215,92 @@ class Data:
                 positions = frame.get_positions()
                 frame.set_positions(positions / self.units[unit_out])
 
-            write(self.data_directory + file_xyz.format(i),
+            write(join_paths(self.data_directory, file_xyz.format(i)),
                   frame,
                   format=format_out,
                   columns=['symbols', 'positions'])
 
 
     def write_cp2k(self,
-                   file_bash: str='scripts/all.bash',
-                   file_batch: str='scripts/{}.bat',
+                   file_bash: str='scripts/all.sh',
+                   file_batch: str='scripts/{}.sh',
                    file_input: str='cp2k_input/{}.inp',
                    file_xyz: str='xyz/{}.xyz',
                    n_config: int=None,
                    **kwargs) -> str:
         """
-        Writes .inp files and batch scripts for running cp2k from `n_config`
-        .xyz files. Can set supported settings using `**kwargs`, in which case
-        template file(s) will be formatted to contain the values provided. Note
-        that the .xyz files should be in 'Ang'. Returns the command for running
-        all cp2k files.
+            Writes .inp files and batch scripts for running cp2k from `n_config`
+            .xyz files. Can set supported settings using `**kwargs`, in which case
+            template file(s) will be formatted to contain the values provided. Note
+            that the .xyz files should be in 'Ang'. Returns the command for running
+            all cp2k files.
 
-        Parameters
-        ----------
-        file_bash : str, optional
-            File name to write a utility script which submits all of the batch
-            scripts created by this function. Default is 'scripts/all.bash'.
-        file_batch : str, optional
-            Formatable file name to write the batch scripts to. Will be
-            formatted with the frame number and any other `**kwargs`, so should
-            contain '{}' as part of the string. There should already be a
-            template of this file with 'template' instead of '{}' containing
-            the details of the system that will remain constant across all
-            frames and so do not need formatting. Default is 'scripts/{}.bat'.
-        file_input : str, optional
-            Formatable file name to write the cp2k input files to. Will be
-            formatted with the frame number and any other `**kwargs`, so should
-            contain '{}' as part of the string. There should already be a
-            template of this file with 'template' instead of '{}' containing
-            the details of the file that do not need formatting. Default is
-            'cp2k_input/{}.inp'.
-        file_xyz : str, optional
-            Formatable file name to read the xyz files from. Will be formatted
-            with the frame number, so should contain '{}' as part of the string.
-            Default is 'xyz/{}.xyz'.
-        n_config: int, optional
-            The number of configuration frames to use. If the number provided
-            is greater than the length of `self.trajectory`, or `n_config` is
-            `None` then the length is used instead. Default is `None`.
-        **kwargs:
-            Arguments to be used in formatting the cp2k input file. The
-            template provided should contain a formatable string at the
-            relevant location in the file. Each should be a tuple containing
-            one or more values to run cp2k with:
-              - cutoff: tuple of float
-              - relcutoff: tuple of float
+            Parameters
+            ----------
+            file_bash : str, optional
+                File name to write a utility script which submits all of the batch
+                scripts created by this function. Default is 'scripts/all.bash'.
+            file_batch : str, optional
+                Formatable file name to write the batch scripts to. Will be
+                formatted with the frame number and any other `**kwargs`, so should
+                contain '{}' as part of the string. There should already be a
+                template of this file with 'template' instead of '{}' containing
+                the details of the system that will remain constant across all
+                frames and so do not need formatting. Default is 'scripts/{}.bat'.
+            file_input : str, optional
+                Formatable file name to write the cp2k input files to. Will be
+                formatted with the frame number and any other `**kwargs`, so should
+                contain '{}' as part of the string. There should already be a
+                template of this file with 'template' instead of '{}' containing
+                the details of the file that do not need formatting. Default is
+                'cp2k_input/{}.inp'.
+            file_xyz : str, optional
+                Formatable file name to read the xyz files from. Will be formatted
+                with the frame number, so should contain '{}' as part of the string.
+                Default is 'xyz/{}.xyz'.
+            n_config: int, optional
+                The number of configuration frames to use. If the number provided
+                is greater than the length of `self.trajectory`, or `n_config` is
+                `None` then the length is used instead. Default is `None`.
+            **kwargs:
+                Arguments to be used in formatting the cp2k input file. The
+                template provided should contain a formatable string at the
+                relevant location in the file. Each should be a tuple containing
+                one or more values to run cp2k with:
+                - cutoff: tuple of float
+                - relcutoff: tuple of float
 
-        Returns
-        -------
-        str
-            Command to run `file_bash`, which in turn will submit all batch scripts.
+            Returns
+            -------
+            str
+                Command to run `file_bash`, which in turn will submit all batch scripts.
 
-        Examples
-        --------
-        To write 100 cp2k input files with specific values for `cutoff` and
-        `relcutoff`:
-            >>> from data import Data
-            >>> d = Data('path/to/example_directory')
-            >>> d.write_cp2k(n_config=100, cutoff=(600,), relcutoff=(60,))
-        
-        To create a "grid" of 20 input files with varying `cutoff` and
-        `relcutoff` but for a single frame:
-            >>> d.write_cp2k(n_config=1,
-                             cutoff=(400, 500, 600, 700, 800),
-                             relcutoff=(40, 50, 60, 70))
+            Examples
+            --------
+            To write 100 cp2k input files with specific values for `cutoff` and
+            `relcutoff`:
+                >>> from data import Data
+                >>> d = Data('path/to/example_directory')
+                >>> d.write_cp2k(n_config=100, cutoff=(600,), relcutoff=(60,))
+            
+            To create a "grid" of 20 input files with varying `cutoff` and
+            `relcutoff` but for a single frame:
+                >>> d.write_cp2k(n_config=1,
+                                cutoff=(400, 500, 600, 700, 800),
+                                relcutoff=(40, 50, 60, 70))
         """
-        with open(self.data_directory + file_input.format('template')) as f_template:
+        with open(join_paths(self.data_directory,
+                             file_input.format('template'))) as f_template:
             input_template = f_template.read()
 
-        with open(self.data_directory + file_batch.format('template')) as f_template:
+        with open(join_paths(self.data_directory,
+                             file_batch.format('template'))) as f_template:
             batch_template = f_template.read()
 
         n_config = self._min_n_config(n_config)
         file_id_template = 'n_{i}'
+
+        # TODO cast kwargs to lists if appropriate
 
         if 'cutoff' in kwargs:
             file_id_template += '_cutoff_{cutoff}'
@@ -247,7 +317,8 @@ class Data:
         batch_scripts = []
         for i in range(n_config):
             format_dict = {'i': i}
-            with open(self.data_directory + file_xyz.format(i)) as f:
+            with open(join_paths(self.data_directory,
+                                 file_xyz.format(i))) as f:
                 header_line = f.readlines()[1]
                 lattice_string = header_line.split('"')[1]
                 lattice_list = lattice_string.split()
@@ -259,18 +330,20 @@ class Data:
                 for relcutoff in relcutoff_values:
                     format_dict['cutoff'] = cutoff
                     format_dict['relcutoff'] = relcutoff
-                    format_dict['file_xyz'] = self.data_directory + file_xyz.format(i)
+                    format_dict['file_xyz'] = join_paths(self.data_directory, file_xyz.format(i))
                     file_id = file_id_template.format(**format_dict)
-                    with open(self.data_directory + file_input.format(file_id), 'w') as f:
+                    with open(join_paths(self.data_directory,
+                                         file_input.format(file_id)), 'w') as f:
                         f.write(input_template.format(file_id=file_id, **format_dict))
 
-                    batch_scripts.append(self.data_directory + file_batch.format(file_id))
-                    with open(self.data_directory + file_batch.format(file_id), 'w') as f:
+                    batch_scripts.append(join_paths(self.data_directory, file_batch.format(file_id)))
+                    with open(join_paths(self.data_directory,
+                                         file_batch.format(file_id)), 'w') as f:
                         f.write(batch_template.format(file_id=file_id, **format_dict))
 
         bash_text = 'sbatch '
         bash_text += '\nsbatch '.join(batch_scripts)
-        with open(self.data_directory + file_bash) as f:
+        with open(join_paths(self.data_directory, file_bash)) as f:
             f.write(bash_text)
 
         return 'bash {}'.format(self.data_directory + file_bash)
@@ -345,7 +418,7 @@ class Data:
                                    'relcutoff': relcutoff}
 
                     file_id = file_id_template.format(**format_dict)
-                    with open(self.data_directory + file_output.format(file_id)) as f:
+                    with open(join_paths(self.data_directory, file_output.format(file_id))) as f:
                         energy = None
                         m_grid = []
                         steps = None
@@ -446,7 +519,8 @@ class Data:
         text = ''
         n = self._min_n_config(n_config)
         for i in range(n):
-            with open(self.data_directory + file_xyz.format(i)) as f:
+            with open(join_paths(self.data_directory,
+                                 file_xyz.format(i))) as f:
                 xyz_lines = f.readlines()
                 n_atoms = int(xyz_lines[0].strip())
                 header_list = xyz_lines[1].split('"')
@@ -455,10 +529,10 @@ class Data:
                     for j, lattice in enumerate(lattice_list):
                         lattice_list[j] = float(lattice) / self.units[n2p2_units['length']]
 
-            with open(self.data_directory + file_cp2k_forces.format(i)) as f:
+            with open(join_paths(self.data_directory, file_cp2k_forces.format(i))) as f:
                 force_lines = f.readlines()
 
-            with open(self.data_directory + file_cp2k_out.format(i)) as f:
+            with open(join_paths(self.data_directory, file_cp2k_out.format(i))) as f:
                 energy = None
                 lines = f.readlines()
                 for j, line in enumerate(lines):
@@ -476,6 +550,8 @@ class Data:
 
             text += 'begin\n'
             text += 'comment config_index={0} units={1}\n'.format(i, n2p2_units)
+            # TODO allow for multiple structures (compatibility with active learning)
+            text += 'comment structure {}\n'.format(self.structure_names[0])
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[0], lattice_list[1], lattice_list[2])
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[3], lattice_list[4], lattice_list[5])
             text += 'lattice {0} {1} {2}\n'.format(lattice_list[6], lattice_list[7], lattice_list[8])
@@ -497,11 +573,11 @@ class Data:
             text += 'charge {}\n'.format(total_charge)
             text += 'end\n'
         
-        if isfile(self.data_directory + file_n2p2_input):
-            with open(self.data_directory + file_n2p2_input, 'a') as f:
+        if isfile(join_paths(self.data_directory, file_n2p2_input)):
+            with open(join_paths(self.data_directory, file_n2p2_input, 'a')) as f:
                 f.write(text)
         else:
-            with open(self.data_directory + file_n2p2_input, 'w') as f:
+            with open(join_paths(self.data_directory, file_n2p2_input), 'w') as f:
                 f.write(text)
 
 
@@ -589,14 +665,14 @@ class Data:
         generator.generate_radial_params(rule=rule, mode=mode, nb_param_pairs=n_pairs,
                                          r_lower=r_lower, r_upper=r_upper)
         
-        if isfile(self.data_directory + file_nn):
-            with open(self.data_directory + file_nn, 'a') as f:
+        if isfile(join_paths(self.data_directory, file_nn)):
+            with open(join_paths(self.data_directory, file_nn, 'a')) as f:
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
         else:
-            with open(self.data_directory + file_template) as f:
+            with open(join_paths(self.data_directory, file_template)) as f:
                 template_text = f.read()
-            with open(self.data_directory + file_nn, 'w') as f:
+            with open(join_paths(self.data_directory, file_nn), 'w') as f:
                 f.write(template_text)
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
@@ -605,6 +681,7 @@ class Data:
     def write_n2p2_scripts(self,
                            n_scaling_bins: int=500,
                            range_threshold: float=1e-4,
+                           nodes: int=1,
                            file_template: str='scripts/template.bat',
                            file_prune: str='scripts/n2p2_prune.bat',
                            file_train: str='scripts/n2p2_train.bat',
@@ -620,6 +697,8 @@ class Data:
         range_threshold: float, optional
             Symmetry functions with ranges below this will be "pruned" and not
             used in the training. Default is `1e-4`.
+        nodes: int, optional
+            Number of nodes to request for the batch job. Default is `1`.
         file_template: str, optional
             File location of template to use for batch scripts. Default is
             'scripts/template.bat'.
@@ -638,43 +717,46 @@ class Data:
         str
             Command to run the scaling and pruning batch script.
         """
-        with open(self.data_directory + file_template) as f:
+        with open(join_paths(self.data_directory, file_template)) as f:
             template_text = f.read()
         
         n2p2_directory = '/'.join(file_nn.split('/')[:-1])
-        output_text = template_text.format(job_name='n2p2_scale_prune')
-        output_text += '\cd {}'.format(self.data_directory + n2p2_directory)
-        output_text += '\nsrun {0}nnp-scaling {1}'.format(self.n2p2_bin,
-                                                          n_scaling_bins)
-        output_text += '\nsrun {0}nnp-prune range {1}'.format(self.n2p2_bin,
-                                                              range_threshold)
-        output_text += '\nmv {} {}.unpruned'.format(self.data_directory + file_nn)
-        output_text += '\nmv output-prune-range.nn {}'.format(self.data_directory + file_nn)
+        output_text = template_text.format(job_name='n2p2_scale_prune', nodes=nodes)
+        output_text += '\ncd {}'.format(join_paths(self.data_directory, n2p2_directory))
+        output_text += '\nsrun {0} {1}'.format(join_paths(self.n2p2_bin,
+                                                          'nnp-scaling'),
+                                               n_scaling_bins)
+        output_text += '\nsrun {0} range {1}'.format(join_paths(self.n2p2_bin,
+                                                                'nnp-prune'),
+                                                     range_threshold)
+        output_text += '\nmv {0} {0}.unpruned'.format(join_paths(self.data_directory, file_nn))
+        output_text += '\nmv output-prune-range.nn {}'.format(join_paths(self.data_directory, file_nn))
 
-        with open(self.data_directory + file_prune, 'w') as f:
+        with open(join_paths(self.data_directory, file_prune), 'w') as f:
             f.write(output_text)
 
-        glob(self.data_directory + n2p2_directory + 'weights.*.*.out')
-        glob(self.data_directory + n2p2_directory + 'weights.*.000000.out')
+        # glob(self.data_directory + n2p2_directory + 'weights.*.*.out')
+        # glob(self.data_directory + n2p2_directory + 'weights.*.000000.out')
         output_text = template_text.format(job_name='n2p2_train')
-        output_text += '\cd {}'.format(self.data_directory + n2p2_directory)
-        output_text += '\nsrun {0}nnp-train'.format(self.n2p2_bin)
+        output_text += '\cd {}'.format(join_paths(self.data_directory, n2p2_directory))
+        output_text += '\nsrun {0}'.format(join_paths(self.n2p2_bin, 'nnp-train'))
+        # TODO can't do this here as we don't have any files to list
         # Need to rename the weights files to use the network once trained
-        for atomic_number in self.elements.values():
-            # File names always have the element as 3 digits, e.g. Hydrogen is
-            # 001, so need to format accordingly
-            atomic_number_str = str(atomic_number)
-            atomic_number_str =  (3 - len(atomic_number_str)) * '0' + atomic_number_str
-            weights = glob(self.data_directory + n2p2_directory + 'weights.{}.*.out'.format(atomic_number_str))
-            weights.sort()
-            # TODO currently assume the most recent set of weights, implement some more complex criteria?
-            output_text += '\ncp {0} weights.{1}.data'.format(weights[-1], atomic_number_str)
+        # for atomic_number in self.elements.values():
+        #     # File names always have the element as 3 digits, e.g. Hydrogen is
+        #     # 001, so need to format accordingly
+        #     atomic_number_str = str(atomic_number)
+        #     atomic_number_str =  (3 - len(atomic_number_str)) * '0' + atomic_number_str
+        #     weights = glob(self.data_directory + n2p2_directory + 'weights.{}.*.out'.format(atomic_number_str))
+        #     weights.sort()
+        #     # TODO currently assume the most recent set of weights, implement some more complex criteria?
+        #     output_text += '\ncp {0} weights.{1}.data'.format(weights[-1], atomic_number_str)
 
-        with open(self.data_directory + file_train, 'w') as f:
+        with open(join_paths(self.data_directory, file_train), 'w') as f:
             f.write(output_text)
 
-        return 'sbatch {0}\nsbatch {1}\n'.format(self.data_directory + file_prune,
-                                                 self.data_directory + file_train)
+        # return 'sbatch {0}\nsbatch {1}\n'.format(self.data_directory + file_prune,
+        #                                          self.data_directory + file_train)
 
 
 
@@ -698,8 +780,11 @@ class Data:
         """
         format_in = 'extxyz'
         format_out = 'lammps-data'
-        atoms = read(self.data_directory + file_xyz, format=format_in)
-        write(self.data_directory + file_data, atoms, format=format_out, units=lammps_unit_style)
+        atoms = read(join_paths(self.data_directory, file_xyz), format=format_in)
+        write(join_paths(self.data_directory, file_data),
+              atoms,
+              format=format_out,
+              units=lammps_unit_style)
 
 
     def write_lammps_pair(self,
@@ -735,7 +820,7 @@ class Data:
         lammps_unit_style: str, optional
             The LAMMPS unit system to use. Default is 'electron'.
         """
-        with open(self.data_directory + file_template) as f:
+        with open(join_paths(self.data_directory, file_template)) as f:
             template_text = f.read()
         
         elements = self.elements.keys()
@@ -774,5 +859,5 @@ class Data:
         output_text = template_text.format(pair_commands=pair_style + '\n' + pair_coeff,
                                            lammps_unit_style=lammps_unit_style)
 
-        with open(self.data_directory + file_out, 'w') as f:
+        with open(join_paths(self.data_directory, file_out), 'w') as f:
             f.write(output_text)
