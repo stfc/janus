@@ -28,6 +28,7 @@ from ase.io import read, write
 from ase.units import create_units
 from file_manager import join_paths
 from sfparamgen import SymFuncParamGenerator
+from species import AllSpecies
 
 
 class Data:
@@ -36,9 +37,8 @@ class Data:
 
     Parameters
     ----------
-    elements : dict
-        Elements appearing in the system. Keys should be the chemical symbol
-        (`str`) and the value the atomic number (`int`).
+    elements : AllSpecies
+        Elements appearing in the system.
     data_directory : str
         All file names passed to other function will be appended to
         `data_directory`
@@ -48,7 +48,7 @@ class Data:
 
     def __init__(
         self,
-        elements: dict,
+        elements: AllSpecies,
         data_directory: str,
         n2p2_bin: str,
         structure_names: List[str],
@@ -709,7 +709,7 @@ class Data:
             zetas = []
 
         generator = SymFuncParamGenerator(
-            elements=self.elements.keys(), r_cutoff=r_cutoff
+            elements=self.elements.element_list, r_cutoff=r_cutoff
         )
         generator.symfunc_type = type
         generator.zetas = zetas
@@ -891,7 +891,7 @@ class Data:
         with open(join_paths(self.data_directory, file_template)) as f:
             template_text = f.read()
 
-        elements = self.elements.keys()
+        elements = self.elements.element_list
         elements.sort()
         elements_map = '"'
         for i, element in enumerate(elements):

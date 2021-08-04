@@ -1,12 +1,14 @@
 from copy import deepcopy
-from os import listdir
+from os import listdir, mkdir
 from os.path import isdir, isfile
+from shutil import copy
 import subprocess  # noqa: S404 TODO remove references if we can
-from typing import Dict, List
+from typing import List, Union
 import warnings
 
 from data import Data
 import numpy as np
+from species import AllStructures, Structure
 
 # TODO combine all unit conversions
 # Set a float to define the conversion factor from Bohr radius to Angstrom.
@@ -24,57 +26,63 @@ class ActiveLearning:
         self,
         data_controller: Data,
         n2p2_directories: List[str],
-        integrators: List[str] = ["npt"],
-        pressures: List[float] = [1.0],
+        structures: List[Structure],
+        integrators: Union[str, List[str]] = "npt",
+        pressures: Union[float, List[float]] = 1.0,
         N_steps: int = 200000,
         barostat_option: str = "tri",
         atom_style: str = "atomic",
         dump_lammpstrj: int = 200,
-        min_timestep_separation_interpolation: List[int] = [200],
-        element_types: List[str] = ["H", "C", "O"],
-        masses: List[float] = [1.00794, 12.011, 15.99491462],
+        # min_timestep_separation_interpolation: List[int] = [200],
         max_len_joblist: int = 0,
         comment_name_keyword: str = "comment structure",
-        structure_selection: List[List[int]] = [[0, 1]],
+        # structure_selection: List[List[int]] = [[0, 1]],
         timestep: float = 0.0005,
         runner_cutoff: float = 12.0,
         periodic: bool = True,
         # TODO combine with other element specification, create a class for it?
-        d_mins: List[Dict[str, List[float]]] = [
-            {"H": [0.8, 0.8, 0.8], "C": [0.8, 0.8], "O": [0.8]}
-        ],
-        min_timestep_separation_extrapolation: List[int] = [20],
-        timestep_separation_interpolation_checks: List[int] = [10000],
-        delta_E: List[float] = [0.0001],
-        delta_F: List[float] = [0.01],
-        all_extrapolated_structures: List[bool] = [True],
-        exceptions: list = [None],
-        max_extrapolated_structures: List[int] = [50],
-        max_interpolated_structures_per_simulation: List[int] = [4],
-        tolerances: List[float] = [
-            0.001,
-            0.01,
-            0.025,
-            0.05,
-            0.075,
-            0.1,
-            0.15,
-            0.2,
-            0.25,
-            0.3,
-            0.4,
-            0.5,
-            0.6,
-            0.7,
-            0.8,
-            0.9,
-            1.0,
-        ],
+        # d_mins: List[Dict[str, List[float]]] = [
+        #     {"H": [0.8, 0.8, 0.8], "C": [0.8, 0.8], "O": [0.8]}
+        # ],
+        # min_timestep_separation_extrapolation: List[int] = [20],
+        # timestep_separation_interpolation_checks: List[int] = [10000],
+        # delta_E: List[float] = [0.0001],
+        # delta_F: List[float] = [0.01],
+        # all_extrapolated_structures: List[bool] = [True],
+        # exceptions: list = [None],
+        # max_extrapolated_structures: List[int] = [50],
+        # max_interpolated_structures_per_simulation: List[int] = [4],
+        tolerances: List[float] = None,
         initial_tolerance: int = 5,
     ):
         """ """
 
-        self.structure_names = data_controller.structure_names
+        if tolerances is None:
+            tolerances = [
+                0.001,
+                0.01,
+                0.025,
+                0.05,
+                0.075,
+                0.1,
+                0.15,
+                0.2,
+                0.25,
+                0.3,
+                0.4,
+                0.5,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+            ]
+        if isinstance(integrators, str):
+            integrators = list(integrators)
+        if isinstance(pressures, float):
+            pressures = list(pressures)
+
+        self._validate_timesteps(timestep, N_steps, structures)
 
         for integrator in integrators:
             if integrator != "nve" and integrator != "nvt" and integrator != "npt":
@@ -117,28 +125,17 @@ class ActiveLearning:
             )
         self.N_steps = N_steps
 
-        if dump_lammpstrj < np.array(min_timestep_separation_interpolation).min():
+        if any(dump_lammpstrj < [s.min_t_separation_interpolation for s in structures]):
             msg = (
                 "The extrapolation free structures would be stored only every {0}th time step, "
-                "but the minimum time step separation of interpolated structures is set to {1} "
+                "but the minimum time step separation of interpolated structures are set to {1} "
                 "time steps.".format(
                     dump_lammpstrj,
-                    np.array(min_timestep_separation_interpolation).min(),
+                    [s.min_t_separation_interpolation for s in structures],
                 )
             )
             raise ValueError(msg)
         self.dump_lammpstrj = dump_lammpstrj
-        self.min_timestep_separation_interpolation = (
-            min_timestep_separation_interpolation
-        )
-
-        if len(element_types) != len(masses):
-            msg = (
-                "The number of given element types is not equal to the number of given masses "
-                "({0}!={1}).".format(len(element_types), len(masses))
-            )
-            raise ValueError(msg)
-        self.masses = masses
 
         if not max_len_joblist >= 0:
             msg = (
@@ -148,8 +145,10 @@ class ActiveLearning:
             raise ValueError(msg)
         self.max_len_joblist = max_len_joblist
 
-        if (comment_name_keyword is None and self.structure_names is not None) or (
-            comment_name_keyword is not None and self.structure_names is None
+        if (
+            comment_name_keyword is None and [s.name for s in structures] is not [None]
+        ) or (
+            comment_name_keyword is not None and [s.name for s in structures] is [None]
         ):
             msg = (
                 "If comment_name_keyword or structure_names is set to None the other one has to"
@@ -158,195 +157,12 @@ class ActiveLearning:
             raise ValueError(msg)
         self.comment_name_keyword = comment_name_keyword
 
-        if self.structure_names is None:
-            if not (
-                1
-                == len(d_mins)
-                == len(min_timestep_separation_extrapolation)
-                == len(timestep_separation_interpolation_checks)
-                == len(min_timestep_separation_interpolation)
-                == len(delta_E)
-                == len(delta_F)
-                == len(structure_selection)
-                == len(all_extrapolated_structures)
-                == len(exceptions)
-            ):
-                msg = (
-                    "As no structure names are given, exactly one setting for "
-                    "structure_selection is required."
-                )
-                raise ValueError(msg)
-            if structure_selection[0][0] < 0 or structure_selection[0][1] < 1:
-                raise ValueError(
-                    "The settings of structure_selection are not "
-                    "reasonable (every {0}th structure starting "
-                    "with the {1}th one)."
-                    "".format(structure_selection[0][1], structure_selection[0][0])
-                )
-        else:
-            if isinstance(self.structure_names, list):
-                for structure_name in self.structure_names:
-                    if structure_name is None:
-                        raise TypeError(
-                            "Individual structure names cannot be set to None. You have to specify"
-                            " an array of structure names or use structure_names = None."
-                        )
-            else:
+        if len(structures) > 1:
+            if any(s.name is None for s in structures):
                 raise TypeError(
-                    "`structure_names` has to be set to None or a "
-                    "`list` of structure names, but was an "
-                    "instance of `{}`.".format(type(self.structure_names))
+                    "Individual structure names cannot be set to None. You have to specify"
+                    " an array of structure names or use structure_names = None."
                 )
-
-            n_structure_names = len(self.structure_names)
-            if len(structure_selection) == 1:
-                if structure_selection[0][0] < 0 or structure_selection[0][1] < 1:
-                    raise ValueError(
-                        "The settings of structure_selection are not reasonable (every {0}th "
-                        "structure starting with the {1}th one).".format(
-                            structure_selection[0][1], structure_selection[0][0]
-                        )
-                    )
-                structure_selection = [
-                    deepcopy(structure_selection[0]) for i in range(n_structure_names)
-                ]
-            elif len(structure_selection) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for structure_selection are not given for "
-                    "every structure name or there are too many settings for the given structure "
-                    "names. Also there is not given one value which could be used for all"
-                    "structures names."
-                )
-            else:
-                for i in range(n_structure_names):
-                    if structure_selection[i][0] < 0 or structure_selection[i][1] < 1:
-                        raise ValueError(
-                            "The settings of structure_selection are not reasonable (every {0}th "
-                            "structure starting with the {1}th one).".format(
-                                structure_selection[i][1], structure_selection[i][0]
-                            )
-                        )
-
-            if len(d_mins) == 1:
-                d_mins *= n_structure_names
-            elif len(d_mins) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for d_mins are not given for every "
-                    "structure name or there are too many settings for the given structure names. "
-                    "Also there is not given one value which could be used for all structures "
-                    "names."
-                )
-
-            if len(min_timestep_separation_extrapolation) == 1:
-                min_timestep_separation_extrapolation *= n_structure_names
-            elif len(min_timestep_separation_extrapolation) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for min_timestep_separation_extrapolation "
-                    "are not given for every structure name or there are too many settings for the"
-                    " given structure names. Also there is not given one value which could be used"
-                    " for all structures names."
-                )
-
-            if len(timestep_separation_interpolation_checks) == 1:
-                timestep_separation_interpolation_checks *= n_structure_names
-            elif len(timestep_separation_interpolation_checks) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for "
-                    "timestep_separation_interpolation_checks are not given for every structure "
-                    "name or there are too many settings for the given structure names. Also "
-                    "there is not given one value which could be used for all structures names."
-                )
-
-            if len(min_timestep_separation_interpolation) == 1:
-                min_timestep_separation_interpolation *= n_structure_names
-            elif len(min_timestep_separation_interpolation) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for min_timestep_separation_interpolation "
-                    "are not given for every structure name or there are too many settings for the"
-                    " given structure names. Also there is not given one value which could be used"
-                    " for all structures names."
-                )
-
-            if len(delta_E) == 1:
-                delta_E *= n_structure_names
-            elif len(delta_E) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for delta_E are not given for every "
-                    "structure name or there are too many settings for the given structure names. "
-                    "Also there is not given one value which could be used for all structures "
-                    "names."
-                )
-
-            if len(delta_F) == 1:
-                delta_F *= n_structure_names
-            elif len(delta_F) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for delta_F are not given for every "
-                    "structure name or there are too many settings for the given structure names. "
-                    "Also there is not given one value which could be used for all structures "
-                    "names."
-                )
-
-            if len(all_extrapolated_structures) == 1:
-                all_extrapolated_structures *= n_structure_names
-            elif len(all_extrapolated_structures) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for all_extrapolated_structures are not "
-                    "given for every structure name or there are too many settings for the given "
-                    "structure names. Also there is not given one value which could be used for "
-                    "all structures names."
-                )
-
-            if len(max_extrapolated_structures) == 1:
-                max_extrapolated_structures *= n_structure_names
-            elif len(max_extrapolated_structures) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for max_extrapolated_structures are not "
-                    "given for every structure name or there are too many settings for the given "
-                    "structure names. Also there is not given one value which could be used for "
-                    "all structures names."
-                )
-
-            if len(max_interpolated_structures_per_simulation) == 1:
-                max_interpolated_structures_per_simulation *= n_structure_names
-            elif len(max_interpolated_structures_per_simulation) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for "
-                    "max_interpolated_structures_per_simulation are not given for every structure "
-                    "name or there are too many settings for the given structure names. Also there"
-                    " is not given one value which could be used for all structures names."
-                )
-
-            if len(exceptions) == 1:
-                exceptions *= n_structure_names
-            elif len(exceptions) != n_structure_names:
-                raise ValueError(
-                    "Structure name dependent settings for exceptions are not given for every "
-                    "structure name or there are too many settings for the given structure names. "
-                    "Also there is not given one value which could be used for all structures "
-                    "names."
-                )
-
-            if not (np.array(max_extrapolated_structures) >= 0).all():
-                raise ValueError(
-                    "The value of max_extrapolated_structures has to be an integer equal or higher "
-                    "than 0."
-                )
-
-        if (np.array(timestep_separation_interpolation_checks) * 5 >= N_steps).any():
-            raise ValueError(
-                "The time step separation between two interpolation checks has to be smaller than a"
-                " fifth of the number of MD steps."
-            )
-
-        if (
-            np.array(timestep_separation_interpolation_checks)
-            < np.array(min_timestep_separation_interpolation)
-        ).any():
-            raise ValueError(
-                "The time step separation between two interpolation checks is set to a smaller "
-                "value than the minimal time step separation between two interpolated structures."
-            )
 
         if initial_tolerance <= 1:
             raise ValueError("The value of initial_tolerance has to be higher than 1.")
@@ -357,36 +173,15 @@ class ActiveLearning:
                 "error."
             )
 
-        if timestep > 0.01:
-            print("WARNING: Very large timestep of {0} ps.".format(timestep))
-        self.timestep = timestep
-
         self.active_learning_directory = data_controller.active_learning_directory
         self.n2p2_directories = n2p2_directories
+        self.all_structures = AllStructures(*structures)
+        self.element_types = self.all_structures.element_list
+        self.masses = self.all_structures.mass_list
         self.runner_cutoff = runner_cutoff
         self.periodic = periodic
-        self.structure_selection = structure_selection
-        self.delta_E = delta_E
-        self.delta_F = delta_F
-        self.all_extrapolated_structures = all_extrapolated_structures
-        self.max_extrapolated_structures = max_extrapolated_structures
-        self.max_interpolated_structures_per_simulation = (
-            max_interpolated_structures_per_simulation
-        )
-        self.timestep_separation_interpolation_checks = (
-            timestep_separation_interpolation_checks
-        )
-        self.exceptions = exceptions
         self.tolerances = tolerances
-        self.min_timestep_separation_extrapolation = (
-            min_timestep_separation_extrapolation
-        )
-        self.min_timestep_separation_interpolation = (
-            min_timestep_separation_interpolation
-        )
         self.initial_tolerance = initial_tolerance
-        self.element_types = element_types
-        self.d_mins = d_mins
 
         self.lattices = []
         self.elements = []
@@ -395,6 +190,38 @@ class ActiveLearning:
         self.names = []
         self.positions = []
         self.selection = None
+
+    def _validate_timesteps(
+        self, timestep: float, N_steps: int, structures: List[Structure]
+    ):
+        """
+        # TODO print info if we use the defaults?
+        """
+        if timestep > 0.01:
+            print("WARNING: Very large timestep of {0} ps.".format(timestep))
+        self.timestep = timestep
+        self.N_steps = N_steps
+
+        for s in structures:
+            if s.min_t_separation_extrapolation is None:
+                s.min_t_separation_extrapolation = int(0.01 / timestep)
+
+            if s.min_t_separation_interpolation is None:
+                s.min_t_separation_interpolation = int(0.1 / timestep)
+
+            if s.t_separation_interpolation_checks is None:
+                s.t_separation_interpolation_checks = int(5.0 / timestep)
+
+            if s.t_separation_interpolation_checks * 5 < N_steps:
+                raise ValueError(
+                    "`t_separation_interpolation_checks` must be equal to or greater than "
+                    "`N_steps` for all structures"
+                )
+            if s.t_separation_interpolation_checks >= s.min_t_separation_interpolation:
+                raise ValueError(
+                    "`t_separation_interpolation_checks` must be less than "
+                    "`min_t_separation_interpolation` for all structures"
+                )
 
     def read_input_data(
         self, comment_name_separator: str = "-", comment_name_index: int = 2
@@ -653,7 +480,7 @@ class ActiveLearning:
                 "Path mode1 already exists. Please remove old directory first if you would like to"
                 " recreate it."
             )
-        subprocess.Popen("mkdir " + mode1_directory, shell=True).wait()
+        mkdir(mode1_directory)
 
         # TODO allow non-default arguments
         names_all, lattices_all, elements_all, xyzs_all, qs_all = self.read_input_data()
@@ -662,17 +489,14 @@ class ActiveLearning:
             joblist_name = self.active_learning_directory + "/joblist_mode1.dat"
             with open(joblist_name, "w") as f:
                 f.write("")
-        if self.structure_names is None:
-            structure_names = [None]
-        else:
-            structure_names = self.structure_names
+
         pressures_npt = self.pressures
         n_simulations = 0
         n_previous_simulations = 0
         counter = 0
 
-        for i in range(len(structure_names)):
-            if structure_names[i] is None:
+        for name, structure in self.all_structures.structure_dict.items():
+            if name is None:
                 names = names_all
                 lattices = lattices_all
                 elements = elements_all
@@ -680,25 +504,23 @@ class ActiveLearning:
                 qs = qs_all
             else:
                 try:
-                    names = names_all[names_all == structure_names[i]]
+                    names = names_all[names_all == name]
                 except IndexError as e:
                     raise IndexError(
                         "structure_names: {0}\nnames_all: {1}".format(
-                            structure_names, names_all
+                            self.all_structures.structure_dict.keys(), names_all
                         )
                     ) from e
-                lattices = lattices_all[names_all == structure_names[i]]
-                elements = elements_all[names_all == structure_names[i]]
-                xyzs = xyzs_all[names_all == structure_names[i]]
-                qs = qs_all[names_all == structure_names[i]]
-                print("Structure name: {0}".format(structure_names[i]))
-            self.structure_selection[i][0] = (
-                self.structure_selection[i][0] % self.structure_selection[i][1]
-            )
+                lattices = lattices_all[names_all == name]
+                elements = elements_all[names_all == name]
+                xyzs = xyzs_all[names_all == name]
+                qs = qs_all[names_all == name]
+                print("Structure name: {0}".format(name))
+            structure.selection[0] = structure.selection[0] % structure.selection[1]
             print(
                 "Starting from the {0}th structure every {1}th structure of the "
                 "input.data file is used.".format(
-                    self.structure_selection[i][0], self.structure_selection[i][1]
+                    structure.selection[0], structure.selection[1]
                 )
             )
             n_structures = len(lattices)
@@ -711,7 +533,7 @@ class ActiveLearning:
                     / len(self.integrators)
                     / len(temperatures)
                     / ((len(self.pressures) - 1) * n_npt / len(self.integrators) + 1)
-                    / self.structure_selection[i][1]
+                    / structure.selection[1]
                 ),
             )
             print(
@@ -730,31 +552,28 @@ class ActiveLearning:
                             else:
                                 pressures = pressures_npt
                             for pressure in pressures:
-                                if (
-                                    n_structures // self.structure_selection[i][1]
-                                    <= counter
-                                ):
+                                if n_structures // structure.selection[1] <= counter:
                                     n_simulations += counter
                                     counter = 0
                                     print(
                                         "WARNING: The structures of the input.data file are used "
                                         "more than once."
                                     )
-                                    if self.structure_selection[i][1] > 1:
-                                        self.structure_selection[i][0] = (
-                                            self.structure_selection[i][0] + 1
-                                        ) % self.structure_selection[i][1]
+                                    if structure.selection[1] > 1:
+                                        structure.selection[0] = (
+                                            structure.selection[0] + 1
+                                        ) % structure.selection[1]
                                         print(
                                             "Try to avoid this by start from the {0}th structure "
                                             "and using again every {1}th structure."
                                             "".format(
-                                                self.structure_selection[i][0],
-                                                self.structure_selection[i][1],
+                                                structure.selection[0],
+                                                structure.selection[1],
                                             )
                                         )
                                 selection = (
-                                    counter * self.structure_selection[i][1]
-                                    + self.structure_selection[i][0]
+                                    counter * structure.selection[1]
+                                    + structure.selection[0]
                                 )
                                 path = ""
                                 if self.comment_name_keyword is not None:
@@ -798,9 +617,7 @@ class ActiveLearning:
                                             mode1_path
                                         )
                                     )
-                                subprocess.Popen(
-                                    "mkdir " + mode1_path, shell=True
-                                ).wait()
+                                mkdir(mode1_path)
                                 self.write_input_lammps(
                                     mode1_path, seed, temperature, pressure, integrator
                                 )
@@ -811,37 +628,23 @@ class ActiveLearning:
                                     xyzs[selection],
                                     qs[selection],
                                 )
-                                subprocess.Popen(
-                                    "mkdir " + mode1_path + "/RuNNer", shell=True
-                                ).wait()
+                                mkdir(mode1_path + "/RuNNer")
                                 # TODO only copy the minimum needed since we're re-using the n2p2
                                 # directory outright
                                 # TODO handle the absence of weights.XXX.data files gracefully
                                 # subprocess.Popen('cp -i ' + self.n2p2_directories[j] + '/* '+
                                 # mode1_path +'/RuNNer', shell=True)
-                                subprocess.Popen(
-                                    "cp -i "
-                                    + self.n2p2_directories[j]
-                                    + "/input.nn "
-                                    + mode1_path
-                                    + "/RuNNer/input.nn",
-                                    shell=True,
+                                copy(
+                                    self.n2p2_directories[j] + "/input.nn",
+                                    mode1_path + "/RuNNer/input.nn"
                                 )
-                                subprocess.Popen(
-                                    "cp -i "
-                                    + self.n2p2_directories[j]
-                                    + "/scaling.data "
-                                    + mode1_path
-                                    + "/RuNNer/scaling.data",
-                                    shell=True,
+                                copy(
+                                    self.n2p2_directories[j] + "/scaling.data",
+                                    mode1_path + "/RuNNer/scaling.data"
                                 )
-                                subprocess.Popen(
-                                    "cp -i "
-                                    + self.n2p2_directories[j]
-                                    + "/weights.*.data "
-                                    + mode1_path
-                                    + "/RuNNer",
-                                    shell=True,
+                                copy(
+                                    self.n2p2_directories[j] + "/weights.*.data",
+                                    mode1_path + "/RuNNer"
                                 )
                                 if (
                                     self.max_len_joblist != 0
@@ -865,7 +668,7 @@ class ActiveLearning:
                                 seed += 1
                                 counter += 1
 
-            if structure_names[i] is not None:
+            if name is not None:
                 n_simulations += counter
                 counter = 0
                 print(
@@ -875,7 +678,7 @@ class ActiveLearning:
                 )
                 n_previous_simulations = n_simulations
 
-        if structure_names[0] is None:
+        if self.all_structures.structure_dict.keys()[0] is None:
             n_simulations += counter
             print("Input was generated for {0} simulations.".format(n_simulations))
 
@@ -1243,16 +1046,16 @@ class ActiveLearning:
         extrapolation_timesteps,
         extrapolation_values,
         extrapolation_data,
-        index: int,
+        structure: Structure,
     ):
         """ """
         min_fraction = 0.001
         n_tolerances = len(self.tolerances)
         n_small = 2
         small = n_small - 1
-        structure_extrapolation = self.min_timestep_separation_extrapolation[index]
-        structure_interpolation = self.min_timestep_separation_interpolation[index]
-        structure_checks = self.timestep_separation_interpolation_checks[index]
+        structure_extrapolation = structure.min_t_separation_extrapolation
+        structure_interpolation = structure.min_t_separation_interpolation
+        structure_checks = structure.t_separation_interpolation_checks
         if len(
             extrapolation_timesteps[:, small][
                 extrapolation_timesteps[:, small] >= structure_extrapolation
@@ -1774,25 +1577,28 @@ class ActiveLearning:
 
         return True, -1
 
-    def _check_structure(self, lattice, element, position, d_mins, path, timestep):
+    def _check_structure(
+        self, lattice, element, position, path, timestep, structure: Structure
+    ):
         """ """
-        N = len(self.element_types)
-        for i in range(N):
-            for j in range(i, N):
+        for i, element_i in enumerate(self.element_types):
+            for j, element_j in enumerate(self.element_types[i:]):
                 accepted, d = self._check_nearest_neighbours(
                     lattice,
-                    position[element == self.element_types[i]],
-                    position[element == self.element_types[j]],
+                    position[element == element_i],
+                    position[element == element_j],
                     i == j,
-                    d_mins[self.element_types[i]][j - i],
+                    structure.all_species.get_species(element_i).min_separation[
+                        element_j
+                    ],
                 )
                 if not accepted:
                     print(
                         "Too small interatomic distance in {0}_s{1}: {2}-{3}: {4} Ang".format(
                             path,
                             timestep,
-                            self.element_types[i],
-                            self.element_types[j],
+                            element_i,
+                            element_j,
                             d,
                         )
                     )
@@ -1800,11 +1606,11 @@ class ActiveLearning:
 
         return True
 
-    def _read_structure(self, data, path, timestep, d_mins):
+    def _read_structure(self, data, path, timestep, structure: Structure):
         """ """
         lattice, element, position, charge = self._get_structure(data)
         accepted = self._check_structure(
-            lattice, element, position, d_mins, path, timestep
+            lattice, element, position, path, timestep, structure
         )
         if accepted:
             self.names.append(path + "_s" + str(timestep))
@@ -1825,11 +1631,10 @@ class ActiveLearning:
         tolerance_index,
         extrapolation_statistic,
         element2index,
-        index: int,
+        structure: Structure,
     ):
         """ """
-        structure_extrapolation = self.min_timestep_separation_extrapolation[index]
-        d_min = self.d_mins[index]
+        structure_extrapolation = structure.min_t_separation_extrapolation
         with open(
             "{0}/mode1/{1}/structure.lammpstrj".format(
                 self.active_learning_directory, path
@@ -1850,7 +1655,7 @@ class ActiveLearning:
                         start -= 1
                     end = start + extrapolation_data[3]
                     accepted = self._read_structure(
-                        data[start:end], path, selected_timestep[i], d_mins=d_min
+                        data[start:end], path, selected_timestep[i], structure
                     )
                     if accepted:
                         self.statistics.append([])
@@ -1866,7 +1671,7 @@ class ActiveLearning:
                 start -= 1
             end = start + extrapolation_data[3]
             accepted = self._read_structure(
-                data[start:end], path, selected_timestep[-2], d_mins=d_min
+                data[start:end], path, selected_timestep[-2], structure
             )
             if accepted:
                 extrapolation_statistic[small] = np.array(
@@ -1927,7 +1732,7 @@ class ActiveLearning:
                     data[start:end],
                     path,
                     selected_timestep[-1][tolerance_index],
-                    d_mins=d_min,
+                    structure,
                 )
             else:
                 tolerance_index = -1
@@ -2279,6 +2084,7 @@ class ActiveLearning:
         selection,
         max_interpolated_structures_per_simulation,
         structure_name_index,
+        t_separation_interpolation_checks,
         steps,
         indices,
     ):
@@ -2286,16 +2092,13 @@ class ActiveLearning:
         steps = np.array(steps)
         steps_difference = steps[1:] - steps[:-1]
         min_separation = steps_difference.min()
-        if (
-            min_separation
-            < self.timestep_separation_interpolation_checks[structure_name_index]
-        ):
+        if min_separation < t_separation_interpolation_checks[structure_name_index]:
             selection = selection[selection != indices[1]]
         else:
             n_steps = len(steps)
             min_timestep_separation_interpolation_checks = (
                 n_steps // max_interpolated_structures_per_simulation + 1
-            ) * self.timestep_separation_interpolation_checks[structure_name_index]
+            ) * t_separation_interpolation_checks[structure_name_index]
             j = 1
             while j < n_steps - 1:
                 if steps_difference[j] <= min_timestep_separation_interpolation_checks:
@@ -2305,79 +2108,71 @@ class ActiveLearning:
 
         return selection
 
-    def _improve_selection(
-        self,
-        selection,
-        statistics,
-        names,
-        all_extrapolated_structures,
-        max_extrapolated_structures,
-        max_interpolated_structures_per_simulation,
-        exceptions,
-        structure_name_indices,
-    ):
+    def _improve_selection(self, selection, statistics, names):
         """ """
         current_name = None
         steps = []
         indices = []
-        for i in range(len(names)):
+        for i, name in enumerate(names):
+            structure = self.all_structures.structure_dict[name]
             if list(statistics[i]):
-                if all_extrapolated_structures[structure_name_indices[i]]:
+                if self.all_structures.structure_dict[name].all_extrapolated_structures:
                     selection = np.append(selection, i)
             elif i in selection:
-                name = names[i].split("_s")
-                if current_name == name[0]:
-                    steps.append(int(name[1]))
+                name_split = name.split("_s")
+                if current_name == name_split[0]:
+                    steps.append(int(name_split[1]))
                     indices.append(i)
                 else:
                     if len(steps) > 2:
                         selection = self._reduce_selection(
                             selection,
-                            max_interpolated_structures_per_simulation[
-                                structure_name_indices[indices[0]]
-                            ],
-                            structure_name_indices[indices[0]],
-                            self.timestep_separation_interpolation_checks,
+                            structure.max_interpolated_structures_per_simulation,
+                            name,
+                            structure.t_separation_interpolation_checks,
                             steps,
                             indices,
                         )
-                    current_name = name[0]
-                    steps = [int(name[1])]
+                    current_name = name_split[0]
+                    steps = [int(name_split[1])]
                     indices = [i]
         if len(steps) > 2:
             selection = self._reduce_selection(
                 selection,
-                max_interpolated_structures_per_simulation[
-                    structure_name_indices[indices[0]]
-                ],
-                structure_name_indices[indices[0]],
-                self.timestep_separation_interpolation_checks,
+                structure.max_interpolated_structures_per_simulation,
+                names[0],
+                structure.t_separation_interpolation_checks,
                 steps,
                 indices,
             )
         selection = np.unique(selection)
 
-        if any(max_extrapolated_structures) or any(exceptions):
+        max_extrapolated_structures = any(
+            s.max_extrapolated_structures
+            for s in self.all_structures.structure_dict.values()
+        )
+        exceptions = any(
+            s.exceptions for s in self.all_structures.structure_dict.values()
+        )
+        if max_extrapolated_structures or exceptions:
             statistics_reduced = statistics[selection]
-            structure_name_indices_reduced = structure_name_indices[selection]
-            structure_name_indices_reduced = np.array(
+            names_reduced = names[selection]
+            names_reduced = np.array(
                 [
-                    structure_name_indices_reduced[i]
-                    for i in range(len(structure_name_indices_reduced))
+                    names_reduced[i]
+                    for i in range(len(names_reduced))
                     if list(statistics_reduced[i])
                     and statistics_reduced[i][0] == "small"
                 ]
             ).astype(str)
-            if list(structure_name_indices_reduced):
+            if list(names_reduced):
                 statistics_reduced = np.array(
                     [i for i in statistics_reduced if list(i) and i[0] == "small"]
                 )
                 statistics_reduced = np.core.defchararray.add(
                     np.core.defchararray.add(
                         np.core.defchararray.add(
-                            np.core.defchararray.add(
-                                structure_name_indices_reduced, ";"
-                            ),
+                            np.core.defchararray.add(names_reduced, ";"),
                             statistics_reduced[:, 1],
                         ),
                         ";",
@@ -2449,7 +2244,7 @@ class ActiveLearning:
 
                 exception_list_keys = exception_list.keys()
                 if list(exception_list_keys):
-                    structure_name_indices_reduced = structure_name_indices[selection]
+                    names_reduced = names_reduced[selection]
                     statistics_reduced = np.array(list(statistics[selection]))
                     for i in range(len(selection)):
                         if (
@@ -2457,7 +2252,7 @@ class ActiveLearning:
                             and statistics_reduced[i][0] == "small"
                         ):
                             key = (
-                                str(structure_name_indices_reduced[i])
+                                str(names_reduced[i])
                                 + ";"
                                 + statistics_reduced[i][1]
                                 + ";"
@@ -2475,8 +2270,9 @@ class ActiveLearning:
 
         return selection
 
-    def _print_statistics(self, selection, statistics, names, structure_names):
+    def _print_statistics(self, selection, statistics, names):
         """ """
+        structure_names = self.all_structures.structure_dict.keys()
         if structure_names is not None and len(structure_names) > 1:
             for structure_name in structure_names:
                 print("Structure: {0}".format(structure_name))
@@ -2583,16 +2379,12 @@ class ActiveLearning:
         self.statistics = []
         self.names = []
         self.positions = []
-        if self.structure_names is None:
-            n_structure_names = 1
-        else:
-            n_structure_names = len(self.structure_names)
-        for i in range(n_structure_names):
-            if self.structure_names is None:
+        for name, structure in self.all_structures.structure_dict.items():
+            if structure.name is None:
                 paths = self._get_paths("")
             else:
-                print("Structure: {0}".format(self.structure_names[i]))
-                paths = self._get_paths(self.structure_names[i])
+                print("Structure: {0}".format(name))
+                paths = self._get_paths(name)
             extrapolation_data = []
             extrapolation_timesteps = []
             extrapolation_values = []
@@ -2619,7 +2411,7 @@ class ActiveLearning:
                 extrapolation_timesteps,
                 extrapolation_values,
                 extrapolation_data,
-                index=i,
+                structure,
             )
             element2index = {}
             for j in range(len(self.element_types)):
@@ -2634,7 +2426,7 @@ class ActiveLearning:
                     tolerance_indices[j],
                     extrapolation_statistics[j],
                     element2index,
-                    index=i,
+                    structure,
                 )
             self._print_reliability(
                 extrapolation_timesteps, smalls, tolerance_indices, paths
@@ -2662,15 +2454,7 @@ class ActiveLearning:
             raise IOError("`mode2` directory not found.")
 
         self._print_performance(len(self.names))
-        if self.structure_names is None:
-            structure_name_indices = np.zeros(len(self.names), dtype=int)
-        else:
-            # TODO This is tricky, because name has _ in it but so does my comment structure name
-            # structure_name_indices = np.array([self.structure_names.index(
-            #   name.split('_')[0]+'_'+name.split('_')[1]) for name in self.names])
-            structure_name_indices = np.array(
-                [self.structure_names.index(name.split("_")[0]) for name in self.names]
-            )
+
         energies_1 = self._read_energies(
             self.active_learning_directory + "/mode2/HDNNP_1/trainpoints.000000.out"
         )
@@ -2683,31 +2467,24 @@ class ActiveLearning:
         forces_2 = self._read_forces(
             self.active_learning_directory + "/mode2/HDNNP_2/trainforces.000000.out"
         )
-        dE = np.array(
-            [
-                self.delta_E[structure_name_index]
-                for structure_name_index in structure_name_indices
-            ]
-        )
-        dF = np.array(
-            [
-                self.delta_F[structure_name_indices[i]]
-                for i in range(len(structure_name_indices))
-                for j in range(3 * len(self.positions[i]))
-            ]
-        )
+
+        dE = []
+        dF = []
+        for i, name in enumerate(self.names):
+            for structure_name, structure in self.all_structures.structure_dict.items():
+                if structure_name == name:
+                    dE.append(structure.delta_E)
+                    for _ in range(3 * len(self.positions[i])):
+                        dF.append(structure.delta_F)
+                    break
+        dE = np.array(dE)
+        dF = np.array(dF)
+
         energies = energies_1[np.absolute(energies_2[:, 1] - energies_1[:, 1]) > dE, 0]
         forces = forces_1[np.absolute(forces_2[:, 1] - forces_1[:, 1]) > dF, 0]
         self.selection = np.unique(np.concatenate((energies, forces)).astype(int))
         self.selection = self._improve_selection(
-            self.selection,
-            self.statistics,
-            self.names,
-            self.all_extrapolated_structures,
-            self.max_extrapolated_structures,
-            self.max_interpolated_structures_per_simulation,
-            self.exceptions,
-            structure_name_indices,
+            self.selection, self.statistics, self.names
         )
         self._write_data(
             self.names[self.selection],
@@ -2718,9 +2495,7 @@ class ActiveLearning:
             file_name=self.active_learning_directory + "/input.data-add",
             mode="w",
         )
-        self._print_statistics(
-            self.selection, self.statistics, self.names, self.structure_names
-        )
+        self._print_statistics(self.selection, self.statistics, self.names)
 
     def combine_data_add(self):
         """ """
