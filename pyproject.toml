@@ -5,12 +5,13 @@ description = ""
 authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = "^3.6.2"
+python = ">=3.7.0,<4"
 ase = "^3.22.0"
+ipykernel = "^6.0.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
-coverage = {extras = ["toml"], version = "^6.0b1"}
+coverage = {extras = ["toml"], version = "5.5"}
 pytest-cov = "^2.12.1"
 nox = "^2021.6.12"
 black = "^21.7b0"

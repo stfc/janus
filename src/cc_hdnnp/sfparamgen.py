@@ -7,7 +7,7 @@ https://github.com/flobuch/n2p2/blob/symfunc_paramgen/tools/python/symfunc_param
 import inspect
 import itertools
 import sys
-from typing import Optional, TextIO
+from typing import List, Optional, TextIO
 import warnings
 
 import numpy as np
@@ -57,12 +57,10 @@ class SymFuncParamGenerator:
     )
     lambdas = np.array([-1.0, 1.0])
 
-    def __init__(self, elements, r_cutoff: float):
+    def __init__(self, elements: List[str], r_cutoff: float):
         self._elements = elements
         if not r_cutoff > 0:
-            raise ValueError(
-                "Invalid cutoff radius given. " "Must be greater than zero."
-            )
+            raise ValueError("Invalid cutoff radius given. Must be greater than zero.")
         else:
             self._r_cutoff = r_cutoff
 
@@ -197,7 +195,12 @@ class SymFuncParamGenerator:
                 )
 
     def generate_radial_params(
-        self, rule, mode, nb_param_pairs: int, r_lower=None, r_upper=None
+        self,
+        rule: str,
+        mode: str,
+        nb_param_pairs: int,
+        r_lower: float = None,
+        r_upper: float = None,
     ):
         """Generate a set of values for r_shift and eta.
 
@@ -299,9 +302,7 @@ class SymFuncParamGenerator:
 
         if rule == "gastegger2018":
             if r_lower is None:
-                raise TypeError(
-                    "Argument r_lower is required for " 'rule "gastegger2018"'
-                )
+                raise TypeError('Argument r_lower is required for rule "gastegger2018"')
             if r_upper is None:
                 # by default, set largest value of radial grid to cutoff radius
                 r_upper = r_cutoff

@@ -22,15 +22,14 @@ def join_paths(*paths: str):
 
     complete_path = ""
     for i, path in enumerate(paths):
-        if i > 0:
-            if path[0] == "/":
-                complete_path += path
-            else:
-                complete_path += "/" + path
+        if len(path) > 0:
+            if i > 0:
+                if path[0] != "/":
+                    complete_path += "/"
 
-        if path[-1] == "/":
-            complete_path += path[:-1]
-        else:
-            complete_path += path[:-1]
+            if path[-1] == "/" and i != len(paths) - 1:
+                complete_path += path[:-1]
+            else:
+                complete_path += path
 
     return complete_path

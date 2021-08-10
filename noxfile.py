@@ -21,13 +21,16 @@ def install_with_constraints(session, *args, **kwargs):
         session.install(f"--constraint={requirements.name}", *args, **kwargs)
 
 
-@nox.session(python="3.6")
+@nox.session(python="3.8")
 def tests(session):
-    session.run("poetry", "install", "--no-dev", external=True)
-    session.run("pytest", "tests", "--cov")
+    args = session.posargs or ["tests", "--cov"]
+    # install_with_constraints(
+    #     session, "coverage[toml]", "pytest", "pytest-cov"
+    # )
+    session.run("pytest", *args)
 
 
-@nox.session(python="3.6")
+@nox.session(python="3.8")
 def lint(session):
     args = session.posargs or locations
     install_with_constraints(
@@ -41,14 +44,14 @@ def lint(session):
     session.run("flake8", *args)
 
 
-@nox.session(python="3.6")
+@nox.session(python="3.8")
 def black(session):
     args = session.posargs or locations
     install_with_constraints(session, "black")
     session.run("black", *args)
 
 
-@nox.session(python="3.6")
+@nox.session(python="3.8")
 def safety(session):
     with tempfile.NamedTemporaryFile() as requirements:
         session.run(

@@ -2,13 +2,14 @@ from copy import deepcopy
 from os import listdir, mkdir
 from os.path import isdir, isfile
 from shutil import copy
-import subprocess  # noqa: S404 TODO remove references if we can
 from typing import List, Union
 import warnings
 
-from data import Data
 import numpy as np
-from species import AllStructures, Structure
+
+from cc_hdnnp.data import Data
+from cc_hdnnp.file_manager import join_paths
+from cc_hdnnp.structure import Structure
 
 # TODO combine all unit conversions
 # Set a float to define the conversion factor from Bohr radius to Angstrom.
@@ -26,7 +27,7 @@ class ActiveLearning:
         self,
         data_controller: Data,
         n2p2_directories: List[str],
-        structures: List[Structure],
+        # structures: List[Structure],
         integrators: Union[str, List[str]] = "npt",
         pressures: Union[float, List[float]] = 1.0,
         N_steps: int = 200000,
@@ -78,10 +79,11 @@ class ActiveLearning:
                 1.0,
             ]
         if isinstance(integrators, str):
-            integrators = list(integrators)
+            integrators = [integrators]
         if isinstance(pressures, float):
-            pressures = list(pressures)
+            pressures = [pressures]
 
+        structures = list(data_controller.all_structures.structure_dict.values())
         self._validate_timesteps(timestep, N_steps, structures)
 
         for integrator in integrators:
@@ -125,11 +127,11 @@ class ActiveLearning:
             )
         self.N_steps = N_steps
 
-        if any(dump_lammpstrj < [s.min_t_separation_interpolation for s in structures]):
+        if any([dump_lammpstrj < s.min_t_separation_interpolation for s in structures]):
             msg = (
                 "The extrapolation free structures would be stored only every {0}th time step, "
-                "but the minimum time step separation of interpolated structures are set to {1} "
-                "time steps.".format(
+                "but the minimum time step separation of interpolated structures are set to "
+                "{1} time steps.".format(
                     dump_lammpstrj,
                     [s.min_t_separation_interpolation for s in structures],
                 )
@@ -173,9 +175,10 @@ class ActiveLearning:
                 "error."
             )
 
+        self.data_controller = data_controller
         self.active_learning_directory = data_controller.active_learning_directory
         self.n2p2_directories = n2p2_directories
-        self.all_structures = AllStructures(*structures)
+        self.all_structures = data_controller.all_structures
         self.element_types = self.all_structures.element_list
         self.masses = self.all_structures.mass_list
         self.runner_cutoff = runner_cutoff
@@ -212,14 +215,15 @@ class ActiveLearning:
             if s.t_separation_interpolation_checks is None:
                 s.t_separation_interpolation_checks = int(5.0 / timestep)
 
-            if s.t_separation_interpolation_checks * 5 < N_steps:
+            if s.t_separation_interpolation_checks * 5 >= N_steps:
+                raise ValueError(
+                    "`t_separation_interpolation_checks={0}` must less than a fifth of "
+                    "`N_steps={1}` for all structures"
+                    "".format(s.t_separation_interpolation_checks, N_steps)
+                )
+            if s.t_separation_interpolation_checks < s.min_t_separation_interpolation:
                 raise ValueError(
                     "`t_separation_interpolation_checks` must be equal to or greater than "
-                    "`N_steps` for all structures"
-                )
-            if s.t_separation_interpolation_checks >= s.min_t_separation_interpolation:
-                raise ValueError(
-                    "`t_separation_interpolation_checks` must be less than "
                     "`min_t_separation_interpolation` for all structures"
                 )
 
@@ -396,15 +400,11 @@ class ActiveLearning:
             )
         input_lammps += "velocity all create ${temperature} ${seed}\n\n"
 
+        with open(join_paths(self.active_learning_directory, "simulation.lammps")) as f:
+            input_lammps += f.read()
+
         with open(path + "/input.lammps", "w") as f:
             f.write(input_lammps)
-
-        subprocess.Popen(
-            "cat {0}/simulation.lammps >> {1}/input.lammps".format(
-                self.active_learning_directory, path
-            ),
-            shell=True,
-        )
 
     def write_structure_lammps(self, path, lattice, element, xyz, q):
         """ """
@@ -636,16 +636,18 @@ class ActiveLearning:
                                 # mode1_path +'/RuNNer', shell=True)
                                 copy(
                                     self.n2p2_directories[j] + "/input.nn",
-                                    mode1_path + "/RuNNer/input.nn"
+                                    mode1_path + "/RuNNer/input.nn",
                                 )
                                 copy(
                                     self.n2p2_directories[j] + "/scaling.data",
-                                    mode1_path + "/RuNNer/scaling.data"
+                                    mode1_path + "/RuNNer/scaling.data",
                                 )
-                                copy(
-                                    self.n2p2_directories[j] + "/weights.*.data",
-                                    mode1_path + "/RuNNer"
+                                atomic_numbers = (
+                                    structure.all_species.atomic_number_list
                                 )
+                                src = self.n2p2_directories[j] + "/weights.{:03d}.data"
+                                for z in atomic_numbers:
+                                    copy(src.format(z), mode1_path + "/RuNNer")
                                 if (
                                     self.max_len_joblist != 0
                                     and (n_simulations + counter) % self.max_len_joblist
@@ -678,9 +680,11 @@ class ActiveLearning:
                 )
                 n_previous_simulations = n_simulations
 
-        if self.all_structures.structure_dict.keys()[0] is None:
+        if list(self.all_structures.structure_dict.keys())[0] is None:
             n_simulations += counter
             print("Input was generated for {0} simulations.".format(n_simulations))
+
+        self.data_controller._write_active_learning_lammps_script(n_simulations=counter)
 
     def _read_lammps_log(self, dump_lammpstrj, directory):
         """ """
@@ -812,42 +816,30 @@ class ActiveLearning:
 
     def _get_paths(self, structure_name):
         """ """
+        paths = []
         if structure_name != "":
             try:
-                cmd = (
-                    "ls {0}/mode1 | grep {1}_ | grep -e _nve_hdnnp -e _nvt_hdnnp -e _npt_hdnnp"
-                    "".format(self.active_learning_directory, structure_name)
-                )
-                paths = (
-                    str(
-                        subprocess.check_output(
-                            cmd, stderr=subprocess.STDOUT, shell=True
-                        ).decode()
-                    )
-                    .strip()
-                    .split("\n")
-                )
-            except subprocess.CalledProcessError:
+                files = listdir(join_paths(self.active_learning_directory, "mode1"))
+                for file in files:
+                    if file.startswith(structure_name + "_") and (
+                        "_nve_hdnnp" in file
+                        or "_nvt_hdnnp" in file
+                        or "_npt_hdnnp" in file
+                    ):
+                        paths.append(file)
+            except OSError:
                 raise IOError(
                     "Simulations with the structure name {0} were not found.".format(
                         structure_name
                     )
                 )
-
         else:
-            paths = (
-                str(
-                    subprocess.check_output(
-                        "ls {}/mode1 | grep -e nve_hdnnp -e nvt_hdnnp -e npt_hdnnp".format(
-                            self.active_learning_directory
-                        ),
-                        stderr=subprocess.STDOUT,
-                        shell=True,
-                    ).decode()
-                )
-                .strip()
-                .split("\n")
-            )
+            files = listdir(join_paths(self.active_learning_directory, "mode1"))
+            for file in files:
+                if file.startswith(structure_name + "_") and (
+                    "_nve_hdnnp" in file or "_nvt_hdnnp" in file or "_npt_hdnnp" in file
+                ):
+                    paths.append(file)
 
         finished = []
         for i in range(len(paths)):

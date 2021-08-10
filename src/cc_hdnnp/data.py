@@ -11,24 +11,18 @@ cp2k uses units of:
     Length: Angstrom
     Energy: Ha
     Force:  Ha / Bohr
-
-TODO set up the import properly so we don't have to manually run this:
-
-import sys
-sys.path.append('/home/vol00/scarf860/cc_placement/CC_HDNNP/src')
-
 """
 
-# from glob import glob
 from os.path import isfile
 import re
-from typing import List
+from shutil import copy
 
 from ase.io import read, write
 from ase.units import create_units
-from file_manager import join_paths
-from sfparamgen import SymFuncParamGenerator
-from species import AllSpecies
+
+from cc_hdnnp.file_manager import join_paths
+from cc_hdnnp.sfparamgen import SymFuncParamGenerator
+from cc_hdnnp.structure import AllStructures
 
 
 class Data:
@@ -37,49 +31,52 @@ class Data:
 
     Parameters
     ----------
-    elements : AllSpecies
-        Elements appearing in the system.
-    data_directory : str
-        All file names passed to other function will be appended to
-        `data_directory`
+    structures : AllStructures
+        Structures that are being described by the network.
+    main_directory : str
+        Path to the directory that contains all the other sub-directories relevant to the
+        network. Other file paths specified should be relative to this, excluding bin
+        directories for external software.
+    lammps_executable : str
+        Path of the LAMMPS executable.
     n2p2_bin : str
-        File path to the n2p2 bin directory.
+        Path to the n2p2 bin directory.
+    n2p2_sub_directory : str, optional
+        Path for the directory to read/write n2p2 files from/to, relative to the
+        `main_directory`. Default is "n2p2".
+    active_learning_sub_directory : str, optional
+        Path for the directory to read/write active learning files from/to, relative to the
+        `main_directory`. Default is "n2p2".
     """
 
     def __init__(
         self,
-        elements: AllSpecies,
-        data_directory: str,
+        structures: AllStructures,
+        main_directory: str,
+        lammps_executable: str,
         n2p2_bin: str,
-        structure_names: List[str],
-        active_learning_directory: str = None,
+        n2p2_sub_directory: str = "n2p2",
+        active_learning_sub_directory: str = "active_learning",
     ):
-        #  n2p2_directory: str=None):
         self.units = create_units("2014")
-        # TODO update relevant scripts with new attributes: n2p2_bin
-        self.elements = elements
-        self.data_directory = data_directory
-        self.trajectory = None
+        self.all_structures = structures
+        # TODO convert to getters
+        self.structure_names = structures.structure_dict.keys()
+        self.elements = structures.element_list
+        self.main_directory = main_directory
+        self.lammps_executable = lammps_executable
         self.n2p2_bin = n2p2_bin
-        # TODO unify this with
-        self.structure_names = structure_names
+        self.n2p2_directory = join_paths(main_directory, n2p2_sub_directory)
+        self.active_learning_directory = join_paths(
+            main_directory, active_learning_sub_directory
+        )
 
-        if active_learning_directory is not None:
-            self.active_learning_directory = active_learning_directory
-        else:
-            self.active_learning_directory = join_paths(
-                data_directory, "active_learning"
-            )
-
-        # if n2p2_directory is not None:
-        #     self.n2p2_directory = active_learn_directory
-        # else:
-        #     self.n2p2_directory = data_directory + 'n2p2'
+        self.trajectory = None
 
     def _min_n_config(self, n_provided: int):
         """
         Utility function to ensure we don't attempt to read/write more frames
-        than were in the trajectory originally.
+        than are available.
 
         Parameters
         ----------
@@ -115,22 +112,14 @@ class Data:
         Parameters
         ----------
         file_trajectory : str
-            File containing a trajectory of atom configurations
+            File containing a trajectory of atom configurations, relative to the main directory.
         format_in : str, optional
             File format for the ASE reader. Default is 'dlp-history'.
         unit_in: str, optional
             Length unit for the trajectory. Default is 'Ang'.
-
-        Examples
-        --------
-        >>> from data import Data
-        >>> d = Data('path/to/example_directory')
-        >>> d.read_trajectory('example.history')
-        >>> len(d.trajectory)
-        101
         """
         trajectory = read(
-            join_paths(self.data_directory, file_trajectory),
+            join_paths(self.main_directory, file_trajectory),
             format=format_in,
             index=":",
         )
@@ -144,26 +133,25 @@ class Data:
 
         self.trajectory = trajectory
 
-    def convert_n2p2_xyz(
+    def convert_active_learning_to_xyz(
         self, file_structure: str, file_xyz: str, unit_in: str = "Bohr"
     ):
         """
-        Reads `file_structure` and writes it as a series of xyz files. By default length
-        units of Bohr are assumed, so if this is not the case then `unit_in`
-        should be specified to allow conversion. The xyz files will be in Ang.
+        Reads `file_structure` from `self.active_learning_directory` and writes it as a series
+        of xyz files. By default length units of Bohr are assumed, so if this is not the case
+        then `unit_in` should be specified to allow conversion. The xyz files will be in Ang.
 
         Parameters
         ----------
         file_structure : str
-            File containing a series of structures.
+            File containing a series of structures in n2p2 format, relative to
+            `self.active_learning_directory`.
+        file_xyz : str
+            Formatable file name to write to, relative to `self.main_directory`.
         unit_in: str, optional
             Length unit for the trajectory. Default is 'Ang'.
-
-        Returns
-        -------
-        Atoms or list of Atoms
         """
-        with open(file_structure) as f:
+        with open(join_paths(self.active_learning_directory, file_structure)) as f:
             lines = f.readlines()
 
         i = 0
@@ -191,7 +179,9 @@ class Data:
                 )
                 for atom in atoms:
                     text += "\n" + " ".join(atom)
-                with open(file_xyz.format(i), "w") as f:
+                with open(
+                    join_paths(self.main_directory, file_xyz.format(i)), "w"
+                ) as f:
                     f.write(text)
                 i += 1
 
@@ -203,9 +193,9 @@ class Data:
         Parameters
         ----------
         file_xyz : str, optional
-            Formatable file name to write the atomic co-ordinates to. Will be
-            formatted with the frame number, so should contain `'{}'` as part
-            of the string. Default is 'xyz/{}.xyz'.
+            Formatable file name to write the atomic co-ordinates to relative to
+            `self.main_directory`. Will be formatted with the frame number, so should contain
+            `'{}'` as part of the string. Default is 'xyz/{}.xyz'.
         unit_out: str, optional
             Length unit for the xyz files. Default is 'Ang'.
 
@@ -221,11 +211,13 @@ class Data:
             # Wrap coordinates to ensure all are positive and within the cell
             frame.wrap()
             if unit_out != "Ang":
+                cell = frame.get_cell()
                 positions = frame.get_positions()
+                frame.set_cell(cell / self.units[unit_out])
                 frame.set_positions(positions / self.units[unit_out])
 
             write(
-                join_paths(self.data_directory, file_xyz.format(i)),
+                join_paths(self.main_directory, file_xyz.format(i)),
                 frame,
                 format=format_out,
                 columns=["symbols", "positions"],
@@ -302,36 +294,39 @@ class Data:
                             relcutoff=(40, 50, 60, 70))
         """
         with open(
-            join_paths(self.data_directory, file_input.format("template"))
+            join_paths(self.main_directory, file_input.format("template"))
         ) as f_template:
             input_template = f_template.read()
 
         with open(
-            join_paths(self.data_directory, file_batch.format("template"))
+            join_paths(self.main_directory, file_batch.format("template"))
         ) as f_template:
-            batch_template = f_template.read()
+            batch_text = f_template.read()
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
 
-        # TODO cast kwargs to lists if appropriate
-
         if "cutoff" in kwargs:
             file_id_template += "_cutoff_{cutoff}"
             cutoff_values = kwargs["cutoff"]
+            if isinstance(cutoff_values, float):
+                cutoff_values = [cutoff_values]
         else:
             cutoff_values = [None]
 
         if "relcutoff" in kwargs:
             file_id_template += "_relcutoff_{relcutoff}"
             relcutoff_values = kwargs["relcutoff"]
+            if isinstance(relcutoff_values, float):
+                relcutoff_values = [relcutoff_values]
         else:
             relcutoff_values = [None]
 
         batch_scripts = []
         for i in range(n_config):
-            format_dict = {"i": i}
-            with open(join_paths(self.data_directory, file_xyz.format(i))) as f:
+            # Do not require job_array, so format with blank string
+            format_dict = {"i": i, "job_array": ""}
+            with open(join_paths(self.main_directory, file_xyz.format(i))) as f:
                 header_line = f.readlines()[1]
                 lattice_string = header_line.split('"')[1]
                 lattice_list = lattice_string.split()
@@ -344,28 +339,28 @@ class Data:
                     format_dict["cutoff"] = cutoff
                     format_dict["relcutoff"] = relcutoff
                     format_dict["file_xyz"] = join_paths(
-                        self.data_directory, file_xyz.format(i)
+                        self.main_directory, file_xyz.format(i)
                     )
                     file_id = file_id_template.format(**format_dict)
                     with open(
-                        join_paths(self.data_directory, file_input.format(file_id)), "w"
+                        join_paths(self.main_directory, file_input.format(file_id)), "w"
                     ) as f:
                         f.write(input_template.format(file_id=file_id, **format_dict))
 
                     batch_scripts.append(
-                        join_paths(self.data_directory, file_batch.format(file_id))
+                        join_paths(self.main_directory, file_batch.format(file_id))
                     )
                     with open(
-                        join_paths(self.data_directory, file_batch.format(file_id)), "w"
+                        join_paths(self.main_directory, file_batch.format(file_id)), "w"
                     ) as f:
-                        f.write(batch_template.format(file_id=file_id, **format_dict))
+                        f.write(batch_text.format(file_id=file_id, **format_dict))
 
         bash_text = "sbatch "
         bash_text += "\nsbatch ".join(batch_scripts)
-        with open(join_paths(self.data_directory, file_bash)) as f:
+        with open(join_paths(self.main_directory, file_bash), "w") as f:
             f.write(bash_text)
 
-        return "bash {}".format(self.data_directory + file_bash)
+        return "bash {}".format(self.main_directory + file_bash)
 
     def print_cp2k_table(
         self,
@@ -411,10 +406,12 @@ class Data:
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
 
+        header = "| "
         msg = "| "
         if "cutoff" in kwargs:
             file_id_template += "_cutoff_{cutoff}"
             cutoff_values = kwargs["cutoff"]
+            header += "Cutoff | "
             msg += "  {cutoff} | "
         else:
             cutoff_values = [None]
@@ -422,14 +419,14 @@ class Data:
         if "relcutoff" in kwargs:
             file_id_template += "_relcutoff_{relcutoff}"
             relcutoff_values = kwargs["relcutoff"]
+            header += " Relative Cutoff | "
             msg += "  {relcutoff} | "
         else:
             relcutoff_values = [None]
 
         # Print table header:
         print(
-            "| Cutoff |  Relative Cutoff | Processes "
-            "| Energy                | t/step (s) | t total (s) "
+            header + "Processes | Energy                | t/step (s) | t total (s) "
             "| Grid 1 | Grid 2 | Grid 3 | Grid 4 |"
         )
 
@@ -440,14 +437,14 @@ class Data:
 
                     file_id = file_id_template.format(**format_dict)
                     with open(
-                        join_paths(self.data_directory, file_output.format(file_id))
+                        join_paths(self.main_directory, file_output.format(file_id))
                     ) as f:
                         energy = None
                         m_grid = []
                         steps = None
                         total_time = None
                         for line in f.readlines():
-                            if re.search("^ ENERGY|", line):
+                            if re.search("^ ENERGY", line):
                                 energy = line.split()[-1]
                             elif re.search("^ count for grid", line):
                                 m_grid.append(line.split()[4])
@@ -476,6 +473,7 @@ class Data:
 
     def write_n2p2_data(
         self,
+        structure_name: str,
         file_cp2k_out: str = "cp2k_output/{}.log",
         file_cp2k_forces: str = "cp2k_output/{}-forces-1_0.xyz",
         file_xyz: str = "xyz/{}.xyz",
@@ -506,6 +504,8 @@ class Data:
 
         Parameters
         ----------
+        structure_name : str
+            Name of the structure, used when running active learning.
         file_cp2k_out : str, optional
             Formatable file name to read the cp2k output from. Will be formatted with the
             frame number, so should contain '{}' as part of the string.
@@ -545,12 +545,17 @@ class Data:
             >>>                   file_input='examples_combined/n2p2/input.data',
             >>>                   n_config=101)
         """
+        if structure_name not in self.structure_names:
+            raise ValueError(
+                "`structure_name` {} not recognized".format(structure_name)
+            )
+
         text = ""
         if n2p2_units is None:
             n2p2_units = {"length": "Bohr", "energy": "Ha", "force": "Ha / Bohr"}
         n = self._min_n_config(n_config)
         for i in range(n):
-            with open(join_paths(self.data_directory, file_xyz.format(i))) as f:
+            with open(join_paths(self.main_directory, file_xyz.format(i))) as f:
                 xyz_lines = f.readlines()
                 n_atoms = int(xyz_lines[0].strip())
                 header_list = xyz_lines[1].split('"')
@@ -561,14 +566,14 @@ class Data:
                             float(lattice) / self.units[n2p2_units["length"]]
                         )
 
-            with open(join_paths(self.data_directory, file_cp2k_forces.format(i))) as f:
+            with open(join_paths(self.main_directory, file_cp2k_forces.format(i))) as f:
                 force_lines = f.readlines()
 
-            with open(join_paths(self.data_directory, file_cp2k_out.format(i))) as f:
+            with open(join_paths(self.main_directory, file_cp2k_out.format(i))) as f:
                 energy = None
                 lines = f.readlines()
                 for j, line in enumerate(lines):
-                    if re.search("^ ENERGY|", line):
+                    if re.search("^ ENERGY", line):
                         energy = line.split()[-1]
                     if re.search("Hirshfeld Charges", line):
                         charge_lines = lines[j + 3 : j + 3 + n_atoms]
@@ -584,8 +589,7 @@ class Data:
 
             text += "begin\n"
             text += "comment config_index={0} units={1}\n".format(i, n2p2_units)
-            # TODO allow for multiple structures (compatibility with active learning)
-            text += "comment structure {}\n".format(self.structure_names[0])
+            text += "comment structure {}\n".format(structure_name)
             text += "lattice {0} {1} {2}\n".format(
                 lattice_list[0], lattice_list[1], lattice_list[2]
             )
@@ -603,9 +607,9 @@ class Data:
                 force = force_lines[j + 4].split()[-3:]
                 if n2p2_units["force"] != "Ha / Bohr":
                     # cp2k output is in Ha / Bohr
-                    for i in range(force):
+                    for i in range(len(force)):
                         force[i] = (
-                            float(force)
+                            float(force[i])
                             * self.units["Ha"]
                             / self.units["Bohr"]
                             / self.units[n2p2_units["energy"]]
@@ -620,11 +624,11 @@ class Data:
             text += "charge {}\n".format(total_charge)
             text += "end\n"
 
-        if isfile(join_paths(self.data_directory, file_n2p2_input)):
-            with open(join_paths(self.data_directory, file_n2p2_input, "a")) as f:
+        if isfile(join_paths(self.main_directory, file_n2p2_input)):
+            with open(join_paths(self.main_directory, file_n2p2_input), "a") as f:
                 f.write(text)
         else:
-            with open(join_paths(self.data_directory, file_n2p2_input), "w") as f:
+            with open(join_paths(self.main_directory, file_n2p2_input), "w") as f:
                 f.write(text)
 
     def write_n2p2_nn(
@@ -637,7 +641,7 @@ class Data:
         zetas: list = None,
         r_lower: float = None,
         r_upper: float = None,
-        file_template: str = "n2p2/input.nn.template",
+        file_nn_template: str = "n2p2/input.nn.template",
         file_nn: str = "n2p2/input.nn",
     ):
         """
@@ -671,14 +675,14 @@ class Data:
             Not used for the 'imbalzano2018' ruleset. For 'gastegger2018', this
             sets either the maximum r_shift value or the minimum eta value for
             modes 'shift' and 'center' respectively. Default is `None`.
-        file_template : str, optional
+        file_nn_template : str, optional
             The file to read the general network architecture from (i.e.
             everything except the symmetry functions). Default is
             'n2p2/input.nn.template'.
         file_nn: str, optional
             The file to write the output to. If the file already exists, then
             it is appended to with the new symmetry functions. If it does not,
-            then it is created and the text from `file_template` is written to
+            then it is created and the text from `file_nn_template` is written to
             it before the symmetry functions are written. Default is
             'n2p2/input.nn'..
 
@@ -708,9 +712,7 @@ class Data:
         if zetas is None:
             zetas = []
 
-        generator = SymFuncParamGenerator(
-            elements=self.elements.element_list, r_cutoff=r_cutoff
-        )
+        generator = SymFuncParamGenerator(elements=self.elements, r_cutoff=r_cutoff)
         generator.symfunc_type = type
         generator.zetas = zetas
 
@@ -722,14 +724,14 @@ class Data:
             r_upper=r_upper,
         )
 
-        if isfile(join_paths(self.data_directory, file_nn)):
-            with open(join_paths(self.data_directory, file_nn, "a")) as f:
+        if isfile(join_paths(self.main_directory, file_nn)):
+            with open(join_paths(self.main_directory, file_nn), "a") as f:
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
         else:
-            with open(join_paths(self.data_directory, file_template)) as f:
+            with open(join_paths(self.main_directory, file_nn_template)) as f:
                 template_text = f.read()
-            with open(join_paths(self.data_directory, file_nn), "w") as f:
+            with open(join_paths(self.main_directory, file_nn), "w") as f:
                 f.write(template_text)
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
@@ -739,9 +741,9 @@ class Data:
         n_scaling_bins: int = 500,
         range_threshold: float = 1e-4,
         nodes: int = 1,
-        file_template: str = "scripts/template.bat",
-        file_prune: str = "scripts/n2p2_prune.bat",
-        file_train: str = "scripts/n2p2_train.bat",
+        file_batch_template: str = "scripts/template.sh",
+        file_prune: str = "scripts/n2p2_prune.sh",
+        file_train: str = "scripts/n2p2_train.sh",
         file_nn: str = "n2p2/input.nn",
     ):
         """
@@ -757,15 +759,15 @@ class Data:
             used in the training. Default is `1e-4`.
         nodes: int, optional
             Number of nodes to request for the batch job. Default is `1`.
-        file_template: str, optional
+        file_batch_template: str, optional
             File location of template to use for batch scripts. Default is
-            'scripts/template.bat'.
+            'scripts/template.sh'.
         file_prune: str, optional
             File location to write scaling and pruning batch script to.
-            Default is 'scripts/n2p2_prune.bat'.
+            Default is 'scripts/n2p2_prune.sh'.
         file_train: str, optional
             File location to write training batch script to.
-            Default is 'scripts/n2p2_train.bat'.
+            Default is 'scripts/n2p2_train.sh'.
         file_nn: str, optional
             File location of n2p2 file defining the neural network. Default is
             n2p2/input.nn'.
@@ -775,12 +777,13 @@ class Data:
         str
             Command to run the scaling and pruning batch script.
         """
-        with open(join_paths(self.data_directory, file_template)) as f:
-            template_text = f.read()
+        with open(join_paths(self.main_directory, file_batch_template)) as f:
+            batch_template_text = f.read()
 
         n2p2_directory = "/".join(file_nn.split("/")[:-1])
-        output_text = template_text.format(job_name="n2p2_scale_prune", nodes=nodes)
-        output_text += "\ncd {}".format(join_paths(self.data_directory, n2p2_directory))
+        format_dict = {"job_name": "n2p2_scale_prune", "nodes": nodes, "job_array": ""}
+        output_text = batch_template_text.format(**format_dict)
+        output_text += "\ncd {}".format(join_paths(self.main_directory, n2p2_directory))
         output_text += "\nsrun {0} {1}".format(
             join_paths(self.n2p2_bin, "nnp-scaling"), n_scaling_bins
         )
@@ -788,19 +791,22 @@ class Data:
             join_paths(self.n2p2_bin, "nnp-prune"), range_threshold
         )
         output_text += "\nmv {0} {0}.unpruned".format(
-            join_paths(self.data_directory, file_nn)
+            join_paths(self.main_directory, file_nn)
         )
         output_text += "\nmv output-prune-range.nn {}".format(
-            join_paths(self.data_directory, file_nn)
+            join_paths(self.main_directory, file_nn)
+        )
+        output_text += "\nsrun {0} {1}".format(
+            join_paths(self.n2p2_bin, "nnp-scaling"), n_scaling_bins
         )
 
-        with open(join_paths(self.data_directory, file_prune), "w") as f:
+        with open(join_paths(self.main_directory, file_prune), "w") as f:
             f.write(output_text)
 
-        # glob(self.data_directory + n2p2_directory + 'weights.*.*.out')
-        # glob(self.data_directory + n2p2_directory + 'weights.*.000000.out')
-        output_text = template_text.format(job_name="n2p2_train")
-        output_text += "\ncd {}".format(join_paths(self.data_directory, n2p2_directory))
+        # glob(self.main_directory + n2p2_directory + 'weights.*.*.out')
+        # glob(self.main_directory + n2p2_directory + 'weights.*.000000.out')
+        output_text = batch_template_text.format(job_name="n2p2_train")
+        output_text += "\ncd {}".format(join_paths(self.main_directory, n2p2_directory))
         output_text += "\nsrun {0}".format(join_paths(self.n2p2_bin, "nnp-train"))
         # TODO can't do this here as we don't have any files to list
         # Need to rename the weights files to use the network once trained
@@ -809,18 +815,18 @@ class Data:
         #     # 001, so need to format accordingly
         #     atomic_number_str = str(atomic_number)
         #     atomic_number_str =  (3 - len(atomic_number_str)) * '0' + atomic_number_str
-        #     weights = glob(self.data_directory + n2p2_directory +
+        #     weights = glob(self.main_directory + n2p2_directory +
         #                    'weights.{}.*.out'.format(atomic_number_str))
         #     weights.sort()
         #     # TODO currently assume the most recent set of weights, implement some more complex
         #     # criteria?
         #     output_text += '\ncp {0} weights.{1}.data'.format(weights[-1], atomic_number_str)
 
-        with open(join_paths(self.data_directory, file_train), "w") as f:
+        with open(join_paths(self.main_directory, file_train), "w") as f:
             f.write(output_text)
 
-        # return 'sbatch {0}\nsbatch {1}\n'.format(self.data_directory + file_prune,
-        #                                          self.data_directory + file_train)
+        # return 'sbatch {0}\nsbatch {1}\n'.format(self.main_directory + file_prune,
+        #                                          self.main_directory + file_train)
 
     def write_lammps_data(
         self,
@@ -844,9 +850,9 @@ class Data:
         """
         format_in = "extxyz"
         format_out = "lammps-data"
-        atoms = read(join_paths(self.data_directory, file_xyz), format=format_in)
+        atoms = read(join_paths(self.main_directory, file_xyz), format=format_in)
         write(
-            join_paths(self.data_directory, file_data),
+            join_paths(self.main_directory, file_data),
             atoms,
             format=format_out,
             units=lammps_unit_style,
@@ -855,14 +861,14 @@ class Data:
     def write_lammps_pair(
         self,
         r_cutoff: float,
-        file_template: str = "lammps/template.lmp",
+        file_lammps_template: str = "lammps/template.lmp",
         file_out: str = "lammps/md.lmp",
         n2p2_directory: str = "n2p2",
         lammps_unit_style: str = "electron",
     ):
         """
         Writes the pair commands 'pair_style' and 'pair_coeff' to `file_out`,
-        with the rest of the LAMMPS commands to be contained in `file_template`
+        with the rest of the LAMMPS commands to be contained in `file_lammps_template`
         along with '{pair_commands}' to allow formatting that section to the
         following:
 
@@ -876,11 +882,11 @@ class Data:
         ----------
         r_cutoff: float
             The cutoff distance for the symmetry functions.
-        file_template: str, optional
+        file_lammps_template: str, optional
             Complete file name of the template for `file_out`. Should contain
             '{pair_commands}' to allow formatting. Default is
             'lammps/template.lmp'.
-        file_template: str, optional
+        file_out: str, optional
             Complete file name of the output file. Default is 'lammps/md.lmp'.
         n2p2_directory: str, optional
             Directory containing all the n2p2 files needed by the LAMMPS/n2p2
@@ -888,10 +894,10 @@ class Data:
         lammps_unit_style: str, optional
             The LAMMPS unit system to use. Default is 'electron'.
         """
-        with open(join_paths(self.data_directory, file_template)) as f:
+        with open(join_paths(self.main_directory, file_lammps_template)) as f:
             template_text = f.read()
 
-        elements = self.elements.element_list
+        elements = self.elements
         elements.sort()
         elements_map = '"'
         for i, element in enumerate(elements):
@@ -936,7 +942,9 @@ class Data:
                 **lammps_units[lammps_unit_style]
             )
         else:
-            raise ValueError("`lammps_unit_style={}` not recognised", lammps_unit_style)
+            raise ValueError(
+                "`lammps_unit_style={}` not recognised".format(lammps_unit_style)
+            )
 
         pair_coeff = "pair_coeff * * {}".format(r_cutoff)
         output_text = template_text.format(
@@ -944,5 +952,152 @@ class Data:
             lammps_unit_style=lammps_unit_style,
         )
 
-        with open(join_paths(self.data_directory, file_out), "w") as f:
+        with open(join_paths(self.main_directory, file_out), "w") as f:
             f.write(output_text)
+
+    def _write_active_learning_lammps_script(
+        self,
+        n_simulations: int,
+        nodes: int = 1,
+        file_batch_template: str = "scripts/template.sh",
+        file_batch_out: str = "scripts/active_learning_lammps.sh",
+    ):
+        """
+        Write batch script for using LAMMPS to generate configurations for active learning.
+
+        Parameters
+        ----------
+        n_scaling_bins: int, optional
+            Number of bins for symmetry function histograms. Default is `500`.
+        range_threshold: float, optional
+            Symmetry functions with ranges below this will be "pruned" and not
+            used in the training. Default is `1e-4`.
+        nodes: int, optional
+            Number of nodes to request for the batch job. Default is `1`.
+        file_batch_template: str, optional
+            File location of template to use for batch scripts. Default is
+            'scripts/template.sh'.
+        file_prune: str, optional
+            File location to write scaling and pruning batch script to.
+            Default is 'scripts/n2p2_prune.sh'.
+        file_train: str, optional
+            File location to write training batch script to.
+            Default is 'scripts/n2p2_train.sh'.
+        file_nn: str, optional
+            File location of n2p2 file defining the neural network. Default is
+            n2p2/input.nn'.
+
+        Returns
+        -------
+        str
+            Command to run the scaling and pruning batch script.
+        """
+        with open(join_paths(self.main_directory, file_batch_template)) as f:
+            batch_template_text = f.read()
+
+        format_dict = {
+            "job_name": "active_learning_LAMMPS",
+            "nodes": nodes,
+            "job_array": "#SBATCH --array=1-{}".format(n_simulations),
+        }
+        output_text = batch_template_text.format(**format_dict)
+        output_text += "\nulimit -s unlimited"
+        output_text += (
+            "\npath=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
+            + self.active_learning_directory
+            + "/joblist_mode1.dat)"
+        )
+        output_text += "\ndir=$(date '+%Y%m%d_%H%M%S_%N')"
+        output_text += "\nmkdir -p /scratch/$(whoami)/${dir}"
+        output_text += (
+            "\nrsync -a ${SLURM_SUBMIT_DIR}/"
+            + self.active_learning_directory
+            + "/mode1/${path}/* /scratch/$(whoami)/${dir}/"
+        )
+        output_text += "\ncd /scratch/$(whoami)/${dir}"
+        output_text += (
+            "\nmpirun -np ${SLURM_NTASKS} "
+            + self.lammps_executable
+            + " -in input.lammps -screen none"
+        )
+        output_text += "\nrm -r /scratch/$(whoami)/${dir}/RuNNer"
+        output_text += (
+            "\nrsync -a /scratch/$(whoami)/${dir}/* ${SLURM_SUBMIT_DIR}/"
+            + self.active_learning_directory
+            + "/mode1/${path}/"
+        )
+        output_text += "rm -r /scratch/$(whoami)/${dir}"
+
+        with open(join_paths(self.main_directory, file_batch_out), "w") as f:
+            f.write(output_text)
+            print(
+                "Batch script written to {}".format(
+                    join_paths(self.main_directory, file_batch_out)
+                )
+            )
+
+    def choose_weights(self, epoch: int = None, minimum_criterion: str = None):
+        """
+        Copies the weights files for a particular epoch from "weights.XXX.YYYYYY.out" to
+        "weights.XXX.data".
+
+        By default, the most recent epoch is chosen. Optionally, a specific epoch can be
+        chosen with `epoch` or one will be automatically based on the `minimum_criterion`.
+
+        Parameters
+        ----------
+        epoch : int, optional
+            The epoch to copy weights for. Default is `None`.
+        minimum_criterion : str, optional
+            Defines what value to select the epoch based on. Possible values are:
+              - "RMSEpa_Etrain_pu" RMSE of training energies per atom (physical units)
+              - "RMSEpa_Etest_pu"  RMSE of test energies per atom (physical units)
+              - "RMSE_Etrain_pu"   RMSE of training energies (physical units)
+              - "RMSE_Etest_pu"    RMSE of test energies (physical units)
+              - "MAEpa_Etrain_pu"  MAE of training energies per atom (physical units)
+              - "MAEpa_Etest_pu"   MAE of test energies per atom (physical units)
+              - "MAE_Etrain_pu"    MAE of training energies (physical units)
+              - "MAE_Etest_pu"     MAE of test energies (physical units)
+              - "RMSE_Ftrain_pu"   RMSE of training forces (physical units)
+              - "RMSE_Ftest_pu"    RMSE of test forces (physical units)
+              - "MAE_Ftrain_pu"    MAE of training forces (physical units)
+              - "MAE_Ftest_pu"     MAE of test forces (physical units)
+            Default is `None`.
+        """
+        if epoch is not None and minimum_criterion is not None:
+            raise ValueError("Both `epoch` and `minimum_criterion` provided.")
+        elif epoch is not None:
+            # We already have the epoch to choose, so don't need to read performance.
+            pass
+        else:
+            with open(join_paths(self.n2p2_directory, "learning-curve.out")) as f:
+                lines = f.readlines()
+            content = []
+            for line in lines:
+                if line.startswith("#    epoch"):
+                    # Header for the rest of the table
+                    headers = line[1:].split()
+                elif not line.startswith("#"):
+                    # Table content
+                    content.append(line.split())
+
+            if minimum_criterion is not None:
+                try:
+                    index = headers.index(minimum_criterion)
+                except ValueError as e:
+                    raise ValueError(
+                        "`minimum_criterion={0}` not found in `learning-curve.out` headers: "
+                        "{1}".format(minimum_criterion, headers)
+                    ) from e
+                values = [float(row[index]) for row in content]
+                epoch, min_value = min(enumerate(values), key=lambda x: x[1])
+            else:
+                # Default to the last epoch
+                epoch = len(content) - 1
+
+        for z in self.all_structures.atomic_number_list:
+            src = join_paths(
+                self.n2p2_directory, "weights.{0:03d}.{1:06d}.out".format(z, epoch)
+            )
+            dst = join_paths(self.n2p2_directory, "weights.{0:03d}.data".format(z))
+            copy(src=src, dst=dst)
