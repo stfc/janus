@@ -761,6 +761,6 @@ class SymFuncParamGenerator:
                             handle.write(
                                 f"symfunction_short {comb[0]:2s} {sf_number} "
                                 f"{eta:9.3E} {rs:9.3E} {lambd:2.0f} "
-                                f"{zeta:9.3E} {r_cutoff:9.3E} \n"
+                                f"{zeta:9.3E} {r_cutoff:9.3E}\n"
                             )
                 handle.write("\n")

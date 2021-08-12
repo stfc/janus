@@ -10,3 +10,4 @@ out/
 *.histo
 *.log.*
 *.bash
+examples/m_cresol/

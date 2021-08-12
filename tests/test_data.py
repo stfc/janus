@@ -21,8 +21,10 @@ def data():
     )
 
     yield Data(
-        structures=AllStructures(structure), main_directory="tests/data", n2p2_bin="",
-        lammps_executable=""
+        structures=AllStructures(structure),
+        main_directory="tests/data",
+        n2p2_bin="",
+        lammps_executable="",
     )
 
     for file in listdir("tests/data/tests_output"):
@@ -94,6 +96,31 @@ def test_data_write_xyz_bohr(data: Data):
         position = lines[2].split()[1]
         assert lattice.split()[0] == "33.47242430192122"
         assert position == "29.11153958"
+
+
+def test_scale_xyz(data: Data):
+    """
+    Test that xyz files can be scaled successfully.
+    """
+    base_cell_length = 17.7128441229
+    base_position = 15.40516331
+    data.scale_xyz(
+        file_xyz_in="cp2k_input/{}.xyz", file_xyz_out="tests_output/{}.xyz", n_config=1
+    )
+
+    assert isfile("tests/data/tests_output/0.xyz")
+
+    with open("tests/data/tests_output/0.xyz") as f:
+        lines = f.readlines()
+        lattice = lines[1].split('"')[1]
+        cell_length = float(lattice.split()[0])
+        position = float(lines[2].split()[1])
+        assert cell_length != base_cell_length
+        assert cell_length < 1.25 * base_cell_length
+        assert cell_length > 0.75 * base_cell_length
+        assert position != base_position
+        assert position < 1.25 * base_position
+        assert position > 0.75 * base_position
 
 
 def test_data_write_cp2k(data: Data):
@@ -306,7 +333,7 @@ def test_data_write_n2p2_data_appended(data: Data):
         assert f.readline() == "test text\n"
 
 
-def test_data_write_n2p2_nn(data: Data):
+def test_write_n2p2_nn(data: Data):
     """
     Test that n2p2 nn file is written successfully.
     """
@@ -316,14 +343,14 @@ def test_data_write_n2p2_nn(data: Data):
         rule="imbalzano2018",
         mode="center",
         n_pairs=2,
-        file_nn_template="n2p2/input.nn.template",
-        file_nn="tests_output/input.nn",
+        file_nn_template="input.nn.template",
+        file_nn="../tests_output/input.nn",
     )
 
     assert isfile("tests/data/tests_output/input.nn")
 
 
-def test_data_write_n2p2_nn_append(data: Data):
+def test_write_n2p2_nn_append(data: Data):
     """
     Test that n2p2 nn file is appended to successfully.
     """
@@ -336,8 +363,8 @@ def test_data_write_n2p2_nn_append(data: Data):
         mode="center",
         n_pairs=2,
         zetas=[],
-        file_nn_template="n2p2/input.nn.template",
-        file_nn="tests_output/input.nn",
+        file_nn_template="input.nn.template",
+        file_nn="../tests_output/input.nn",
     )
 
     assert isfile("tests/data/tests_output/input.nn")
@@ -433,3 +460,72 @@ def test_min_n_config(data: Data):
     assert data._min_n_config(n_provided=None) == 2
     assert data._min_n_config(n_provided=1) == 1
     assert data._min_n_config(n_provided=3) == 2
+
+
+def test_choose_weights_multiple_arguments(data: Data):
+    """
+    Test that an error is raised when multiple arguments provided.
+    """
+    with pytest.raises(ValueError) as e:
+        data.choose_weights(epoch=0, minimum_criterion="RMSEpa_Etrain_pu")
+
+    assert str(e.value) == "Both `epoch` and `minimum_criterion` provided."
+
+
+def test_choose_weights_unknown_criterion(data: Data):
+    """
+    Test that an error is raised when an unrecognised criterion .
+    """
+    minimum_criterion = "unrecognisable"
+    with pytest.raises(ValueError) as e:
+        data.choose_weights(minimum_criterion=minimum_criterion)
+
+    assert str(e.value) == (
+        "`minimum_criterion={}` not found in `learning-curve.out` headers: "
+        "['epoch', 'RMSEpa_Etrain_pu', 'RMSEpa_Etest_pu', 'RMSE_Etrain_pu', 'RMSE_Etest_pu', "
+        "'MAEpa_Etrain_pu', 'MAEpa_Etest_pu', 'MAE_Etrain_pu', 'MAE_Etest_pu', "
+        "'RMSE_Ftrain_pu', 'RMSE_Ftest_pu', 'MAE_Ftrain_pu', 'MAE_Ftest_pu']"
+        "".format(minimum_criterion)
+    )
+
+
+def test_choose_weights_default(data: Data):
+    """
+    Test success for the default case (no arguments).
+    """
+    data.choose_weights()
+
+    assert isfile("tests/data/n2p2/weights.001.data")
+    try:
+        with open("tests/data/n2p2/weights.001.data") as f:
+            assert f.read() == "20\n"
+    finally:
+        remove("tests/data/n2p2/weights.001.data")
+
+
+def test_choose_weights_criterion(data: Data):
+    """
+    Test success for the `minimum_criterion` case.
+    """
+    data.choose_weights(minimum_criterion="RMSEpa_Etest_pu")
+
+    assert isfile("tests/data/n2p2/weights.001.data")
+    try:
+        with open("tests/data/n2p2/weights.001.data") as f:
+            assert f.read() == "0\n"
+    finally:
+        remove("tests/data/n2p2/weights.001.data")
+
+
+def test_choose_weights_epoch(data: Data):
+    """
+    Test success for the `epoch` case.
+    """
+    data.choose_weights(epoch=10)
+
+    assert isfile("tests/data/n2p2/weights.001.data")
+    try:
+        with open("tests/data/n2p2/weights.001.data") as f:
+            assert f.read() == "10\n"
+    finally:
+        remove("tests/data/n2p2/weights.001.data")

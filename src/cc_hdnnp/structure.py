@@ -21,7 +21,7 @@ class Species:
     min_separation : dict of [str, float], optional
         The minimum allowed distance between atoms of this species and those of other species.
         The keys should be the chemical symbols of atomic species (including this one), with the
-        values being separation in Bohr. Default is `None`.
+        values being separation in Ang. Default is `None`.
     """
 
     def __init__(
@@ -45,9 +45,9 @@ class AllSpecies:
     ----------
     species_list : list of Species
         All the species that make up the structure.
-    global_seperation : float, optional
-        If the `min_seperation` is not set for all pairs of `Species`, then `global_seperation`
-        will be used as a default. Units are Bohr. Default is `1.`.
+    global_separation : float, optional
+        If the `min_separation` is not set for all pairs of `Species`, then `global_separation`
+        will be used as a default. Units are Ang. Default is `0.5`.
 
     Attributes
     ----------
@@ -57,7 +57,7 @@ class AllSpecies:
         The masses of all structures that make up the structure in AMU.
     """
 
-    def __init__(self, *species: Species, global_separation: float = 1.0):
+    def __init__(self, *species: Species, global_separation: float = 0.5):
         self.species_list = list(species)
         self.species_list.sort(key=lambda x: x.atomic_number)
         for single_species in self.species_list:
@@ -139,45 +139,46 @@ class Structure:
     all_species : AllSpecies
         Holds information on all atomic species comprising the structure.
     delta_E : float
-        The tolerance for discrepancies in energy when active learning. If two networks have an
-        energy difference larger than this for a given structure, it will be added to the training
-        set. Units are Hartree per atom. Recommended value is either the highest energy error of
-        the training data set (excluding outliers) or five times the energy RMSE of the training
-        data set for the given structures.
+        The tolerance for discrepancies in energy when active learning.
+        If two networks have an energy difference larger than this for a given structure,
+        it will be added to the training set. Units are Hartree per atom.
+        Recommended value is either the highest energy error of the training data set
+        (excluding outliers) or five times the energy RMSE of the training data set for the
+        given structures.
     delta_F : float
         The tolerance for discrepancies in forces when active learning. If two networks have an
-        force difference larger than this for a given structure, it will be added to the training
-        set. Units are Hartree/Bohr. Recommended value is either 100 times `delta_E`, the highest
-        force error of the training data set (excluding outliers) or five times the force RMSE of
-        the training data set for the given structures.
+        force difference larger than this for a given structure, it will be added to the
+        training set. Units are Hartree/Bohr. Recommended value is either 100 times `delta_E`,
+        the highest force error of the training data set (excluding outliers) or five times the
+        force RMSE of the training data set for the given structures.
     selection : list of int, optional
         A list where the first entry is the how many structures of this type to skip, and the
-        second entry is a sampling rate. For example, [10, 5] would sample every fifth structure,
-        ignoring the first 10 and starting with the 11th (index 10). In practice this depends on
-        the reliability of the HDNNP. The usage the current input.data file as source of new
-        structures is recommended. You should not add more than about a third of the current
-        number of structures, i.e., performing too many simulations is not efficient. The more
-        often you retrain your HDNNP, the less likely it is too include structures fixing the same
-        problem. However, if you include too few structures in every iteration, the procedure will
-        also be slow. If you try to find the last gaps in the sampled configuration space, you can
-        do more simulations and also longer simulations. Default is `None`, in which case every
-        structure is used.
+        second entry is a sampling rate. For example, [10, 5] would sample every fifth
+        structure, ignoring the first 10 and starting with the 11th (index 10). In practice
+        this depends on the reliability of the HDNNP. The usage the current input.data file as
+        source of new structures is recommended. You should not add more than about a third of
+        the current number of structures, i.e., performing too many simulations is not
+        efficient. The more often you retrain your HDNNP, the less likely it is too include
+        structures fixing the same problem. However, if you include too few structures in every
+        iteration, the procedure will also be slow. If you try to find the last gaps in the
+        sampled configuration space, you can do more simulations and also longer simulations.
+        Default is `None`, in which case every structure is used.
     min_t_separation_extrapolation : int, optional
         Defines the minimal number of time steps between two structures for extrapolation checks
         for this structure.
-        Default is `None`, in which case it will be chosen so that a check occurs every 0.01 ps of
-        the simulation.
+        Default is `None`, in which case it will be chosen so that a check occurs every 0.01 ps
+        of the simulation.
     min_t_separation_interpolation : int, optional
         Defines the minimal number of time steps between two structures for interpolation checks
         for this structure (this can lead to less than three checks).
-        Default is `None`, in which case it will be chosen so that a check occurs every 0.1 ps of
-        the simulation.
+        Default is `None`, in which case it will be chosen so that a check occurs every 0.1 ps
+        of the simulation.
     t_separation_interpolation_checks : int, optional
-        Defines the usual time step separations between two structures for interpolation checks for
-        this structure (this can be smaller in case only less than three checks would be possible).
-        The value has to be smaller than a fifth of the number of steps used in active learning.
-        Default is `None`, in which case it will be chosen so that a check occurs every 5 ps of
-        simulation.
+        Defines the usual time step separations between two structures for interpolation checks
+        for this structure (this can be smaller in case only less than three checks would be
+        possible). The value has to be smaller than a fifth of the number of steps used in
+        active learning. Default is `None`, in which case it will be chosen so that a check
+        occurs every 5 ps of simulation.
     all_extrapolated_structures : bool, optional
         Specifies for the structure if all extrapolated structures shall be selected. Otherwise
         they are only selected if they above the energy and force thresholds.
@@ -196,13 +197,13 @@ class Structure:
         Manually define exceptions of small extrapolations which shall be only included to a
         certain fraction for each structure name. The max_extrapolated_structures limitation is
         overwritten for the given extrapolations. An example for the format is [[A, B, C], ...]
-        where A is a string of the element symbols specifying the central atoms of the extrapolated
-        symmetry functions, B is a string of the numbers of corresponding symmetry functions, and C
-        is a float of the used fraction. A and B have to be identical to the entries in
-        input.data-new. For each structure an array of several exceptions ([A, B, C]) can be
-        given or None has to be set. Candidates can be found using the information given in
-        input.data-new and extrapolation_statistics_XX.dat.
-        Default is `None`,
+        where A is a string of the element symbols specifying the central atoms of the
+        extrapolated symmetry functions, B is a string of the numbers of corresponding symmetry
+        functions, and C is a float of the used fraction. A and B have to be identical to the
+        entries in input.data-new.
+        For each structure an array of several exceptions ([A, B, C]) can be given or None has
+        to be set. Candidates can be found using the information given in input.data-new and
+        extrapolation_statistics_XX.dat. Default is `None`,
     """
 
     def __init__(
@@ -244,8 +245,8 @@ class Structure:
                 )
             self.selection = selection
 
-        # Leave timestep separation variables as None, as a sensible default value will depend on
-        # the total length of the simulation being run.
+        # Leave timestep separation variables as None, as a sensible default value will depend
+        # on the total length of the simulation being run.
         self.min_t_separation_extrapolation = min_t_separation_extrapolation
         self.min_t_separation_interpolation = min_t_separation_interpolation
         self.t_separation_interpolation_checks = t_separation_interpolation_checks

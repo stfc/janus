@@ -16,9 +16,11 @@ cp2k uses units of:
 from os.path import isfile
 import re
 from shutil import copy
+from typing import List
 
 from ase.io import read, write
 from ase.units import create_units
+import numpy as np
 
 from cc_hdnnp.file_manager import join_paths
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
@@ -223,6 +225,45 @@ class Data:
                 columns=["symbols", "positions"],
             )
 
+    def scale_xyz(
+        self,
+        file_xyz_in: str = "xyz/{}.xyz",
+        file_xyz_out: str = "xyz/{}.xyz",
+        scale_factor: float = 0.25,
+        n_config: int = None,
+    ):
+        """
+        Reads xyz files and randomly rescales them by up to +-`scale_factor` before writing the
+        scaled structure to file. Uniform distribution is used.
+
+        Parameters
+        ----------
+        file_xyz_in : str, optional
+            Formatable file name to read the atomic co-ordinates from, relative to
+            `self.main_directory`. Will be formatted with the frame number, so should contain
+            `'{}'` as part of the string. Default is 'xyz/{}.xyz'.
+        file_xyz_out : str, optional
+            Formatable file name to write the scaled atomic co-ordinates to, relative to
+            `self.main_directory`. Will be formatted with the frame number, so should contain
+            `'{}'` as part of the string. Default is 'xyz_scaled/{}.xyz'.
+        """
+        format = "extxyz"
+        n_config = self._min_n_config(n_config)
+
+        for i in range(n_config):
+            random_scale = 1 + (2 * np.random.random() - 1) * scale_factor
+            frame = read(
+                join_paths(self.main_directory, file_xyz_in.format(i)), format=format
+            )
+            cell = frame.get_cell()
+            frame.set_cell(cell * random_scale, scale_atoms=True)
+            write(
+                join_paths(self.main_directory, file_xyz_out.format(i)),
+                frame,
+                format=format,
+                columns=["symbols", "positions"],
+            )
+
     def write_cp2k(
         self,
         file_bash: str = "scripts/all.sh",
@@ -387,8 +428,8 @@ class Data:
         n_mpi: int, optional
             The number of MPI processes used for cp2k. Default is `1`.
         **kwargs:
-            Arguments to be used in formatting the name of the cp2k output file(s). Each should be
-            a tuple containing one or more values:
+            Arguments to be used in formatting the name of the cp2k output file(s).
+            Each should be a tuple containing one or more values:
               - cutoff: tuple of float
               - relcutoff: tuple of float
 
@@ -646,7 +687,8 @@ class Data:
     ):
         """
         Based on `file_template`, write the input.nn file for n2p2 with
-        symmetry functions generated using the provided arguments.
+        symmetry functions generated using the provided arguments. File locations should be
+        relative to `self.n2p2_directory`.
 
         Note that all distances (`r_cutoff`, `r_lower`, `r_upper`) should have
         the same units as the n2p2 `input.data` file (by default, Bohr).
@@ -655,7 +697,8 @@ class Data:
         ----------
         r_cutoff: float
             The cutoff distance for the symmetry functions.
-        type: {'radial', 'angular_narrow', 'angular_wide', 'weighted_radial', 'weighted_angular'}
+        type: {'radial', 'angular_narrow', 'angular_wide',
+               'weighted_radial', 'weighted_angular'}
             The type of symmetry function to generate.
         rule: {'imbalzano2018', 'gastegger2018'}
             The ruleset used to determine how to chose values for r_shift and eta.
@@ -724,14 +767,14 @@ class Data:
             r_upper=r_upper,
         )
 
-        if isfile(join_paths(self.main_directory, file_nn)):
-            with open(join_paths(self.main_directory, file_nn), "a") as f:
+        if isfile(join_paths(self.n2p2_directory, file_nn)):
+            with open(join_paths(self.n2p2_directory, file_nn), "a") as f:
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
         else:
-            with open(join_paths(self.main_directory, file_nn_template)) as f:
+            with open(join_paths(self.n2p2_directory, file_nn_template)) as f:
                 template_text = f.read()
-            with open(join_paths(self.main_directory, file_nn), "w") as f:
+            with open(join_paths(self.n2p2_directory, file_nn), "w") as f:
                 f.write(template_text)
                 generator.write_settings_overview(fileobj=f)
                 generator.write_parameter_strings(fileobj=f)
@@ -744,7 +787,7 @@ class Data:
         file_batch_template: str = "scripts/template.sh",
         file_prune: str = "scripts/n2p2_prune.sh",
         file_train: str = "scripts/n2p2_train.sh",
-        file_nn: str = "n2p2/input.nn",
+        file_nn: str = "input.nn",
     ):
         """
         Write batch script for scaling and pruning symmetry functions, and for
@@ -770,63 +813,47 @@ class Data:
             Default is 'scripts/n2p2_train.sh'.
         file_nn: str, optional
             File location of n2p2 file defining the neural network. Default is
-            n2p2/input.nn'.
-
-        Returns
-        -------
-        str
-            Command to run the scaling and pruning batch script.
+            "input.nn".
         """
         with open(join_paths(self.main_directory, file_batch_template)) as f:
             batch_template_text = f.read()
 
-        n2p2_directory = "/".join(file_nn.split("/")[:-1])
         format_dict = {"job_name": "n2p2_scale_prune", "nodes": nodes, "job_array": ""}
         output_text = batch_template_text.format(**format_dict)
-        output_text += "\ncd {}".format(join_paths(self.main_directory, n2p2_directory))
-        output_text += "\nsrun {0} {1}".format(
-            join_paths(self.n2p2_bin, "nnp-scaling"), n_scaling_bins
+        output_text += "\ncd {}".format(self.n2p2_directory)
+        output_text += (
+            "\nmpirun -np ${SLURM_NTASKS} "
+            + join_paths(self.n2p2_bin, "nnp-scaling")
+            + " "
+            + str(n_scaling_bins)
         )
-        output_text += "\nsrun {0} range {1}".format(
-            join_paths(self.n2p2_bin, "nnp-prune"), range_threshold
+        output_text += (
+            "\nmpirun -np ${SLURM_NTASKS} "
+            + join_paths(self.n2p2_bin, "nnp-prune")
+            + " range "
+            + str(range_threshold)
         )
-        output_text += "\nmv {0} {0}.unpruned".format(
-            join_paths(self.main_directory, file_nn)
-        )
-        output_text += "\nmv output-prune-range.nn {}".format(
-            join_paths(self.main_directory, file_nn)
-        )
-        output_text += "\nsrun {0} {1}".format(
-            join_paths(self.n2p2_bin, "nnp-scaling"), n_scaling_bins
+        output_text += "\nmv {0} {0}.unpruned".format(file_nn)
+        output_text += "\nmv output-prune-range.nn {}".format(file_nn)
+        output_text += (
+            "\nmpirun -np ${SLURM_NTASKS} "
+            + join_paths(self.n2p2_bin, "nnp-scaling")
+            + " "
+            + str(n_scaling_bins)
         )
 
         with open(join_paths(self.main_directory, file_prune), "w") as f:
             f.write(output_text)
 
-        # glob(self.main_directory + n2p2_directory + 'weights.*.*.out')
-        # glob(self.main_directory + n2p2_directory + 'weights.*.000000.out')
-        output_text = batch_template_text.format(job_name="n2p2_train")
-        output_text += "\ncd {}".format(join_paths(self.main_directory, n2p2_directory))
-        output_text += "\nsrun {0}".format(join_paths(self.n2p2_bin, "nnp-train"))
-        # TODO can't do this here as we don't have any files to list
-        # Need to rename the weights files to use the network once trained
-        # for atomic_number in self.elements.values():
-        #     # File names always have the element as 3 digits, e.g. Hydrogen is
-        #     # 001, so need to format accordingly
-        #     atomic_number_str = str(atomic_number)
-        #     atomic_number_str =  (3 - len(atomic_number_str)) * '0' + atomic_number_str
-        #     weights = glob(self.main_directory + n2p2_directory +
-        #                    'weights.{}.*.out'.format(atomic_number_str))
-        #     weights.sort()
-        #     # TODO currently assume the most recent set of weights, implement some more complex
-        #     # criteria?
-        #     output_text += '\ncp {0} weights.{1}.data'.format(weights[-1], atomic_number_str)
+        format_dict["job_name"] = "n2p2_train"
+        output_text = batch_template_text.format(**format_dict)
+        output_text += "\ncd {}".format(self.n2p2_directory)
+        output_text += "\nmpirun -np ${SLURM_NTASKS} " + join_paths(
+            self.n2p2_bin, "nnp-train"
+        )
 
         with open(join_paths(self.main_directory, file_train), "w") as f:
             f.write(output_text)
-
-        # return 'sbatch {0}\nsbatch {1}\n'.format(self.main_directory + file_prune,
-        #                                          self.main_directory + file_train)
 
     def write_lammps_data(
         self,
@@ -872,8 +899,8 @@ class Data:
         along with '{pair_commands}' to allow formatting that section to the
         following:
 
-            pair_style nnp dir {n2p2_directory} showew no showewsum 10 resetew no maxew 100 emap \
-                {elements_map}
+            pair_style nnp dir {n2p2_directory} showew no showewsum 10 resetew no maxew 100 \
+                emap {elements_map}
             pair_coeff * * {r_cutoff}
 
         `r_cutoff` must be given in the LAMMPS units regardless of what was used for training.
@@ -967,30 +994,17 @@ class Data:
 
         Parameters
         ----------
-        n_scaling_bins: int, optional
-            Number of bins for symmetry function histograms. Default is `500`.
-        range_threshold: float, optional
-            Symmetry functions with ranges below this will be "pruned" and not
-            used in the training. Default is `1e-4`.
+        nodes: int
+            Number of simulations required. This is used to set the upper limit on the SLURM
+            job array.
         nodes: int, optional
             Number of nodes to request for the batch job. Default is `1`.
         file_batch_template: str, optional
             File location of template to use for batch scripts. Default is
             'scripts/template.sh'.
-        file_prune: str, optional
-            File location to write scaling and pruning batch script to.
-            Default is 'scripts/n2p2_prune.sh'.
-        file_train: str, optional
-            File location to write training batch script to.
-            Default is 'scripts/n2p2_train.sh'.
-        file_nn: str, optional
-            File location of n2p2 file defining the neural network. Default is
-            n2p2/input.nn'.
-
-        Returns
-        -------
-        str
-            Command to run the scaling and pruning batch script.
+        file_batch_out: str, optional
+            File location to write the batch script to.
+            Default is 'scripts/active_learning_lammps.sh'.
         """
         with open(join_paths(self.main_directory, file_batch_template)) as f:
             batch_template_text = f.read()
@@ -1027,6 +1041,116 @@ class Data:
             + "/mode1/${path}/"
         )
         output_text += "rm -r /scratch/$(whoami)/${dir}"
+
+        with open(join_paths(self.main_directory, file_batch_out), "w") as f:
+            f.write(output_text)
+            print(
+                "Batch script written to {}".format(
+                    join_paths(self.main_directory, file_batch_out)
+                )
+            )
+
+    def _write_active_learning_nn_script(
+        self,
+        n2p2_directories: List[str],
+        nodes: int = 1,
+        file_batch_template: str = "scripts/template.sh",
+        file_batch_out: str = "scripts/active_learning_nn.sh",
+    ):
+        """
+        Write batch script for using the neural network to calculate energies for
+        configurations as part of the active learning.
+
+        Parameters
+        ----------
+        n2p2_directories : list of str
+            List of directories to compare. Should have exactly 2 entries.
+        nodes: int, optional
+            Number of nodes to request for the batch job. Default is `1`.
+        file_batch_template: str, optional
+            File location of template to use for batch scripts. Default is
+            'scripts/template.sh'.
+        file_batch_out: str, optional
+            File location to write the batch script to.
+            Default is 'scripts/active_learning_nn.sh'.
+        """
+        with open(join_paths(self.main_directory, file_batch_template)) as f:
+            batch_template_text = f.read()
+
+        # Format SBATCH variables
+        format_dict = {
+            "job_name": "active_learning_NN",
+            "nodes": nodes,
+            "job_array": "#SBATCH --array=1-2",
+        }
+        output_text = batch_template_text.format(**format_dict)
+
+        # Setup
+        output_text += "\nn2p2_directories=({} {})".format(*n2p2_directories)
+        output_text += "\nmkdir {}/mode2".format(self.active_learning_directory)
+        output_text += "\nmkdir {}/mode2".format(self.active_learning_directory)
+        output_text += (
+            "\nmkdir {}/mode2".format(self.active_learning_directory)
+            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+        )
+        output_text += (
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/input.nn "
+            + "{}/mode2".format(self.active_learning_directory)
+            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+        )
+        output_text += (
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/scaling.data "
+            + "{}/mode2".format(self.active_learning_directory)
+            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+        )
+        output_text += (
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/weights.*.data "
+            + "{}/mode2".format(self.active_learning_directory)
+            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+        )
+        output_text += (
+            "sed -i s/'.*test_fraction.*'/'test_fraction 0.0'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'epochs.*'/'epochs 0'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*use_old_weights_short'/'use_old_weights_short'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*use_short_forces'/'use_short_forces'/g"
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*write_trainpoints'/'write_trainpoints'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*write_trainforces'/'write_trainforces'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*precondition_weights'/'#precondition_weights'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+        output_text += (
+            "sed -i s/'.*nguyen_widrow_weights_short'/'#nguyen_widrow_weights_short'/g "
+            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        )
+
+        # Train
+        output_text += (
+            "\ncd {}/mode2".format(self.active_learning_directory)
+            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+        )
+        output_text += "\nln -s ../../input.data-new input.data"
+        output_text += (
+            "\nmpirun -np ${SLURM_NTASKS} "
+            + "{}/nnp-train > mode_2.out".format(self.n2p2_bin)
+        )
 
         with open(join_paths(self.main_directory, file_batch_out), "w") as f:
             f.write(output_text)

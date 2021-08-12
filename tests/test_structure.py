@@ -9,8 +9,8 @@ from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
 
 def test_all_structures_same_name():
     """
-    Test that creating an AllStructures object with multiple structures with the same name raises
-    an error.
+    Test that creating an AllStructures object with multiple structures with the same name
+    raises an error.
     """
     name = "test"
     species = Species(symbol="H", atomic_number=1, mass=1.0)
@@ -43,6 +43,26 @@ def test_all_structures_element_list():
     with pytest.raises(ValueError) as e:
         AllStructures(structure_1, structure_2)
     assert str(e.value) == "All structures must have the same `element_list`"
+
+
+def test_all_structures_atomic_number_list():
+    """
+    Test that creating an AllStructures object with multiple structures with different atomic
+    numbers raises an error.
+    """
+    species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
+    species_2 = Species(symbol="H", atomic_number=2, mass=4.0)
+    all_species_1 = AllSpecies(species_1)
+    all_species_2 = AllSpecies(species_2)
+    structure_1 = Structure(
+        name="test_1", all_species=all_species_1, delta_E=None, delta_F=None
+    )
+    structure_2 = Structure(
+        name="test_2", all_species=all_species_2, delta_E=None, delta_F=None
+    )
+    with pytest.raises(ValueError) as e:
+        AllStructures(structure_1, structure_2)
+    assert str(e.value) == "All structures must have the same `atomic_number_list`"
 
 
 def test_all_structures_mass_list():
@@ -167,10 +187,10 @@ def test_structure_selection_success():
 
 def test_structure_max_interpolated_type():
     """
-    Test that creating a Structure with a `max_interpolated_structures_per_simulation` with the
-    wrong type raises an error.
+    Test that creating a Structure with a `max_interpolated_structures_per_simulation` with
+    the wrong type raises an error.
     """
-    max_interpolated_structures_per_simulation = "-1"
+    max_interpolated_structures_per_s = "-1"
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     all_species_1 = AllSpecies(species_1)
     with pytest.raises(TypeError) as e:
@@ -179,7 +199,7 @@ def test_structure_max_interpolated_type():
             all_species=all_species_1,
             delta_E=None,
             delta_F=None,
-            max_interpolated_structures_per_simulation=max_interpolated_structures_per_simulation,
+            max_interpolated_structures_per_simulation=max_interpolated_structures_per_s,
         )
     assert (
         str(e.value)
@@ -189,10 +209,10 @@ def test_structure_max_interpolated_type():
 
 def test_structure_max_interpolated_value():
     """
-    Test that creating a Structure with a `max_interpolated_structures_per_simulation` with the
-    wrong value raises an error.
+    Test that creating a Structure with a `max_interpolated_structures_per_simulation`
+    with the wrong value raises an error.
     """
-    max_interpolated_structures_per_simulation = -1
+    max_interpolated_structures_per_s = -1
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     all_species_1 = AllSpecies(species_1)
     with pytest.raises(ValueError) as e:
@@ -201,7 +221,7 @@ def test_structure_max_interpolated_value():
             all_species=all_species_1,
             delta_E=None,
             delta_F=None,
-            max_interpolated_structures_per_simulation=max_interpolated_structures_per_simulation,
+            max_interpolated_structures_per_simulation=max_interpolated_structures_per_s,
         )
     assert (
         str(e.value)

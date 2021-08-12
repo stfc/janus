@@ -1555,6 +1555,8 @@ class ActiveLearning:
             axis=0,
         )
 
+        # If elements are the same, then the shortest distance will be 0.0 (as the "central"
+        # included in the array), so select index 1 instead.
         if ii:
             select = 1
         else:
@@ -1574,12 +1576,12 @@ class ActiveLearning:
     ):
         """ """
         for i, element_i in enumerate(self.element_types):
-            for j, element_j in enumerate(self.element_types[i:]):
+            for element_j in self.element_types[i:]:
                 accepted, d = self._check_nearest_neighbours(
                     lattice,
                     position[element == element_i],
                     position[element == element_j],
-                    i == j,
+                    element_i == element_j,
                     structure.all_species.get_species(element_i).min_separation[
                         element_j
                     ],
@@ -2106,9 +2108,12 @@ class ActiveLearning:
         steps = []
         indices = []
         for i, name in enumerate(names):
-            structure = self.all_structures.structure_dict[name]
+            # `name` includes various details seperated by underscores, the first of which is
+            # the structure name
+            structure_name_i = name.split("_")[0]
+            structure = self.all_structures.structure_dict[structure_name_i]
             if list(statistics[i]):
-                if self.all_structures.structure_dict[name].all_extrapolated_structures:
+                if structure.all_extrapolated_structures:
                     selection = np.append(selection, i)
             elif i in selection:
                 name_split = name.split("_s")
@@ -2139,14 +2144,12 @@ class ActiveLearning:
             )
         selection = np.unique(selection)
 
-        max_extrapolated_structures = any(
+        max_extrapolated_structures = [
             s.max_extrapolated_structures
             for s in self.all_structures.structure_dict.values()
-        )
-        exceptions = any(
-            s.exceptions for s in self.all_structures.structure_dict.values()
-        )
-        if max_extrapolated_structures or exceptions:
+        ]
+        exceptions = [s.exceptions for s in self.all_structures.structure_dict.values()]
+        if any(max_extrapolated_structures) or any(exceptions):
             statistics_reduced = statistics[selection]
             names_reduced = names[selection]
             names_reduced = np.array(
@@ -2181,29 +2184,29 @@ class ActiveLearning:
 
                 if any(max_extrapolated_structures):
                     for i in statistics_unique:
-                        structure_index = int(i.split(";")[0])
-                        if max_extrapolated_structures[structure_index] != 0:
-                            if counts[i] > max_extrapolated_structures[structure_index]:
+                        structure_name_i = i.split(";")[0].split("_")[0]
+                        structure_i = self.all_structures.structure_dict[
+                            structure_name_i
+                        ]
+                        if structure_i.max_extrapolated_structures != 0:
+                            if counts[i] > structure_i.max_extrapolated_structures:
                                 exception_list[i] = np.concatenate(
                                     (
                                         np.ones(
-                                            max_extrapolated_structures[
-                                                structure_index
-                                            ],
+                                            structure_i.max_extrapolated_structures,
                                             dtype=int,
                                         ),
                                         np.zeros(
                                             counts[i]
-                                            - max_extrapolated_structures[
-                                                structure_index
-                                            ],
+                                            - structure_i.max_extrapolated_structures,
                                             dtype=int,
                                         ),
                                     )
                                 )
                                 np.random.shuffle(exception_list[i])
                                 print(
-                                    "The extrapolation ['{0}', '{1}'] occurred {2} times.".format(
+                                    "The extrapolation ['{0}', '{1}'] occurred {2} times."
+                                    "".format(
                                         i.split(";")[1], i.split(";")[2], counts[i]
                                     )
                                 )
@@ -2463,8 +2466,11 @@ class ActiveLearning:
         dE = []
         dF = []
         for i, name in enumerate(self.names):
+            # `name` includes various details seperated by underscores, the first of which is
+            # the structure name
+            structure_name_i = name.split("_")[0]
             for structure_name, structure in self.all_structures.structure_dict.items():
-                if structure_name == name:
+                if structure_name == structure_name_i:
                     dE.append(structure.delta_E)
                     for _ in range(3 * len(self.positions[i])):
                         dF.append(structure.delta_F)
