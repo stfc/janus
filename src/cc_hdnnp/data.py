@@ -185,9 +185,7 @@ class Data:
                 )
                 for atom in atoms:
                     text += "\n" + " ".join(atom)
-                with open(
-                    join(self.main_directory, file_xyz.format(i)), "w"
-                ) as f:
+                with open(join(self.main_directory, file_xyz.format(i)), "w") as f:
                     f.write(text)
                 i += 1
 
@@ -280,11 +278,15 @@ class Data:
 
     def write_cp2k(
         self,
+        structure_name: str,
+        basis_set: str,
+        potential: str,
         file_bash: str = "scripts/all.sh",
         file_batch: str = "scripts/{}.sh",
         file_input: str = "cp2k_input/{}.inp",
         file_xyz: str = "xyz/{}.xyz",
         n_config: int = None,
+        nodes: int = 1,
         **kwargs
     ) -> str:
         """
@@ -296,6 +298,13 @@ class Data:
 
         Parameters
         ----------
+        structure_name : str
+            Name of the structure, used as part of the CP2K project name which in turn
+            determines file names.
+        basis_set : str
+            Filepath to the CP2K basis set to use.
+        potential : str
+            Filepath to the CP2K potential to use.
         file_bash : str, optional
             File name to write a utility script which submits all of the batch
             scripts created by this function. Default is 'scripts/all.bash'.
@@ -321,6 +330,8 @@ class Data:
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
+        nodes: int, optional
+            Number of nodes to request for the batch job. Default is `1`.
         **kwargs:
             Arguments to be used in formatting the cp2k input file. The
             template provided should contain a formatable string at the
@@ -356,7 +367,7 @@ class Data:
         with open(
             join(self.main_directory, file_batch.format("template"))
         ) as f_template:
-            batch_text = f_template.read()
+            batch_text_template = f_template.read()
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
@@ -364,7 +375,7 @@ class Data:
         if "cutoff" in kwargs:
             file_id_template += "_cutoff_{cutoff}"
             cutoff_values = kwargs["cutoff"]
-            if isinstance(cutoff_values, float):
+            if isinstance(cutoff_values, float) or isinstance(cutoff_values, int):
                 cutoff_values = [cutoff_values]
         else:
             cutoff_values = [None]
@@ -372,7 +383,7 @@ class Data:
         if "relcutoff" in kwargs:
             file_id_template += "_relcutoff_{relcutoff}"
             relcutoff_values = kwargs["relcutoff"]
-            if isinstance(relcutoff_values, float):
+            if isinstance(relcutoff_values, float) or isinstance(relcutoff_values, int):
                 relcutoff_values = [relcutoff_values]
         else:
             relcutoff_values = [None]
@@ -397,24 +408,35 @@ class Data:
                         self.main_directory, file_xyz.format(i)
                     )
                     file_id = file_id_template.format(**format_dict)
-                    with open(
-                        join(self.main_directory, file_input.format(file_id)), "w"
-                    ) as f:
-                        f.write(input_template.format(file_id=file_id, **format_dict))
+                    file_input_formatted = join(
+                        self.main_directory, file_input.format(file_id)
+                    )
+                    with open(file_input_formatted, "w") as f:
+                        f.write(
+                            input_template.format(
+                                file_id=file_id,
+                                structure_name=structure_name,
+                                basis_set=basis_set,
+                                potential=potential,
+                                **format_dict
+                            )
+                        )
 
                     batch_scripts.append(
                         join(self.main_directory, file_batch.format(file_id))
                     )
 
-                    batch_text.format(file_id=file_id, **format_dict)
-                    # TODO write commands here as well
-                    # file paths are dependent on the cp2k input, need to consider
-                    # both at same time
-                    # batch_text += (
-                    #     "\nmpirun -np ${SLURM_NTASKS} cp2k.popt "
-                    #     "../cp2k_input/cresol_{file_id}.inp &> "
-                    #     "../cp2k_output/cresol_{file_id}.log"
-                    # )
+                    batch_text = batch_text_template.format(
+                        nodes=nodes, job_name="CP2K", **format_dict
+                    )
+                    batch_text += "\nmpirun -np ${SLURM_NTASKS} cp2k.popt "
+                    batch_text += "{0} &> ../cp2k_output/{1}_{2}.log" "".format(
+                        file_input_formatted, structure_name, file_id
+                    )
+                    batch_text += (
+                        "\nmv {0}_{1}-forces-1_0.xyz ../cp2k_output/{0}_{1}-forces-1_0.xyz"
+                        "".format(structure_name, file_id)
+                    )
 
                     with open(
                         join(self.main_directory, file_batch.format(file_id)), "w"
@@ -851,9 +873,8 @@ class Data:
         output_text = batch_template_text.format(**format_dict)
         output_text += "\ncd {}".format(self.n2p2_directory)
         if normalise:
-            output_text += (
-                "\nmpirun -np ${SLURM_NTASKS} "
-                + join(self.n2p2_bin, "nnp-norm")
+            output_text += "\nmpirun -np ${SLURM_NTASKS} " + join(
+                self.n2p2_bin, "nnp-norm"
             )
         output_text += (
             "\nmpirun -np ${SLURM_NTASKS} "

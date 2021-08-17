@@ -114,13 +114,9 @@ def plot_epoch(n2p2_directory: str, epoch: int, subsample_forces: int = 512):
 
     """
 
-    energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(
-        epoch
-    )
+    energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
     energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
-    force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(
-        epoch
-    )
+    force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(epoch)
     force_test_file = join(n2p2_directory, "testforces.{:06d}.out").format(epoch)
 
     plt.figure(figsize=(12, 12))
@@ -141,18 +137,28 @@ def plot_epoch(n2p2_directory: str, epoch: int, subsample_forces: int = 512):
             min(energy_train_ref),
             min(energy_train_nn),
             min(energy_test_ref),
-            min(energy_test_nn)
+            min(energy_test_nn),
         ),
         max(
             max(energy_train_ref),
             max(energy_train_nn),
             max(energy_test_ref),
-            max(energy_test_nn)
+            max(energy_test_nn),
         ),
     ]
     force_guide = [
-        min(min(force_train_ref), min(force_train_nn), min(force_test_ref), min(force_test_nn)),
-        max(max(force_train_ref), max(force_train_nn), max(force_test_ref), max(force_test_nn)),
+        min(
+            min(force_train_ref),
+            min(force_train_nn),
+            min(force_test_ref),
+            min(force_test_nn),
+        ),
+        max(
+            max(force_train_ref),
+            max(force_train_nn),
+            max(force_test_ref),
+            max(force_test_nn),
+        ),
     ]
 
     plt.subplot(2, 2, 1)

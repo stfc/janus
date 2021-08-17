@@ -1,7 +1,6 @@
 from copy import deepcopy
 from os import listdir, mkdir, symlink
 from os.path import isdir, isfile, join
-from shutil import copy
 from typing import List, Union
 import warnings
 
@@ -527,7 +526,7 @@ class ActiveLearning:
                             lattices_all,
                             elements_all,
                             xyzs_all,
-                            qs_all
+                            qs_all,
                         )
                     ) from e
                 print("Structure name: {0}".format(name))
@@ -664,7 +663,8 @@ class ActiveLearning:
                                 for z in atomic_numbers:
                                     symlink(
                                         src.format(z),
-                                        mode1_path + "/RuNNer/weights.{:03d}.data".format(z)
+                                        mode1_path
+                                        + "/RuNNer/weights.{:03d}.data".format(z),
                                     )
                                 if (
                                     self.max_len_joblist != 0

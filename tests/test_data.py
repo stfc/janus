@@ -2,11 +2,11 @@
 Unit tests for `data.py`
 """
 
-from genericpath import isdir
 from os import listdir, remove
 from os.path import isfile
 from shutil import copy, rmtree
 
+from genericpath import isdir
 import pytest
 
 from cc_hdnnp.data import Data
@@ -113,7 +113,7 @@ def test_scale_xyz(data: Data):
         file_xyz_in="cp2k_input/{}.xyz",
         file_xyz_out="tests_output/{}.xyz",
         n_config=1,
-        scale_factor=scale_factor
+        scale_factor=scale_factor,
     )
 
     assert isfile("tests/data/tests_output/0.xyz")
@@ -139,7 +139,7 @@ def test_scale_xyz_random(data: Data):
         file_xyz_out="tests_output/{}.xyz",
         n_config=1,
         scale_factor=scale_factor,
-        randomise=True
+        randomise=True,
     )
 
     assert isfile("tests/data/tests_output/0.xyz")
@@ -433,7 +433,7 @@ def test_data_write_n2p2_scripts_norm(data: Data):
         file_batch_template="n2p2/template.sh",
         file_prune="tests_output/n2p2_prune.sh",
         file_train="tests_output/n2p2_train.sh",
-        normalise=True
+        normalise=True,
     )
 
     assert isfile("tests/data/tests_output/n2p2_prune.sh")

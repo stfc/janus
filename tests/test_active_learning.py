@@ -2,12 +2,11 @@
 Unit tests for `active_learning.py`
 """
 
-from genericpath import isdir
 from os import listdir, mkdir, remove, symlink
 from os.path import isfile
 from shutil import copy, copytree, rmtree
 
-# import numpy as np
+from genericpath import isdir
 import pytest
 
 from cc_hdnnp.active_learning import ActiveLearning
@@ -52,7 +51,8 @@ def active_learning(data: Data) -> ActiveLearning:
     copytree("tests/data/n2p2", "tests/data/n2p2_copy")
 
     yield ActiveLearning(
-        data_controller=data, n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"]
+        data_controller=data,
+        n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
     )
 
     rmtree("tests/data/n2p2_copy")
@@ -99,14 +99,16 @@ def test_prepare_lammps_trajectory(active_learning: ActiveLearning):
     active_learning.write_lammps(range(1))
     symlink(
         "../../../active_learning/log.lammps",
-        "tests/data/tests_output/mode1/test_npt_hdnnp1_t0_p1.0_1/log.lammps"
+        "tests/data/tests_output/mode1/test_npt_hdnnp1_t0_p1.0_1/log.lammps",
     )
 
     with pytest.raises(ValueError) as e:
         active_learning.prepare_lammps_trajectory()
 
-    assert (str(e.value)
-            == "tests/data/tests_output/mode1/test_npt_hdnnp1_t0_p1.0_1/log.lammps was empty")
+    assert (
+        str(e.value)
+        == "tests/data/tests_output/mode1/test_npt_hdnnp1_t0_p1.0_1/log.lammps was empty"
+    )
 
 
 # def test_data_combine(active_learning: ActiveLearning):
