@@ -2,9 +2,10 @@
 Unit tests for `data.py`
 """
 
+from genericpath import isdir
 from os import listdir, remove
 from os.path import isfile
-from shutil import copy
+from shutil import copy, rmtree
 
 import pytest
 
@@ -28,7 +29,10 @@ def data():
     )
 
     for file in listdir("tests/data/tests_output"):
-        remove("tests/data/tests_output/" + file)
+        if isfile("tests/data/tests_output/" + file):
+            remove("tests/data/tests_output/" + file)
+        elif isdir("tests/data/tests_output/" + file):
+            rmtree("tests/data/tests_output/" + file)
 
 
 def test_data_read_trajectory(data: Data):
@@ -104,8 +108,38 @@ def test_scale_xyz(data: Data):
     """
     base_cell_length = 17.7128441229
     base_position = 15.40516331
+    scale_factor = 0.05
     data.scale_xyz(
-        file_xyz_in="cp2k_input/{}.xyz", file_xyz_out="tests_output/{}.xyz", n_config=1
+        file_xyz_in="cp2k_input/{}.xyz",
+        file_xyz_out="tests_output/{}.xyz",
+        n_config=1,
+        scale_factor=scale_factor
+    )
+
+    assert isfile("tests/data/tests_output/0.xyz")
+
+    with open("tests/data/tests_output/0.xyz") as f:
+        lines = f.readlines()
+        lattice = lines[1].split('"')[1]
+        cell_length = float(lattice.split()[0])
+        position = float(lines[2].split()[1])
+        assert cell_length == pytest.approx((1 - scale_factor) * base_cell_length)
+        assert position == pytest.approx((1 - scale_factor) * base_position)
+
+
+def test_scale_xyz_random(data: Data):
+    """
+    Test that xyz files can be randomly scaled successfully.
+    """
+    base_cell_length = 17.7128441229
+    base_position = 15.40516331
+    scale_factor = 0.05
+    data.scale_xyz(
+        file_xyz_in="cp2k_input/{}.xyz",
+        file_xyz_out="tests_output/{}.xyz",
+        n_config=1,
+        scale_factor=scale_factor,
+        randomise=True
     )
 
     assert isfile("tests/data/tests_output/0.xyz")
@@ -116,11 +150,11 @@ def test_scale_xyz(data: Data):
         cell_length = float(lattice.split()[0])
         position = float(lines[2].split()[1])
         assert cell_length != base_cell_length
-        assert cell_length < 1.25 * base_cell_length
-        assert cell_length > 0.75 * base_cell_length
+        assert cell_length < (1 + scale_factor) * base_cell_length
+        assert cell_length > (1 - scale_factor) * base_cell_length
         assert position != base_position
-        assert position < 1.25 * base_position
-        assert position > 0.75 * base_position
+        assert position < (1 + scale_factor) * base_position
+        assert position > (1 - scale_factor) * base_position
 
 
 def test_data_write_cp2k(data: Data):
@@ -246,12 +280,13 @@ def test_data_write_n2p2_data(data: Data):
     """
     Test that n2p2 data is written to file successfully.
     """
+    data.n2p2_directory = "tests/data/tests_output"
     data.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
         file_xyz="cp2k_input/{}.xyz",
-        file_n2p2_input="tests_output/input.data",
+        file_n2p2_input="input.data",
         n_config=1,
     )
 
@@ -298,12 +333,13 @@ def test_data_write_n2p2_data_units(data: Data):
     """
     Test that n2p2 data is written to file successfully with units provided.
     """
+    data.n2p2_directory = "tests/data/tests_output"
     data.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
         file_xyz="cp2k_input/{}.xyz",
-        file_n2p2_input="tests_output/input.data",
+        file_n2p2_input="input.data",
         n_config=1,
         n2p2_units={"length": "Ang", "energy": "eV", "force": "eV / Ang"},
     )
@@ -315,6 +351,7 @@ def test_data_write_n2p2_data_appended(data: Data):
     """
     Test that n2p2 data is appended to file without overwrite if output file already exists.
     """
+    data.n2p2_directory = "tests/data/tests_output"
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("test text\n")
 
@@ -323,7 +360,7 @@ def test_data_write_n2p2_data_appended(data: Data):
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
         file_xyz="cp2k_input/{}.xyz",
-        file_n2p2_input="tests_output/input.data",
+        file_n2p2_input="input.data",
         n_config=1,
         n2p2_units={"length": "Ang", "energy": "eV", "force": "eV / Ang"},
     )
@@ -384,6 +421,25 @@ def test_data_write_n2p2_scripts(data: Data):
 
     assert isfile("tests/data/tests_output/n2p2_prune.sh")
     assert isfile("tests/data/tests_output/n2p2_train.sh")
+    with open("tests/data/tests_output/n2p2_prune.sh") as f:
+        assert "nnp-norm" not in f.read()
+
+
+def test_data_write_n2p2_scripts_norm(data: Data):
+    """
+    Test that n2p2 scripts are written successfully with `normalise=True`.
+    """
+    data.write_n2p2_scripts(
+        file_batch_template="n2p2/template.sh",
+        file_prune="tests_output/n2p2_prune.sh",
+        file_train="tests_output/n2p2_train.sh",
+        normalise=True
+    )
+
+    assert isfile("tests/data/tests_output/n2p2_prune.sh")
+    assert isfile("tests/data/tests_output/n2p2_train.sh")
+    with open("tests/data/tests_output/n2p2_prune.sh") as f:
+        assert "nnp-norm" in f.read()
 
 
 def test_data_write_lammps_data(data: Data):

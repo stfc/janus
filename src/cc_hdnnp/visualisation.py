@@ -2,11 +2,10 @@
 Utility functions for reading from file and plotting the performance of the network.
 """
 
+from os.path import join
 from typing import List, Tuple
 
 import matplotlib.pyplot as plt
-
-from cc_hdnnp.file_manager import join_paths
 
 
 def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
@@ -39,7 +38,7 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
     if keys is None:
         keys = ["RMSEpa_Etrain_pu", "RMSEpa_Etest_pu"]
 
-    with open(join_paths(n2p2_directory, "learning-curve.out")) as f:
+    with open(join(n2p2_directory, "learning-curve.out")) as f:
         lines = f.readlines()
 
     for line in lines:
@@ -51,7 +50,7 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
             content.append(line.split())
             epochs.append(int(line.split()[0]))
 
-    plt.figure()
+    plt.figure(figsize=(12, 6))
     for key in keys:
         try:
             index = headers.index(key)
@@ -62,6 +61,7 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
             ) from e
         values = [float(row[index]) for row in content]
         plt.plot(epochs[1:], values[1:])
+        plt.xticks(range(epochs[1], epochs[-1] + 1))
         plt.xlabel("Epoch")
     plt.legend(keys)
 
@@ -114,54 +114,72 @@ def plot_epoch(n2p2_directory: str, epoch: int, subsample_forces: int = 512):
 
     """
 
-    energy_train_file = join_paths(n2p2_directory, "trainpoints.{:06d}.out").format(
+    energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(
         epoch
     )
-    energy_test_file = join_paths(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
-    force_train_file = join_paths(n2p2_directory, "trainforces.{:06d}.out").format(
+    energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
+    force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(
         epoch
     )
-    force_test_file = join_paths(n2p2_directory, "testforces.{:06d}.out").format(epoch)
+    force_test_file = join(n2p2_directory, "testforces.{:06d}.out").format(epoch)
 
     plt.figure(figsize=(12, 12))
     plt.tight_layout()
 
-    x, y = _read_epoch_file(energy_train_file)
-    guide = [min(x), max(x)]
+    energy_train_ref, energy_train_nn = _read_epoch_file(energy_train_file)
+    energy_test_ref, energy_test_nn = _read_epoch_file(energy_test_file)
+    force_train_ref, force_train_nn = _read_epoch_file(force_train_file, index=2)
+    force_test_ref, force_test_nn = _read_epoch_file(force_test_file, index=2)
+    # Subsample as we have ~ 1M forces
+    force_train_ref = force_train_ref[::subsample_forces]
+    force_train_nn = force_train_nn[::subsample_forces]
+    force_test_ref = force_test_ref[::subsample_forces]
+    force_test_nn = force_test_nn[::subsample_forces]
+
+    energy_guide = [
+        min(
+            min(energy_train_ref),
+            min(energy_train_nn),
+            min(energy_test_ref),
+            min(energy_test_nn)
+        ),
+        max(
+            max(energy_train_ref),
+            max(energy_train_nn),
+            max(energy_test_ref),
+            max(energy_test_nn)
+        ),
+    ]
+    force_guide = [
+        min(min(force_train_ref), min(force_train_nn), min(force_test_ref), min(force_test_nn)),
+        max(max(force_train_ref), max(force_train_nn), max(force_test_ref), max(force_test_nn)),
+    ]
+
     plt.subplot(2, 2, 1)
-    plt.scatter(x, y, s=1)
-    plt.plot(guide, guide, "k--")
+    plt.scatter(energy_train_ref, energy_train_nn, s=1)
+    plt.plot(energy_guide, energy_guide, "k--")
+    plt.xlim()
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Training Energies")
 
-    x, y = _read_epoch_file(energy_test_file)
-    guide = [min(x), max(x)]
     plt.subplot(2, 2, 2)
-    plt.scatter(x, y, s=1)
-    plt.plot(guide, guide, "k--")
+    plt.scatter(energy_test_ref, energy_test_nn, s=1, c="tab:orange")
+    plt.plot(energy_guide, energy_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Test Energies")
 
-    x, y = _read_epoch_file(force_train_file, index=2)
-    # Subsample as we have ~ 1M forces
-    x, y = x[::subsample_forces], y[::subsample_forces]
-    guide = [min(x), max(x)]
     plt.subplot(2, 2, 3)
-    plt.scatter(x, y, s=1)
-    plt.plot(guide, guide, "k--")
+    plt.scatter(force_train_ref, force_train_nn, s=1)
+    plt.plot(force_guide, force_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Training Forces")
 
-    x, y = _read_epoch_file(force_test_file, index=2)
-    # Subsample as we have ~ 1M forces
-    x, y = x[::subsample_forces], y[::subsample_forces]
-    guide = [min(x), max(x)]
     plt.subplot(2, 2, 4)
-    plt.scatter(x, y, s=1)
-    plt.plot(guide, guide, "k--")
+    plt.scatter(force_test_ref, force_test_nn, s=1, c="tab:orange")
+    plt.plot(force_guide, force_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Test Forces")

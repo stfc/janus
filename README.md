@@ -12,10 +12,10 @@ Overall workflow is as follows:
   3. Run CP2K
   4. Choose cutoff parameters based on the CP2K results (and if needed re-run CP2K with a larger number of frames)
   5. Write N2P2 input from CP2K output
-  6. Scale and prune symmetry functions
+  6. Scale, normalise and prune symmetry functions
   7. Train network
   8. Extend reference data with active learning
   9. Write output for LAMMPS from N2P2 output
   10. Run LAMMPS
 
-For the functional details, see the examples folder.
+For the functional details, see the notebooks in `examples/example_directory/scripts`.

@@ -1,6 +1,6 @@
 from copy import deepcopy
-from os import listdir, mkdir
-from os.path import isdir, isfile
+from os import listdir, mkdir, symlink
+from os.path import isdir, isfile, join
 from shutil import copy
 from typing import List, Union
 import warnings
@@ -8,7 +8,6 @@ import warnings
 import numpy as np
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.file_manager import join_paths
 from cc_hdnnp.structure import Structure
 
 # TODO combine all unit conversions
@@ -85,6 +84,12 @@ class ActiveLearning:
 
         structures = list(data_controller.all_structures.structure_dict.values())
         self._validate_timesteps(timestep, N_steps, structures)
+
+        if len(n2p2_directories) != 2:
+            raise ValueError(
+                "`n2p2_directories` must have 2 entries, but had {}"
+                "".format(len(n2p2_directories))
+            )
 
         for integrator in integrators:
             if integrator != "nve" and integrator != "nvt" and integrator != "npt":
@@ -400,7 +405,7 @@ class ActiveLearning:
             )
         input_lammps += "velocity all create ${temperature} ${seed}\n\n"
 
-        with open(join_paths(self.active_learning_directory, "simulation.lammps")) as f:
+        with open(join(self.active_learning_directory, "simulation.lammps")) as f:
             input_lammps += f.read()
 
         with open(path + "/input.lammps", "w") as f:
@@ -432,22 +437,22 @@ class ActiveLearning:
         with open(path + "/structure.lammps", "w") as f:
             f.write(structure_lammps)
             if self.atom_style == "atomic":
-                for i in range(len(element)):
+                for i, element_i in enumerate(element):
                     f.write(
                         "{0:4d} {1} {2:9.5f} {3:9.5f} {4:9.5f}\n".format(
                             i + 1,
-                            self.element_types.index(element[i]) + 1,
+                            self.element_types.index(element_i) + 1,
                             xyz[i][0],
                             xyz[i][1],
                             xyz[i][2],
                         )
                     )
             elif self.atom_style == "full":
-                for i in range(len(element)):
+                for i, element_i in enumerate(element):
                     f.write(
                         "{0:4d} 1 {1} {2:6.3f} {3:9.5f} {4:9.5f} {5:9.5f}\n".format(
                             i + 1,
-                            self.element_types.index(element[i]) + 1,
+                            self.element_types.index(element_i) + 1,
                             round(q[i], 3),
                             round(xyz[i][0], 5),
                             round(xyz[i][1], 5),
@@ -477,8 +482,8 @@ class ActiveLearning:
         mode1_directory = self.active_learning_directory + "/mode1"
         if isdir(mode1_directory):
             raise IOError(
-                "Path mode1 already exists. Please remove old directory first if you would like to"
-                " recreate it."
+                "Path mode1 already exists. Please remove old directory first if you would "
+                "like to recreate it."
             )
         mkdir(mode1_directory)
 
@@ -505,16 +510,26 @@ class ActiveLearning:
             else:
                 try:
                     names = names_all[names_all == name]
+                    lattices = lattices_all[names_all == name]
+                    elements = elements_all[names_all == name]
+                    xyzs = xyzs_all[names_all == name]
+                    qs = qs_all[names_all == name]
                 except IndexError as e:
                     raise IndexError(
-                        "structure_names: {0}\nnames_all: {1}".format(
-                            self.all_structures.structure_dict.keys(), names_all
+                        "structure_names: {0}\n"
+                        "names_all: {1}\n"
+                        "lattices_all: {2}\n"
+                        "elements_all: {3}\n"
+                        "xyzs_all: {4}\n"
+                        "qs_all: {5}".format(
+                            self.all_structures.structure_dict.keys(),
+                            names_all,
+                            lattices_all,
+                            elements_all,
+                            xyzs_all,
+                            qs_all
                         )
                     ) from e
-                lattices = lattices_all[names_all == name]
-                elements = elements_all[names_all == name]
-                xyzs = xyzs_all[names_all == name]
-                qs = qs_all[names_all == name]
                 print("Structure name: {0}".format(name))
             structure.selection[0] = structure.selection[0] % structure.selection[1]
             print(
@@ -634,11 +649,11 @@ class ActiveLearning:
                                 # TODO handle the absence of weights.XXX.data files gracefully
                                 # subprocess.Popen('cp -i ' + self.n2p2_directories[j] + '/* '+
                                 # mode1_path +'/RuNNer', shell=True)
-                                copy(
+                                symlink(
                                     self.n2p2_directories[j] + "/input.nn",
                                     mode1_path + "/RuNNer/input.nn",
                                 )
-                                copy(
+                                symlink(
                                     self.n2p2_directories[j] + "/scaling.data",
                                     mode1_path + "/RuNNer/scaling.data",
                                 )
@@ -647,7 +662,10 @@ class ActiveLearning:
                                 )
                                 src = self.n2p2_directories[j] + "/weights.{:03d}.data"
                                 for z in atomic_numbers:
-                                    copy(src.format(z), mode1_path + "/RuNNer")
+                                    symlink(
+                                        src.format(z),
+                                        mode1_path + "/RuNNer/weights.{:03d}.data".format(z)
+                                    )
                                 if (
                                     self.max_len_joblist != 0
                                     and (n_simulations + counter) % self.max_len_joblist
@@ -690,6 +708,10 @@ class ActiveLearning:
         """ """
         with open(directory + "/log.lammps") as f:
             data = [line for line in f.readlines()]
+
+        if len(data) == 0:
+            raise ValueError("{}/log.lammps was empty".format(directory))
+
         counter = 0
         n_lines = len(data)
         while counter < n_lines and not data[counter].startswith("**********"):
@@ -819,7 +841,7 @@ class ActiveLearning:
         paths = []
         if structure_name != "":
             try:
-                files = listdir(join_paths(self.active_learning_directory, "mode1"))
+                files = listdir(join(self.active_learning_directory, "mode1"))
                 for file in files:
                     if file.startswith(structure_name + "_") and (
                         "_nve_hdnnp" in file
@@ -834,7 +856,7 @@ class ActiveLearning:
                     )
                 )
         else:
-            files = listdir(join_paths(self.active_learning_directory, "mode1"))
+            files = listdir(join(self.active_learning_directory, "mode1"))
             for file in files:
                 if file.startswith(structure_name + "_") and (
                     "_nve_hdnnp" in file or "_nvt_hdnnp" in file or "_npt_hdnnp" in file
@@ -1817,7 +1839,8 @@ class ActiveLearning:
         with open(file_name, mode) as f:
             # Make sure we have a trailing newline if appending to file
             if mode == "a+":
-                if f.readlines()[-1].strip() == "":
+                lines = f.readlines()
+                if len(lines) > 0 and lines[-1].strip() != "":
                     f.write("\n")
 
             for i in range(len(names)):
@@ -2497,6 +2520,7 @@ class ActiveLearning:
 
     def combine_data_add(self):
         """ """
+        # TODO deal with these not being "prepared" gracefully
         for directory in self.n2p2_directories:
             self._write_data(
                 self.names[self.selection],

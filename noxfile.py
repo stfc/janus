@@ -27,6 +27,7 @@ def tests(session):
     # install_with_constraints(
     #     session, "coverage[toml]", "pytest", "pytest-cov"
     # )
+    args += ["--ignore=tests/data/ --ignore=tests/__pycache__/ --ignore=tests/__init__.py"]
     session.run("pytest", *args)
 
 
