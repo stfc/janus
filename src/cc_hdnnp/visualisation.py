@@ -164,7 +164,6 @@ def plot_epoch(n2p2_directory: str, epoch: int, subsample_forces: int = 512):
     plt.subplot(2, 2, 1)
     plt.scatter(energy_train_ref, energy_train_nn, s=1)
     plt.plot(energy_guide, energy_guide, "k--")
-    plt.xlim()
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Training Energies")
@@ -189,3 +188,141 @@ def plot_epoch(n2p2_directory: str, epoch: int, subsample_forces: int = 512):
     plt.xlabel("Reference")
     plt.ylabel("Network")
     plt.title("Test Forces")
+
+
+def plot_histogram(
+    n2p2_directory: str, epoch: int, bins: int = 10, combine_xyz: bool = True
+):
+    """
+    For `n2p2_directory`, load the files corresponding to `epoch` and plot a histogram of
+    reference values and network predictions.
+
+    Parameters
+    ----------
+    n2p2_directory : str
+        Directory to find training/testing files in.
+    epoch : int
+        The epoch to plot data for
+    bins : int, optional
+        The number of bins to use in the histogram. Default is 10.
+    combine_xyz : bool, optional
+        If `True`, plot all xyz components of forces on the same histogram. Default is `True`.
+    """
+    energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
+    energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
+    force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(epoch)
+    force_test_file = join(n2p2_directory, "testforces.{:06d}.out").format(epoch)
+
+    energy_train_ref, energy_train_nn = _read_epoch_file(energy_train_file)
+    energy_test_ref, energy_test_nn = _read_epoch_file(energy_test_file)
+    force_train_ref, force_train_nn = _read_epoch_file(force_train_file, index=2)
+    force_test_ref, force_test_nn = _read_epoch_file(force_test_file, index=2)
+
+    if combine_xyz:
+        n_rows = 4
+    else:
+        n_rows = 8
+
+    plt.figure(figsize=(12, 6 * n_rows))
+    plt.tight_layout()
+
+    plt.subplot(n_rows, 2, 1)
+    plt.hist(energy_train_ref, bins=bins)
+    plt.xlabel("Energy")
+    plt.title("Reference Training Energies")
+
+    plt.subplot(n_rows, 2, 2)
+    plt.hist(energy_test_ref, bins=bins, color="tab:orange")
+    plt.xlabel("Energy")
+    plt.title("Reference Test Energies")
+
+    plt.subplot(n_rows, 2, 3)
+    plt.hist(energy_train_nn, bins=bins)
+    plt.xlabel("Energy")
+    plt.title("Network Training Energies")
+
+    plt.subplot(n_rows, 2, 4)
+    plt.hist(energy_test_nn, bins=bins, color="tab:orange")
+    plt.xlabel("Energy")
+    plt.title("Network Test Energies")
+
+    if combine_xyz:
+        plt.subplot(n_rows, 2, 5)
+        plt.hist(force_train_ref, bins=bins)
+        plt.xlabel("Forces")
+        plt.title("Reference Training Forces")
+
+        plt.subplot(n_rows, 2, 6)
+        plt.hist(force_test_ref, bins=bins, color="tab:orange")
+        plt.xlabel("Forces")
+        plt.title("Reference Test Forces")
+
+        plt.subplot(n_rows, 2, 7)
+        plt.hist(force_train_nn, bins=bins)
+        plt.xlabel("Forces")
+        plt.title("Network Training Forces")
+
+        plt.subplot(n_rows, 2, 8)
+        plt.hist(force_test_nn, bins=bins, color="tab:orange")
+        plt.xlabel("Forces")
+        plt.title("Network Test Forces")
+    else:
+        plt.subplot(n_rows, 2, 5)
+        plt.hist(force_train_ref[::3], bins=bins)
+        plt.xlabel("Forces (x)")
+        plt.title("Reference Training Forces")
+
+        plt.subplot(n_rows, 2, 6)
+        plt.hist(force_test_ref[::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (x)")
+        plt.title("Reference Test Forces")
+
+        plt.subplot(n_rows, 2, 7)
+        plt.hist(force_train_nn[::3], bins=bins)
+        plt.xlabel("Forces (x)")
+        plt.title("Network Training Forces")
+
+        plt.subplot(n_rows, 2, 8)
+        plt.hist(force_test_nn[::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (x)")
+        plt.title("Network Test Forces")
+
+        plt.subplot(n_rows, 2, 9)
+        plt.hist(force_train_ref[1::3], bins=bins)
+        plt.xlabel("Forces (y)")
+        plt.title("Reference Training Forces")
+
+        plt.subplot(n_rows, 2, 10)
+        plt.hist(force_test_ref[1::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (y)")
+        plt.title("Reference Test Forces")
+
+        plt.subplot(n_rows, 2, 11)
+        plt.hist(force_train_nn[1::3], bins=bins)
+        plt.xlabel("Forces (y)")
+        plt.title("Network Training Forces")
+
+        plt.subplot(n_rows, 2, 12)
+        plt.hist(force_test_nn[1::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (y)")
+        plt.title("Network Test Forces")
+
+        plt.subplot(n_rows, 2, 13)
+        plt.hist(force_train_ref[2::3], bins=bins)
+        plt.xlabel("Forces (z)")
+        plt.title("Reference Training Forces")
+
+        plt.subplot(n_rows, 2, 14)
+        plt.hist(force_test_ref[2::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (z)")
+        plt.title("Reference Test Forces")
+
+        plt.subplot(n_rows, 2, 15)
+        plt.hist(force_train_nn[2::3], bins=bins)
+        plt.xlabel("Forces (z)")
+        plt.title("Network Training Forces")
+
+        plt.subplot(n_rows, 2, 16)
+        plt.hist(force_test_nn[2::3], bins=bins, color="tab:orange")
+        plt.xlabel("Forces (z)")
+        plt.title("Network Test Forces")

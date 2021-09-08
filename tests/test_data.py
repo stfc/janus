@@ -157,7 +157,7 @@ def test_scale_xyz_random(data: Data):
         assert position > (1 - scale_factor) * base_position
 
 
-def test_data_write_cp2k(data: Data):
+def test_write_cp2k(data: Data):
     """
     Test that cp2k input and batch scripts are written to file.
     """
@@ -166,6 +166,9 @@ def test_data_write_cp2k(data: Data):
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
     data.write_cp2k(
+        structure_name="test",
+        basis_set="test",
+        potential="test",
         file_bash="tests_output/all.sh",
         file_batch="tests_output/{}.sh",
         file_input="tests_output/{}.inp",
@@ -178,7 +181,7 @@ def test_data_write_cp2k(data: Data):
     assert isfile("tests/data/tests_output/n_0.inp")
 
 
-def test_data_write_cp2k_kwargs(data: Data):
+def test_write_cp2k_kwargs(data: Data):
     """
     Test that cp2k input and batch scripts are written to file with n_config, cutoff and
     relcutoff given.
@@ -188,6 +191,9 @@ def test_data_write_cp2k_kwargs(data: Data):
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
     data.write_cp2k(
+        structure_name="test",
+        basis_set="test",
+        potential="test",
         file_bash="tests_output/all.sh",
         file_batch="tests_output/{}.sh",
         file_input="tests_output/{}.inp",
@@ -202,7 +208,7 @@ def test_data_write_cp2k_kwargs(data: Data):
     assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp")
 
 
-def test_data_write_cp2k_kwargs_floats(data: Data):
+def test_write_cp2k_kwargs_floats(data: Data):
     """
     Test that cp2k input and batch scripts are written to file with n_config, cutoff and
     relcutoff given as floats.
@@ -212,6 +218,9 @@ def test_data_write_cp2k_kwargs_floats(data: Data):
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
     data.write_cp2k(
+        structure_name="test",
+        basis_set="test",
+        potential="test",
         file_bash="tests_output/all.sh",
         file_batch="tests_output/{}.sh",
         file_input="tests_output/{}.inp",

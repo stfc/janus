@@ -13,7 +13,8 @@ cp2k uses units of:
     Force:  Ha / Bohr
 """
 
-from os.path import isfile, join
+from os import mkdir
+from os.path import isdir, isfile, join
 import re
 from shutil import copy
 from typing import List
@@ -44,13 +45,13 @@ class Data:
         Path to the n2p2 bin directory.
     scripts_sub_directory : str, optional
         Path for the directory to read/write scripts from/to, relative to the
-        `main_directory`. Default is "n2p2".
+        `main_directory`. Default is "scripts".
     n2p2_sub_directory : str, optional
         Path for the directory to read/write n2p2 files from/to, relative to the
         `main_directory`. Default is "n2p2".
     active_learning_sub_directory : str, optional
         Path for the directory to read/write active learning files from/to, relative to the
-        `main_directory`. Default is "n2p2".
+        `main_directory`. Default is "active_learning".
     """
 
     def __init__(
@@ -157,6 +158,11 @@ class Data:
         unit_in: str, optional
             Length unit for the trajectory. Default is 'Ang'.
         """
+        xyz_path_split = join(self.main_directory, file_xyz).split("/")
+        xyz_directory = "/".join(*xyz_path_split[:-2])
+        if not isdir(xyz_directory):
+            mkdir(xyz_directory)
+
         with open(join(self.active_learning_directory, file_structure)) as f:
             lines = f.readlines()
 
@@ -188,6 +194,84 @@ class Data:
                 with open(join(self.main_directory, file_xyz.format(i)), "w") as f:
                     f.write(text)
                 i += 1
+
+    def remove_outliers(self, energy_threshold: float, force_threshold: float):
+        """
+        Following the "nnp-norm" command, "output.data" contains the normalised energies and
+        forces. Read these and in "input.data", comment out the structures which have an energy
+        or force above the specified threshold values.
+
+        Note that scaling, normalising and pruning should be redone after this.
+
+        Parameters
+        ----------
+        energy_threshold : float
+            Structures which lie more than `energy_threshold` standard deviations away from the
+            mean value will be removed from the dataset.
+        energy_threshold : float
+            Structures with a force component more than `energy_threshold` standard deviations
+            away from the 0 will be removed from the dataset.
+        """
+        with open(join(self.n2p2_directory, "output.data")) as f:
+            lines = f.readlines()
+
+        remove_indices = []
+        remove = False
+        atom_count = 0
+        i = 0
+        for line in lines:
+            line_split = line.split()
+            if line_split[0] == "atom":
+                atom_count += 1
+                force = np.array(
+                    [
+                        float(line_split[-3]),
+                        float(line_split[-2]),
+                        float(line_split[-1]),
+                    ]
+                )
+                if any(abs(force) > force_threshold):
+                    print(
+                        "Structure {0} above threshold with a force of {1}".format(
+                            i, force
+                        )
+                    )
+                    remove = True
+            elif line_split[0] == "energy":
+                energy = float(line_split[-1]) / atom_count
+                if abs(energy) > energy_threshold:
+                    print(
+                        "Structure {0} above threshold with an energy of {1}".format(
+                            i, energy
+                        )
+                    )
+                    remove = True
+            elif line_split[0] == "end":
+                if remove:
+                    remove_indices.append(i)
+                remove = False
+                atom_count = 0
+                i += 1
+
+        if len(remove_indices) == 0:
+            print("No outliers found")
+            return
+
+        print("{0} outliers found: {1}".format(len(remove_indices), remove_indices))
+        copy(
+            join(self.n2p2_directory, "input.data"),
+            join(self.n2p2_directory, "input.data.outliers_included"),
+        )
+        with open(join(self.n2p2_directory, "input.data"), "r") as f:
+            lines = f.readlines()
+        with open(join(self.n2p2_directory, "input.data"), "w") as f:
+            i = 0
+            for line in lines:
+                if i not in remove_indices:
+                    f.write(line)
+
+                if line.strip() == "end":
+                    i += 1
 
     def write_xyz(self, file_xyz: str = "xyz/{}.xyz", unit_out: str = "Ang"):
         """
@@ -427,7 +511,7 @@ class Data:
                     )
 
                     batch_text = batch_text_template.format(
-                        nodes=nodes, job_name="CP2K", **format_dict
+                        nodes=nodes, job_name="CP2K", file_id=file_id, **format_dict
                     )
                     batch_text += "\nmpirun -np ${SLURM_NTASKS} cp2k.popt "
                     batch_text += "{0} &> ../cp2k_output/{1}_{2}.log" "".format(
@@ -1095,7 +1179,7 @@ class Data:
             + self.active_learning_directory
             + "/mode1/${path}/"
         )
-        output_text += "rm -r /scratch/$(whoami)/${dir}"
+        output_text += "\nrm -r /scratch/$(whoami)/${dir}"
 
         with open(join(self.scripts_directory, file_batch_out), "w") as f:
             f.write(output_text)
@@ -1143,56 +1227,55 @@ class Data:
         # Setup
         output_text += "\nn2p2_directories=({} {})".format(*n2p2_directories)
         output_text += "\nmkdir {}/mode2".format(self.active_learning_directory)
-        output_text += "\nmkdir {}/mode2".format(self.active_learning_directory)
         output_text += (
             "\nmkdir {}/mode2".format(self.active_learning_directory)
             + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
         )
         output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/input.nn "
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/input.nn "
             + "{}/mode2".format(self.active_learning_directory)
             + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
         )
         output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/scaling.data "
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/scaling.data "
             + "{}/mode2".format(self.active_learning_directory)
             + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
         )
         output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/weights.*.data "
+            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/weights.*.data "
             + "{}/mode2".format(self.active_learning_directory)
             + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
         )
         output_text += (
-            "sed -i s/'.*test_fraction.*'/'test_fraction 0.0'/g "
+            "\nsed -i s/'.*test_fraction.*'/'test_fraction 0.0'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'epochs.*'/'epochs 0'/g "
+            "\nsed -i s/'epochs.*'/'epochs 0'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*use_old_weights_short'/'use_old_weights_short'/g "
+            "\nsed -i s/'.*use_old_weights_short'/'use_old_weights_short'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*use_short_forces'/'use_short_forces'/g"
+            "\nsed -i s/'.*use_short_forces'/'use_short_forces'/g"
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*write_trainpoints'/'write_trainpoints'/g "
+            "\nsed -i s/'.*write_trainpoints'/'write_trainpoints'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*write_trainforces'/'write_trainforces'/g "
+            "\nsed -i s/'.*write_trainforces'/'write_trainforces'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*precondition_weights'/'#precondition_weights'/g "
+            "\nsed -i s/'.*precondition_weights'/'#precondition_weights'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
         output_text += (
-            "sed -i s/'.*nguyen_widrow_weights_short'/'#nguyen_widrow_weights_short'/g "
+            "\nsed -i s/'.*nguyen_widrow_weights_short'/'#nguyen_widrow_weights_short'/g "
             "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
         )
 
