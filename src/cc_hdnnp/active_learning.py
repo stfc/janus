@@ -2,7 +2,7 @@ from copy import deepcopy
 from os import listdir, mkdir
 from os.path import isdir, isfile, join
 from shutil import copy
-from typing import List, Tuple, Union
+from typing import Dict, List, Literal, Tuple, Union
 import warnings
 
 import numpy as np
@@ -176,7 +176,7 @@ class ActiveLearning:
             and barostat_option != "iso"
         ):
             raise ValueError(
-                "Barostat option {0} is not implemented in RuNNerActiveLearn_1.py.".format(
+                "Barostat option {0} is not implemented.".format(
                     barostat_option
                 )
             )
@@ -184,7 +184,7 @@ class ActiveLearning:
 
         if atom_style != "atomic" and atom_style != "full":
             raise ValueError(
-                "Atom style {0} is not implemented in RuNNerActiveLearn_1.py.".format(
+                "Atom style {0} is not implemented.".format(
                     atom_style
                 )
             )
@@ -242,8 +242,8 @@ class ActiveLearning:
 
         if len(tolerances) <= initial_tolerance:
             raise ValueError(
-                "There are not enough tolerance values as initial_tolerance results in an index "
-                "error."
+                "There are not enough tolerance values as initial_tolerance "
+                "results in an index error."
             )
 
         self.data_controller = data_controller
@@ -480,6 +480,10 @@ class ActiveLearning:
                     self.timestep * 100, self.barostat_option, self.timestep * 1000
                 )
             )
+        else:
+            raise ValueError(
+                "Integrator {0} is not implemented.".format(integrator)
+            )
         input_lammps += (
             "thermo 1\n"
             + "variable thermo equal 0\n"
@@ -499,6 +503,13 @@ class ActiveLearning:
                     "dump lammpstrj all custom 1 structure.lammpstrj id element "
                     "x y z q\n"
                 )
+            else:
+                raise ValueError(
+                    "Atom style {0} is not implemented.".format(
+                        self.atom_style
+                    )
+                )
+
             input_lammps += (
                 "dump_modify lammpstrj pbc yes sort id element {0}\n".format(
                     elements_string[:-1]
@@ -515,6 +526,13 @@ class ActiveLearning:
                     "dump lammpstrj all custom 1 structure.lammpstrj id element "
                     "xu yu zu q\n"
                 )
+            else:
+                raise ValueError(
+                    "Atom style {0} is not implemented.".format(
+                        self.atom_style
+                    )
+                )
+
             input_lammps += "dump_modify lammpstrj pbc no sort id element {0}\n".format(
                 elements_string[:-1]
             )
@@ -544,11 +562,11 @@ class ActiveLearning:
         lattice : np.ndarray
             Array with the shape (3, 3) representing the dimensions of the structure's lattice.
         element : np.ndarray
-            Ordered array of chemical symbols (str) for the atoms in the structure, with length equal
-            to the number of atoms present.
+            Ordered array of chemical symbols (str) for the atoms in the structure,
+            with length equal to the number of atoms present.
         xyz : np.ndarray
-            Ordered array of positions with shape (N, 3) for the atoms in the structure, with length equal
-            to the number of atoms N.
+            Ordered array of positions with shape (N, 3) for the atoms in the structure,
+            with length equal to the number of atoms N.
         q : np.ndarray
             Ordered array of charges for the atoms in the structure, with length equal
             to the number of atoms present.
@@ -718,8 +736,6 @@ class ActiveLearning:
             for _ in range(repetitions):
                 for j in (0, 1):
                     HDNNP = str(j + 1)
-                    # nn_file = join("../../..", self.n2p2_directories[j], "input.nn")
-                    # scaling_file = join("../../..", self.n2p2_directories[j], "scaling.data")
                     nn_file = join(self.n2p2_directories[j], "input.nn")
                     scaling_file = join(self.n2p2_directories[j], "scaling.data")
                     if not isfile(nn_file):
@@ -794,10 +810,9 @@ class ActiveLearning:
                                 mode1_path = mode1_directory + "/" + path
                                 if isdir(mode1_path):
                                     raise IOError(
-                                        "Path {0} already exists. Please remove old directories "
-                                        "first if you would like to recreate them.".format(
-                                            mode1_path
-                                        )
+                                        "Path {0} already exists. Please remove old "
+                                        "directories first if you would like to recreate them."
+                                        "".format(mode1_path)
                                     )
                                 mkdir(mode1_path)
                                 self._write_input_lammps(
@@ -811,12 +826,10 @@ class ActiveLearning:
                                     qs[selection],
                                 )
                                 mkdir(mode1_path + "/RuNNer")
-                                # symlink(
                                 copy(
                                     nn_file,
                                     mode1_path + "/RuNNer/input.nn",
                                 )
-                                # symlink(
                                 copy(
                                     scaling_file,
                                     mode1_path + "/RuNNer/scaling.data",
@@ -825,7 +838,6 @@ class ActiveLearning:
                                     structure.all_species.atomic_number_list
                                 )
                                 src = join(
-                                    # "../../..", self.n2p2_directories[j], "weights.{:03d}.data"
                                     self.n2p2_directories[j],
                                     "weights.{:03d}.data",
                                 )
@@ -840,7 +852,6 @@ class ActiveLearning:
                                             self.n2p2_directories[j]
                                         )
                                         self.data_controller.choose_weights()
-                                    # symlink(
                                     copy(
                                         weights_file,
                                         mode1_path
@@ -971,6 +982,7 @@ class ActiveLearning:
         self, timesteps: np.ndarray, directory: str
     ) -> Tuple[List[str], int]:
         """
+        Reads from "structure.lammpstrj", and returns the lines that correspond to `timesteps`.
 
         Parameters
         ----------
@@ -981,7 +993,10 @@ class ActiveLearning:
 
         Returns
         -------
-        (list of str, int)
+        list of str, int
+            First element is a list of the lines from "structure.lammpstrj" that correspond to
+            one of the timesteps in `timesteps`.
+            Second element is the number of lines each individual timestep has devoted to it.
         """
         structures = []
         i = 0
@@ -994,6 +1009,9 @@ class ActiveLearning:
                     line = f.readline()
                 line = f.readline()
 
+                # Once a timestep is found and is in `timesteps`, the following lines
+                # correspond to the structure at that timestep, until the next timestep
+                # line is found
                 if timesteps[i] == int(line.strip()):
                     structures.append("ITEM: TIMESTEP\n")
                     while not line.startswith("ITEM: TIMESTEP") and line:
@@ -1001,6 +1019,7 @@ class ActiveLearning:
                         line = f.readline()
                     i += 1
 
+        # Determine how many lines correspond to each timestep/structure
         i = 1
         n_lines = len(structures)
         while i < n_lines and not structures[i].startswith("ITEM: TIMESTEP"):
@@ -1009,22 +1028,49 @@ class ActiveLearning:
 
         return structures, structure_lines
 
-    def _write_lammpstrj(self, structures, directory):
-        """ """
+    def _write_lammpstrj(self, structures: List[str], directory: str):
+        """
+        Writes every line in `structures` to the file "structure.lammpstrj" in `directory`.
+
+        Parameters
+        ----------
+        structures : list of str
+            Each string is written to file as a new line.
+        directory : str
+            Path of the directory to write in.
+        """
         with open(directory + "/structure.lammpstrj", "w") as f:
             for line in structures:
                 f.write(line)
 
     def _write_extrapolation(
         self,
-        extrapolation_free_timesteps,
-        extrapolation_free_lines,
-        dump_lammpstrj,
-        structure_lines,
-        last_timestep,
-        directory,
+        extrapolation_free_timesteps: int,
+        extrapolation_free_lines: int,
+        dump_lammpstrj: int,
+        structure_lines: int,
+        last_timestep: int,
+        directory: str,
     ):
-        """ """
+        """
+        Writes the statistics of extrapolations (provided as arguments) to
+        "extrapolation.dat" in `directory`.
+
+        Parameters
+        ----------
+        extrapolation_free_timesteps : int
+            Time steps before the first extrapolation.
+        extrapolation_free_lines : int
+            Lines (in file) before the first extrapolation.
+        dump_lammpstrj : int
+            The number of timesteps between dumped, non-extrapolated structures.
+        structure_lines : int
+            The number of lines per structure.
+        last_timestep : int
+            The last timestep for the structure.
+        directory : str
+            Path of the directory to write in.
+        """
         with open(directory + "/extrapolation.dat", "w") as f:
             f.write(
                 "extrapolation_free_initial_time_steps: {0}\n"
@@ -1065,8 +1111,21 @@ class ActiveLearning:
                 directory=directory,
             )
 
-    def _get_paths(self, structure_name):
-        """ """
+    def _get_paths(self, structure_name: str) -> np.ndarray:
+        """
+        Gets the paths of directories containing finished simulations of `structure_name`.
+
+        Parameters
+        ----------
+        structure_name : str
+            If not empty, only directories matching the strucutre name will be returned.
+            Otherwise, all paths are returned.
+
+        Returns
+        -------
+        np.ndarray
+            Array of strings representing the finished simulations' directories.
+        """
         paths = []
         if structure_name != "":
             try:
@@ -1087,9 +1146,7 @@ class ActiveLearning:
         else:
             files = listdir(join(self.active_learning_directory, "mode1"))
             for file in files:
-                if file.startswith(structure_name + "_") and (
-                    "_nve_hdnnp" in file or "_nvt_hdnnp" in file or "_npt_hdnnp" in file
-                ):
+                if "nve_hdnnp" in file or "nvt_hdnnp" in file or "npt_hdnnp" in file:
                     paths.append(file)
 
         finished = []
@@ -1111,8 +1168,25 @@ class ActiveLearning:
 
         return paths
 
-    def _read_extrapolation(self, path):
-        """ """
+    def _read_extrapolation(self, path: str) -> np.ndarray:
+        """
+        Reads extrapolation statistics for a simulation in the directory given by `path`.
+
+        Parameters
+        ----------
+        path : str
+            The directory within "mode1" which contains the "extrapolation.dat" file.
+
+        Returns
+        -------
+        np.ndarray
+            Array of int. The meaning of each entry is, in order:
+              - Time steps before the first extrapolation.
+              - Lines (in file) before the first extrapolation.
+              - The number of timesteps between dumped, non-extrapolated structures.
+              - The number of lines per structure.
+              - The last timestep for the structure.
+        """
         with open(
             "{0}/mode1/{1}/extrapolation.dat".format(
                 self.active_learning_directory, path
@@ -1124,8 +1198,20 @@ class ActiveLearning:
 
         return extrapolation_data
 
-    def _read_log_format(self, path):
-        """ """
+    def _read_log_format(self, path: str) -> str:
+        """
+        Determines the format of the "log.lammps" file in mode1 directory `path`.
+
+        Parameters
+        ----------
+        path : str
+            The directory within "mode1" which contains the "log.lammps" file.
+
+        Returns
+        -------
+        {"v2.0.0", "v2.1.1"}
+            str representing the format of the log.
+        """
         with open(
             "{0}/mode1/{1}/log.lammps".format(self.active_learning_directory, path)
         ) as f:
@@ -1157,22 +1243,63 @@ class ActiveLearning:
 
         return extrapolation_format
 
-    def _read_log(self, path, extrapolation_data, extrapolation_format):
-        """ """
+    def _read_log(
+        self, path: str, extrapolation_data: np.ndarray, extrapolation_format: str
+    ) -> Tuple[List[int], List[float], List[List[List[Union[float, int]]]]]:
+        """
+        Reads "log.lammps" in `path` and returns information about the extrapolations that
+        occured at each tolerance level, identifying the timestep it occured at, the total
+        normalised extrapolation and each individual contribtion from an atom/symfunc.
+
+        Parameters
+        ----------
+        path : str
+            The directory within "mode1" which contains the "log.lammps" file.
+        extrapolation_data : np.ndarray
+            Array of int. The meaning of each entry is, in order:
+              - Time steps before the first extrapolation.
+              - Lines (in file) before the first extrapolation.
+              - The number of timesteps between dumped, non-extrapolated structures.
+              - The number of lines per structure.
+              - The last timestep for the structure.
+        extrapolation_format : {"v2.0.0", "v2.1.1"}
+            str representing the format of the log.
+
+        Returns
+        -------
+        list of int, list of float, list of list of list of float, int, int
+            Each list has the length of self.tolerances, and corresponds to extrapolations
+            beyond that level. This first list contains the int of a timestep which violated
+            the tolerance. The second is the normalised sum of extrapolations that occured
+            during the aforementioned timestep. Finally, a list with an entry for each
+            tolerance value, which is in turn a list of the individual extrapolations,
+            represented as a final list of the normalised extrapolation value (float), the atom
+            index (int) and the symfunc index (int) in that order.
+        """
         if extrapolation_data[1] != -1:
+            # If the line of the first extrapolation is defined, start reading from there.
+            # Last line is skipped, as it should correspond to the extrapolation warning error.
             with open(
                 "{0}/mode1/{1}/log.lammps".format(self.active_learning_directory, path)
             ) as f:
-                data = [line.strip() for line in f.readlines()][
-                    extrapolation_data[1] : -1
-                ]
+                data_all = [line.strip() for line in f.readlines()]
+                data = data_all[extrapolation_data[1] : -1]
 
             if extrapolation_format == "v2.0.0":
                 data = np.array(
                     [
+                        # "thermo" marks a timestep, which is taken as the first element.
+                        # the rest are nan
                         [float(line.split()[1])]
                         + [np.nan, np.nan, np.nan, np.nan, np.nan]
                         if line.startswith("thermo")
+                        # Otherwise, we have an extrapolation warning. First element is nan,
+                        # the rest are:
+                        #   - value of symfunc
+                        #   - minimum (allowed) symfunc value
+                        #   - maximum (allowed) symfunc value
+                        #   - atom index
+                        #   - symfunc index
                         else [np.nan]
                         + list(
                             np.array(line.split())[[12, 14, 16, 8, 10]].astype(float)
@@ -1184,9 +1311,18 @@ class ActiveLearning:
             elif extrapolation_format == "v2.1.1":
                 data = np.array(
                     [
+                        # "thermo" marks a timestep, which is taken as the first element.
+                        # the rest are nan
                         [float(line.split()[1])]
                         + [np.nan, np.nan, np.nan, np.nan, np.nan]
                         if line.startswith("thermo")
+                        # Otherwise, we have an extrapolation warning. First element is nan,
+                        # the rest are:
+                        #   - value of symfunc
+                        #   - minimum (allowed) symfunc value
+                        #   - maximum (allowed) symfunc value
+                        #   - atom index
+                        #   - symfunc index
                         else [np.nan]
                         + list(
                             np.array(line.split())[[16, 18, 20, 8, 12]].astype(float)
@@ -1197,13 +1333,16 @@ class ActiveLearning:
                 )
 
             if np.isnan(data[-1, 0]):
+                # If the last data entry was an extrapolation warning, crop out the last
+                # entries that occured, as we did not complete this final timestep.
                 data = data[: -np.argmax(np.isfinite(data[:, 0][::-1]))]
 
             if np.isnan(data[0, 0]):
+                # If the first data entry is an extrapolation warning, then add in a dummy
+                # timestep entry corresponding to the -1th step to the start of data.
                 print(
-                    "WARNING: Extrapolation occurred already in the first time step in {0}.".format(
-                        path
-                    )
+                    "WARNING: Extrapolation occurred already in the first time step in {0}."
+                    "".format(path)
                 )
                 data = np.concatenate(
                     (
@@ -1212,12 +1351,19 @@ class ActiveLearning:
                     ),
                     axis=0,
                 )
+
+            # extrapolation is the deviation outside the allowed symfunc range, normalised
+            # to the range between the max and min allowed values, for each extrapolation
+            # in data. It is always positive as values that are <= min or >= max do not
+            # generate the warnings.
             extrapolation = (
                 np.absolute((data[:, 1] - data[:, 2]) / (data[:, 3] - data[:, 2]) - 0.5)
                 - 0.5
             )
 
             for i in range(1, len(extrapolation)):
+                # Sum all the extrapolation that has occured at each timestep. Entries that
+                # are nan correspond to the timestep entries in data.
                 if np.isfinite(extrapolation[i]) and np.isfinite(extrapolation[i - 1]):
                     extrapolation[i] += extrapolation[i - 1]
 
@@ -1225,26 +1371,36 @@ class ActiveLearning:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=RuntimeWarning)
                 for tolerance in self.tolerances:
+                    # Append an index that extrapolates more than each tolerance level
                     extrapolation_indices.append(np.argmax(extrapolation > tolerance))
             extrapolation_timestep = []
             extrapolation_value = []
             extrapolation_statistic = []
             for i in range(len(self.tolerances)):
                 if extrapolation_indices[i] > 0:
+                    # If we have a valid index for this tolerance level, calculate further
                     j = 1
                     while np.isnan(data[extrapolation_indices[i] + j, 0]):
+                        # Keep counting the number of extrapolations that occured until we
+                        # reach a timestep (first entry in a data entry is nan)
                         j += 1
+                    # The timestep these extrapolations occured in
                     extrapolation_timestep.append(
                         int(data[extrapolation_indices[i] + j, 0])
                     )
+                    # The sum of the normalised extrapolation for this timestep
                     extrapolation_value.append(
                         extrapolation[extrapolation_indices[i] + j - 1]
                     )
+                    # The value of the symfunc, the atom index and symfunc index preceding
+                    # the timestep are recorded
                     extrapolation_statistic.append([])
                     j -= 1
                     extrapolation_statistic[-1].append(
                         data[extrapolation_indices[i] + j, [1, 4, 5]]
                     )
+                    # This is the same process used to calculate the normalised symfunc value
+                    # earlier
                     extrapolation_statistic[-1][-1][0] = (
                         data[extrapolation_indices[i] + j, 1]
                         - data[extrapolation_indices[i] + j, 2]
@@ -1257,6 +1413,8 @@ class ActiveLearning:
                     else:
                         extrapolation_statistic[-1][-1][0] -= 0.5
                     j -= 1
+                    # Continue this process, recording reach extrapolation seperate, until the
+                    # preceding timestep is reached
                     while np.isnan(data[extrapolation_indices[i] + j, 0]):
                         extrapolation_statistic[-1].append(
                             data[extrapolation_indices[i] + j, [1, 4, 5]]
@@ -1274,10 +1432,13 @@ class ActiveLearning:
                             extrapolation_statistic[-1][-1][0] -= 0.5
                         j -= 1
                 else:
+                    # If no extrapolations were above this tolerance level, append dummy stats
                     extrapolation_timestep.append(-1)
                     extrapolation_value.append(0)
                     extrapolation_statistic.append([None])
         else:
+            # If the line of the first extrapolation is not defined, return dummy statistics
+            # with the length of `self.tolerances`
             extrapolation_timestep = len(self.tolerances) * [-1]
             extrapolation_value = len(self.tolerances) * [0]
             extrapolation_statistic = len(self.tolerances) * [None]
@@ -1286,45 +1447,92 @@ class ActiveLearning:
 
     def _get_timesteps(
         self,
-        extrapolation_timesteps,
-        extrapolation_values,
-        extrapolation_data,
+        extrapolation_timesteps: np.ndarray,
+        extrapolation_values: np.ndarray,
+        extrapolation_data: List[np.ndarray],
         structure: Structure,
-    ):
-        """ """
+    ) -> Tuple[List[List[Union[int, List[int]]]], Union[np.ndarray, List[int]], np.ndarray, Literal[2]]:
+        """
+        For each simulation performed in "mode1", compare the number of steps elapsed and the
+        nature of extrapiolations that occured to determine the timestep of structures which
+        should be added to the dataset.
+
+        Parameters
+        ----------
+        extrapolation_timesteps : np.ndarray
+            Array of int, with shape (N, M) where N is the number of simulations for
+            `structure`, M is the length of `self.tolerances`. Each entry is a timestep that
+            resulted in extrapolations (or -1 if none occured at that tolerance).
+        extrapolation_values : np.ndarray
+            Array of float, with shape (N, M) where N is the number of simulations for
+            `structure`, M is the length of `self.tolerances`. Each entry is the normalised sum
+            of extrapolations for the simulation at a particular timestep
+            (given by `extrapolation_timesteps`).
+        extrapolation_data : List[np.ndarray]
+            Each array in the list corresponds to a simulation. Within each array, there are 5
+            int entries corresponding to:
+              - Time steps before the first extrapolation.
+              - Lines (in file) before the first extrapolation.
+              - The number of timesteps between dumped, non-extrapolated structures.
+              - The number of lines per structure.
+              - The last timestep for the structure.
+        structure : Structure
+            The structure that the other arguments correspond to.
+
+        Returns
+        -------
+        list of list of (int or list of int), list or np.ndarray of int, np.ndarray, 2
+            First object returned is a list with entries for each simulation, which in turn
+            contains a list with entries that are either int (the  timestep of a selected 
+            interpolation) or a list of int (the timesteps of the chosen small, and all large 
+            extrapolations).
+            Second is a list which gives the index in `self.tolerances` that is appropriate for
+            each simulation.
+            Third is also the index giving the appropriate tolerance, but only for "small"
+            extrapolations.
+            Finally, the number of possible small tolerances is returned as an int.
+        """
         min_fraction = 0.001
         n_tolerances = len(self.tolerances)
         n_small = 2
+        # Index defining "small" extrapolations in `self.tolerances`
         small = n_small - 1
         structure_extrapolation = structure.min_t_separation_extrapolation
         structure_interpolation = structure.min_t_separation_interpolation
         structure_checks = structure.t_separation_interpolation_checks
-        if len(
-            extrapolation_timesteps[:, small][
-                extrapolation_timesteps[:, small] >= structure_extrapolation
-            ]
-        ) < min_fraction * len(extrapolation_timesteps[:, small]):
+
+        # Compare how many structures contain "small" extrapolation (outside of the first
+        # `structure_extrapolation` timesteps) with `min_fraction`
+        extrapoltation_occured = (
+            extrapolation_timesteps[:, small] >= structure_extrapolation
+        )
+        extrapolated_timesteps = extrapolation_timesteps[:, small][
+            extrapoltation_occured
+        ]
+        if len(extrapolated_timesteps) < min_fraction * len(
+            extrapolation_timesteps[:, small]
+        ):
             print(
-                "Only less than 0.1% of the simulations show an extrapolation if a tolerance of "
-                "{0} is employed (the initial {1} time steps are neglected). The tolerance value "
-                "is reduced to {2}.".format(
+                "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
+                "of {0} is employed (the initial {1} time steps are neglected). The tolerance "
+                "value is reduced to {2}.".format(
                     self.tolerances[small],
                     structure_extrapolation,
                     self.tolerances[small - 1],
                 )
             )
             small -= 1
-        if not (
-            extrapolation_timesteps[:, small][extrapolation_timesteps[:, small] >= 0]
-        ).any():
+
+        # Consider "small" extrapolation including the first `structure_extrapolation`
+        # timesteps
+        extrapoltation_occured = [extrapolation_timesteps[:, small] >= 0]
+        extrapolated_timesteps = extrapolation_timesteps[:, small][extrapoltation_occured]
+        if not extrapolated_timesteps.any():
+            # Set tolerance indices to a dummy value for each structure
             print("There are no small extrapolations.")
             tolerance_indices = len(extrapolation_timesteps) * [-1]
         else:
-            n_simulations_extrapolation = len(
-                extrapolation_timesteps[:, small][
-                    extrapolation_timesteps[:, small] >= 0
-                ]
-            )
+            n_simulations_extrapolation = len(extrapolated_timesteps)
             n_simulations = len(extrapolation_timesteps[:, small])
             print(
                 "Small extrapolations are present in {0} of {1} simulations ({2}%).".format(
@@ -1333,20 +1541,19 @@ class ActiveLearning:
                     round(100.0 * n_simulations_extrapolation / n_simulations, 2),
                 )
             )
+            # If extrapolation_timesteps is -1, no extrapolations occured for this threshold?
             extrapolation_values_reduced = extrapolation_values[
                 extrapolation_timesteps[:, small] == -1
             ]
             mean_small = np.mean(extrapolation_values_reduced[:, small])
             std_small = np.std(extrapolation_values_reduced[:, small])
-            criterium = (
-                mean_small
-                + std_small
-                + max(0, self.tolerances[small] - mean_small + std_small)
-            )
+            criterium = max(mean_small + std_small, self.tolerances[small])
             while (
                 criterium > self.tolerances[self.initial_tolerance]
                 and self.initial_tolerance < n_tolerances
             ):
+                # Increase self.initial_tolerance until it is greater than our criterium to get
+                # the "large" tolerance
                 self.initial_tolerance += 1
             while (
                 not (
@@ -1357,6 +1564,8 @@ class ActiveLearning:
                 ).any()
                 and self.initial_tolerance > n_small
             ):
+                # Decrease self.initial tolerance until we find a tolerance that has
+                # extrapolated structures, or we reach our "small" tolerance
                 print(
                     "There are no large extrapolations for a tolerance of {0} (the initial {1} "
                     "time steps are neglected). The tolerance value is reduced to {2}."
@@ -1374,23 +1583,33 @@ class ActiveLearning:
                     ]
                 ).any():
                     print("There are no large extrapolations.")
+            # For each structure, subtract the timestep of the first small extrapolation from
+            # the timesteps of all other (not small) extrapolations
             extra_steps = (
                 extrapolation_timesteps[:, n_small:].T
                 - extrapolation_timesteps[:, small]
             ).T
+            # Set negative steps to be the structure_extrapolation minimum
             extra_steps[extra_steps < 0] = structure_extrapolation + 1
+            # Only include extra_steps where an extrapolation occured
             extra_steps_reduced = extra_steps[extrapolation_timesteps[:, small] != -1]
+            # For structures where extra steps occured, tolerance is the "large" value
             tolerance_indices = self.initial_tolerance * np.ones(
                 len(extra_steps), dtype=int
             )
+            # Tolerance index is -1 for structures that didn't extrapolate
             tolerance_indices[extrapolation_timesteps[:, small] == -1] = -1
             tolerance_indices_reduced = tolerance_indices[
                 extrapolation_timesteps[:, small] != -1
             ]
             for i in range(self.initial_tolerance - n_small, n_tolerances - n_small):
+                # Iterate over possible "large" tolerances, increasing for those structures
+                # with less extra steps than structure_extrapolation
                 tolerance_indices_reduced[
                     extra_steps_reduced[:, i] < structure_extrapolation
                 ] += 1
+            # Set index to -1 for those structures that did not have sufficient extra_steps
+            # at any tolerance
             tolerance_indices_reduced[tolerance_indices_reduced >= n_tolerances] = -1
             tolerance_indices[
                 extrapolation_timesteps[:, small] != -1
@@ -1405,6 +1624,8 @@ class ActiveLearning:
                 extrapolation_timesteps[i][small] < 0
                 and extrapolation_data[i][4] != self.N_steps
             ):
+                # Print warnings in the case where the simulation ended early, but we did not
+                # satisfy the tolerance for the extrapolation
                 print(
                     "WARNING: A simulation ended due to too many extrapolations but no one of "
                     "these was larger than the tolerance of {0}. If this message is printed "
@@ -1423,10 +1644,13 @@ class ActiveLearning:
                         )
                     )
             if extrapolation_timesteps[i][smalls[i]] >= 0:
+                # We have extrapolations over small tolerance
                 if (
                     extrapolation_timesteps[i][smalls[i]]
                     > (min_interpolated_structure_checks + 2) * structure_checks
                 ):
+                    # If the timesteps for extrapolation is large enough, add interpolated
+                    # structures that occured before it in addition to extrapolated structures
                     selected_timesteps.append(
                         list(
                             range(
@@ -1443,6 +1667,7 @@ class ActiveLearning:
                         ]
                     )
                 else:
+                    # Add the minimum number of interpolated checks
                     small_timestep_separation_interpolation_checks = (
                         (
                             extrapolation_timesteps[i][smalls[i]]
@@ -1484,6 +1709,7 @@ class ActiveLearning:
                             ]
                         )
             else:
+                # Attempt to add interpolated structures in lieu of extrapolated ones
                 if (
                     extrapolation_data[i][4]
                     > (min_interpolated_structure_checks + 2) * structure_checks
@@ -1535,8 +1761,8 @@ class ActiveLearning:
                             ]
                         )
                         print(
-                            "Included the last regularly dumped structure of the simulation as it "
-                            "ended due to too many extrapolations."
+                            "Included the last regularly dumped structure of the simulation "
+                            "as it ended due to too many extrapolations."
                         )
                     else:
                         if (
@@ -1554,8 +1780,8 @@ class ActiveLearning:
                                 ]
                             )
                             print(
-                                "Included the last regularly dumped structure of the simulation as"
-                                " it ended due to too many extrapolations."
+                                "Included the last regularly dumped structure of the "
+                                "simulation as it ended due to too many extrapolations."
                             )
                         else:
                             selected_timesteps.append(
@@ -1564,11 +1790,34 @@ class ActiveLearning:
 
         return selected_timesteps, tolerance_indices, smalls, n_small
 
-    def _get_structure(self, data):
-        """ """
+    def _get_structure(
+        self, data: List[str]
+    ) -> Tuple[List[List[float]], np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Extracts relevant properties from the lines of `data` and returns them as arrays.
+
+        Parameters
+        ----------
+        data : list of str
+            The relevant lines read from a LAMMPS trajectory file
+
+        Returns
+        -------
+        list of list of float, np.ndarray, np.ndarray, np.ndarray
+            First object is a list with three entries, each another three entry list
+            representing a lattice vector of the structure.
+            Second object is an array of strings representing the chemical symbol for each
+            atom in the structure.
+            Third is an array where the first dimension indexes the atoms in the structure, and
+            the second is length 3 representing the position of that atom in the cartesian
+            co-ordinates.
+            Fourth element is an array of the charge of each atom in the structure, provided
+            the data has atom style "full". Otherwise, zeros are returned.
+        """
         lat = np.array([data[5].split(), data[6].split(), data[7].split()]).astype(
             float
         )
+        # Account for lattice vectors not aligned with the cartesian axes
         if data[4].startswith("ITEM: BOX BOUNDS xy xz yz pp pp pp"):
             lx = (
                 lat[0][1]
@@ -1596,6 +1845,7 @@ class ActiveLearning:
             "ITEM: ATOMS id element xu yu zu q"
         ):
             atom_style = "full"
+
         data = np.array([line.split() for line in data[9:]])
         element = deepcopy(data[:, 1])
         position = deepcopy(data[:, 2:5]).astype(float)
@@ -1606,8 +1856,43 @@ class ActiveLearning:
 
         return lattice, element, position, charge
 
-    def _check_nearest_neighbours(self, lat, pos_i, pos_j, ii, d_min):
-        """ """
+    def _check_nearest_neighbours(
+        self,
+        lat: List[List[float]],
+        pos_i: np.ndarray,
+        pos_j: np.ndarray,
+        ii: bool,
+        d_min: float,
+    ) -> Tuple[bool, float]:
+        """
+        Checks all positions in `pos_i` against those of `pos_j`, and checks whether they
+        satisfy the nearest neighbour constraint `d_min`.
+
+        Parameters
+        ----------
+        lat : list of list of float
+            A list with three entries, each another three entry list representing a lattice
+            vector of the structure.
+        pos_i : np.ndarray
+            Array where the first dimension indexes the atoms of a particular element in the
+            structure, and the second is length 3 representing the position of that atom in the
+            cartesian co-ordinates.
+        pos_j : np.ndarray
+            Array where the first dimension indexes the atoms of a particular element in the
+            structure, and the second is length 3 representing the position of that atom in the
+            cartesian co-ordinates.
+        ii : bool
+            Whether the element of `pos_i` and `pos_j` is the same.
+        d_min : float
+            The minimum seperatation allowed for the positions of elements i and j.
+
+        Returns
+        -------
+        bool, float
+            First element is whether the positions satisfy the minimum seperation criteria.
+            Second element is the seperation that caused rejection, or -1 in the case of
+            acceptance.
+        """
         if len(pos_i) == 0 or len(pos_j) == 0:
             return True, -1
 
@@ -1823,9 +2108,41 @@ class ActiveLearning:
         return True, -1
 
     def _check_structure(
-        self, lattice, element, position, path, timestep, structure: Structure
-    ):
-        """ """
+        self,
+        lattice: List[List[float]],
+        element: np.ndarray,
+        position: np.ndarray,
+        path: str,
+        timestep: int,
+        structure: Structure,
+    ) -> bool:
+        """
+        Checks the interatomic distances for each element present in the structure to ensure
+        that none are within the minimum requried seperation.
+
+        Parameters
+        ----------
+        lattice : list of list of float
+            A list with three entries, each another three entry list representing a lattice
+            vector of the structure.
+        element : np.ndarray
+            Array of strings representing the chemical symbol for each atom in the structure.
+        position : np.ndarray
+            Array where the first dimension indexes the atoms in the structure, and
+            the second is length 3 representing the position of that atom in the cartesian
+            co-ordinates.
+        path : str
+            The path of the directory containing the simulation in question.
+        timestep : int
+            The timestep of the simulation that the `data` corresponds to.
+        structure : Structure
+            The `Structure` present in `data`
+
+        Returns
+        -------
+        bool
+            Whether the arguments were accepted as a valid structure.
+        """
         for i, element_i in enumerate(self.element_types):
             for element_j in self.element_types[i:]:
                 accepted, d = self._check_nearest_neighbours(
@@ -1851,8 +2168,35 @@ class ActiveLearning:
 
         return True
 
-    def _read_structure(self, data, path, timestep, structure: Structure):
-        """ """
+    def _read_structure(
+        self, data: List[str], path: str, timestep: int, structure: Structure
+    ) -> bool:
+        """
+        For the given `data`, extract the relevant properties and then assess its suitability
+        to be used as future datapoint.
+        If suitable, then the details are added to:
+          - `self.names`
+          - `self.lattices`
+          - `self.elements`
+          - `self.positions`
+          - `self.charges`
+
+        Parameters
+        ----------
+        data : list of str
+            The relevant lines read from a LAMMPS trajectory file
+        path : str
+            The path of the directory containing the simulation in question.
+        timestep : int
+            The timestep of the simulation that the `data` corresponds to.
+        structure : Structure
+            The `Structure` present in `data`
+
+        Returns
+        -------
+        bool
+            Whether the `data` was accepted as a valid structure.
+        """
         lattice, element, position, charge = self._get_structure(data)
         accepted = self._check_structure(
             lattice, element, position, path, timestep, structure
@@ -1868,17 +2212,62 @@ class ActiveLearning:
 
     def _read_structures(
         self,
-        path,
-        extrapolation_data,
-        selected_timestep,
-        n_small,
-        small,
-        tolerance_index,
-        extrapolation_statistic,
-        element2index,
+        path: str,
+        extrapolation_data: np.ndarray,
+        selected_timestep: List[int],
+        n_small: int,
+        small: int,
+        tolerance_index: int,
+        extrapolation_statistic: List[List[List[Union[float, int]]]],
+        element2index: Dict[str, int],
         structure: Structure,
     ):
-        """ """
+        """
+        For all interpolation checks, and the small and large extrapolations for the
+        simulation associated with `path`, call `_read_structure` to assess its suitability.
+        If suitable, then the details are added to:
+          - `self.names`
+          - `self.lattices`
+          - `self.elements`
+          - `self.positions`
+          - `self.charges`
+
+        Parameters
+        ----------
+        path : str
+            The directory for a simulation undertaken during mode1.
+        extrapolation_data : np.ndarray
+            Array of int. The meaning of each entry is, in order:
+              - Time steps before the first extrapolation.
+              - Lines (in file) before the first extrapolation.
+              - The number of timesteps between dumped, non-extrapolated structures.
+              - The number of lines per structure.
+              - The last timestep for the structure.
+        selected_timestep : list of int
+            The timestep(s) which have been identified for the simulation.
+        n_small : int
+            The number of tolerances in `self.tolerance` classed as small.
+        small : int
+            The index correspinding to the small tolerance that is used for this simulation.
+        tolerance_index : int
+            The index corresponding to the large tolerance that is used for this simulation.
+        extrapolation_statistic : list of list of float, int
+            The outer list contains an entry for each tolerance value, which is in turn a list
+            of each extrapolation that occured for the simulation. The elements of this list
+            are lists with three entries: the normalised  extrapolation value (float), the atom
+            index (int) and the symfunc index (int).
+        element2index : dict of str, int
+            Allows conversion between relevant elements chemical symbol as a string and the
+            index it has in the system.
+        structure : Structure
+            The `Structure` that was being simulated during mode1.
+
+        Returns
+        -------
+        int
+            The tolerance index corresponding to the chosen large extrapolation. If one is not
+            found, then -1 is returned.
+        """
         structure_extrapolation = structure.min_t_separation_extrapolation
         with open(
             "{0}/mode1/{1}/structure.lammpstrj".format(
@@ -1890,10 +2279,16 @@ class ActiveLearning:
         n_interpolation_checks = len(selected_timestep) - 2
         if n_interpolation_checks > 0:
             for i in range(n_interpolation_checks):
+                # A timestep of -1 would indicate no information, only consider when >= 0
                 if selected_timestep[i] >= 0:
+                    # Find the starting line for the interpolation. data[3] is the number
+                    # of atoms in the simulation, which may be mistaken for the timestep.
                     if selected_timestep[i] != int(data[3]):
                         start = data.index(str(selected_timestep[i])) - 1
                     else:
+                        # In cases where the timestep is the same as the number of atoms, use
+                        # `extrapolation_data[3]` (the number of lines per structure) to avoid
+                        # using the number of atoms as the start point erroneously.
                         start = 1
                         while selected_timestep[i] != int(data[start]):
                             start += extrapolation_data[3]
@@ -1906,6 +2301,9 @@ class ActiveLearning:
                         self.statistics.append([])
                     data = data[end:]
 
+        # After the interpolations, the last two timesteps are "small" and "large"
+        # extrapolations. Only consider if the extrapolation occurs after the first
+        # `structure_extrapolation` steps
         if selected_timestep[-2] >= structure_extrapolation:
             if selected_timestep[-2] != int(data[3]):
                 start = data.index(str(selected_timestep[-2])) - 1
@@ -1918,20 +2316,28 @@ class ActiveLearning:
             accepted = self._read_structure(
                 data[start:end], path, selected_timestep[-2], structure
             )
+
             if accepted:
+                # The array of atom indices in `extrapolation_statistics` runs from 1 to the
+                # total number of atoms in the system. Using `self.elements` and
+                # `element2index`, map this to an index which identifies only the species of
+                # atom (e.g. all "H" atoms might have index 1)
                 extrapolation_statistic[small] = np.array(
                     extrapolation_statistic[small]
                 )
-                extrapolation_statistic[small][:, 1] = np.array(
-                    [
+                species_indices = []
+                for i in range(len(extrapolation_statistic[small])):
+                    species_indices.append(
                         element2index[
                             self.elements[-1][
                                 extrapolation_statistic[small][i, 1].astype(int) - 1
                             ]
                         ]
-                        for i in range(len(extrapolation_statistic[small]))
-                    ]
-                )
+                    )
+                extrapolation_statistic[small][:, 1] = np.array(species_indices)
+
+                # Sort the statistics, and format `self.statistics` to have the entries
+                # "small", the chemical symbols, the symfunc index and the extrapolation value
                 extrapolation_statistic[small] = extrapolation_statistic[small][
                     extrapolation_statistic[small][:, 0].argsort()
                 ]
@@ -1963,8 +2369,13 @@ class ActiveLearning:
                 )
 
         accepted = False
+        # Reduce `tolerance_index` until an acceptable level is found
+        # Set to -1 if one canot be found
         while not accepted and tolerance_index >= 0:
+            # Only consider if the extrapolation occurs after the first
+            # `structure_extrapolation` steps
             if selected_timestep[-1][tolerance_index] >= structure_extrapolation:
+                # Determine start/end points
                 if selected_timestep[-1][tolerance_index] != int(data[3]):
                     start = data.index(str(selected_timestep[-1][tolerance_index])) - 1
                 else:
@@ -1988,7 +2399,12 @@ class ActiveLearning:
                     < selected_timestep[-2]
                 ):
                     tolerance_index = -1
+
         if accepted:
+            # The array of atom indices in `extrapolation_statistics` runs from 1 to the
+            # total number of atoms in the system. Using `self.elements` and
+            # `element2index`, map this to an index which identifies only the species of
+            # atom (e.g. all "H" atoms might have index 1)
             extrapolation_statistic[tolerance_index + n_small] = np.array(
                 extrapolation_statistic[tolerance_index + n_small]
             )
@@ -2007,6 +2423,9 @@ class ActiveLearning:
                     )
                 ]
             )
+
+            # Sort the statistics, and format `self.statistics` to have the entries
+            # "large", the chemical symbols, the symfunc index and the extrapolation value
             extrapolation_statistic[
                 tolerance_index + n_small
             ] = extrapolation_statistic[tolerance_index + n_small][
@@ -2062,9 +2481,40 @@ class ActiveLearning:
         return tolerance_index
 
     def _write_data(
-        self, names, lattices, elements, positions, charges, file_name: str, mode: str
+        self,
+        names: np.ndarray,
+        lattices: np.ndarray,
+        elements: np.ndarray,
+        positions: np.ndarray,
+        charges: np.ndarray,
+        file_name: str,
+        mode: str,
     ):
-        """ """
+        """
+        Writes the information about datapoints passed as arguments to `file_name`, with `mode`
+        (e.g. "a+" for appending to existing files).
+
+        Parameters
+        ----------
+        names : np.ndarray
+           Array of str with length N giving the name of each mode1 path corresponding to the
+           simulation that gave rise to the data.
+        lattices : np.ndarray
+            Three dimensional array of float with shape (N, 3, 3) where the second axis gives
+            the three lattice vectors, each with three cartesian co-ordinates.
+        elements : np.ndarray
+            Two dimensional array of str with shape (N, M) where the second axis gives
+            the chemical symbol of each atom in a given structure.
+        positions : np.ndarray
+            Three dimensional array of float with shape (N, M, 3) where the second axis gives
+            the position of each atom, each with three cartesian co-ordinates.
+        charges : np.ndarray
+            Two dimensional array of float with shape (N, M) giving the charges of each atom.
+        file_name : str
+            The path of the file to write to.
+        mode : str
+            The mode to open `file_name` in.
+        """
         with open(file_name, mode) as f:
             # Make sure we have a trailing newline if appending to file
             if mode == "a+":
@@ -2116,18 +2566,48 @@ class ActiveLearning:
                 f.write("energy 0.0\ncharge 0.0\nend\n")
 
     def _print_reliability(
-        self, extrapolation_timesteps, smalls, tolerance_indices, paths
+        self,
+        extrapolation_timesteps: np.ndarray,
+        smalls: np.ndarray,
+        tolerance_indices: np.ndarray,
+        paths: np.ndarray,
     ):
-        """ """
+        """
+        Uses the small (`smalls`) and large (`tolerance_indices`) tolerance indices to
+        determine the average (median) number of steps before a small and subsequent large
+        extrapolation for the simulations in `paths`.
+
+        Parameters
+        ----------
+        extrapolation_timesteps : np.ndarray
+            Two dimensional array of int with shape (N, M) where N is the length of `paths`
+            and M is the length of `self.tolerances`, representing the timestep which exceeds
+            each tolerance level for each simulation.
+        smalls : np.ndarray
+            Array of int with length N, where N is the length of `paths`, representing the
+            appropriate small tolerance for each simulation.
+        tolerance_indices : np.ndarray
+            Array of int with length N, where N is the length of `paths`, giving the index
+            of the appropriate large tolerance for each simulation.
+        paths : np.ndarray
+            Array of str with length N, where N is the length of `paths`, giving the
+            directories of mode1 simulations.
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
+            # Transposing gives a shape (M, N), so indexing with `smalls` gives an (N, N)
+            # array where the diagonal entries are the small timesteps for each simulation in
+            # order
             small_extrapolation_timesteps = np.diagonal(
                 extrapolation_timesteps.T[smalls]
             )
+            # remove any timesteps of -1, corresponding to the lack of an extrapolation
             extrapolation_timesteps_reduced = small_extrapolation_timesteps[
                 small_extrapolation_timesteps != -1
             ]
             paths_reduced = paths[small_extrapolation_timesteps != -1]
+            # Extract the median number of timesteps overall and for each network, accounting
+            # for nans that may occur due to not having any extrapolations for a network
             median_small = np.median(extrapolation_timesteps_reduced)
             if np.isfinite(median_small):
                 median_small = int(round(median_small, 0))
@@ -2155,12 +2635,15 @@ class ActiveLearning:
                         median_small, median_small_1, median_small_2
                     )
                 )
+
+            # Calculate the number of steps between a small and large extrapolation
             extra_steps = (
                 np.diagonal(extrapolation_timesteps.T[tolerance_indices])[
                     tolerance_indices >= 0
                 ]
                 - small_extrapolation_timesteps[tolerance_indices >= 0]
             )
+            # If we have extra steps, calculate medians with same precautions as before
             if not np.isscalar(extra_steps):
                 paths_reduced = paths[tolerance_indices >= 0]
                 median_extra_steps = np.median(extra_steps)
@@ -2196,7 +2679,19 @@ class ActiveLearning:
                     )
 
     def _read_data(self, file_name: str):
-        """ """
+        """
+        Reads `file_name` and sets the following based on the contents:
+          - `self.names`
+          - `self.lattices`
+          - `self.elements`
+          - `self.positions`
+          - `self.charges`
+
+        Parameters
+        ----------
+        file_name : str
+            The file to read. Should be in n2p2 format.
+        """
         names = []
         lattices = []
         elements = []
@@ -2234,8 +2729,16 @@ class ActiveLearning:
         self.charges = np.array(charges)
         self.statistics = np.array(statistics)
 
-    def _print_performance(self, n_calculations):
-        """ """
+    def _print_performance(self, n_calculations: int):
+        """
+        Prints the time taken during mode2 for each network.
+
+        Parameters
+        ----------
+        n_calculations : int
+            The number of frames from simulations that the energy/forces were calculated
+            for in mode2.
+        """
         time = []
         for input_name in ["/mode2/HDNNP_1/mode_2.out", "/mode2/HDNNP_2/mode_2.out"]:
             with open(self.active_learning_directory + input_name) as f:
@@ -2262,8 +2765,23 @@ class ActiveLearning:
             )
         )
 
-    def _read_energies(self, input_name):
-        """ """
+    def _read_energies(self, input_name: str) -> np.ndarray:
+        """
+        Read the energies from the n2p2 output file provided.
+
+        Parameters
+        ----------
+        input_name : str
+            The file path of the file to read energies from. Should be in a recognisable
+            format, namely the "trainpoints" file generated by the network training.
+
+        Returns
+        -------
+        np.ndarray
+            Two dimensional array with shape (N, 2) where N is the number of structures the
+            network was evaluated for. Along the second dimension the first element is the
+            index of the structure, and the second is the energy associated with it.
+        """
         with open(input_name) as f:
             # readline "pops" the first line so all indexes should decrease by 1
             line = f.readline().strip()
@@ -2289,7 +2807,25 @@ class ActiveLearning:
         return energies
 
     def _read_forces(self, input_name: str) -> np.ndarray:
-        """ """
+        """
+        Read the forces from the n2p2 output file provided.
+
+        Parameters
+        ----------
+        input_name : str
+            The file path of the file to read forces from. Should be in a recognisable
+            format, namely the "trainforces" file generated by the network training.
+
+        Returns
+        -------
+        np.ndarray
+            Two dimensional array with shape (3N, 2) where N is the number of structures the
+            network was evaluated for. Along the second dimension the first element is the
+            index of the structure, and the second is a force associated with it in one of the
+            cartesian directions. It is ordered so that the forces associated with index `i`
+            appear consequetively, in xyz order:
+            [... [i-1, fz(i-1)], [i, fx(i)], [i, fy(i)], [i, fz(i)], [i+1, fx(i+1)], ...]
+        """
         with open(input_name) as f:
             line = f.readline().strip()
             if line.startswith("point"):
@@ -2324,8 +2860,22 @@ class ActiveLearning:
 
         return forces
 
-    def _read_normalisation(self, input_name):
-        """ """
+    def _read_normalisation(self, input_name: str) -> Tuple[float, float]:
+        """
+        Read the forces from the n2p2 settings file provided.
+
+        Parameters
+        ----------
+        input_name : str
+            The file path of the file to read normalisation from. Should be in a recognisable
+            format, namely the "input.nn" file used for the network training.
+
+        Returns
+        -------
+        float, float
+            The conversion factor for energy and length respectively. If not found in the file,
+            (1., 1.) is returned.
+        """
         with open(input_name) as f:
             lines = f.readlines()[5:7]
 
@@ -2345,7 +2895,31 @@ class ActiveLearning:
         steps: List[int],
         indices: List[int],
     ) -> np.ndarray:
-        """ """
+        """
+        Initially, `selection` is based on energy/force discrepancies alone. However, it may
+        have multiple interpolated datapoints that do not meet the criteria for
+        `max_interpolated_structures_per_simulation` or `t_separation_interpolation_checks`.
+        The returned `selection` has these datapoints removed.
+
+        Parameters
+        ----------
+        selection : np.ndarray
+            Array of int corresponding to the indices selected to add to the dataset.
+        max_interpolated_structures_per_simulation : int
+            The maximum number of allowed interpolated datapoints to be selected for a given
+            simulation.
+        t_separation_interpolation_checks : int
+            The required seperation any interpolations in time.
+        steps : List[int]
+            The timesteps of all interpolations that had sufficient seperation in energy/force.
+        indices : List[int]
+            The indices of all interpolations that had sufficient seperation in energy/force.
+
+        Returns
+        -------
+        np.ndarray
+            The `selection` indices with multiple datapoints for a single simulation removed
+        """
         steps = np.array(steps)
         steps_difference = steps[1:] - steps[:-1]
         min_separation = steps_difference.min()
@@ -2374,26 +2948,51 @@ class ActiveLearning:
         ordered_structure_names: np.ndarray,
     ) -> np.ndarray:
         """
+        Initially, `selection` is based on energy/force discrepancies alone. Using the
+        extrapolation `statistics` this is expanded with appropriate extrapolated datapoints,
+        as well as removing redundant datapoints from the `selection`.
+
         Parameters
         ----------
         selection : np.ndarray
+            Array of int corresponding to the indices selected to add to the dataset.
         statistics : np.ndarray
+            Two dimensional array of str representing the statistics for extrapolations
+            that were selected. Shape is (N, 4) where N is number of extrapolations, and the
+            entries in the second dimension are either "large" or "small", the chemical symbol
+            of the element(s) in question, the symfunc index, and the extrapolation value.
         names : np.ndarray
+            Array of str, the names of the directories from mode1.
+        ordered_structure_names : np.ndarray
+            Array of str, the names of the structures from mode1. Is in the same order
+            as `names`, with the same length.
+
+        Returns
+        -------
+        np.ndarray
+            The `selection` indices with indices added for any appropriate extrapolations
+            and multiple datapoints for a single simulation removed according to
+            `_reduce_selection`.
         """
         current_name = None
         steps = []
         indices = []
         for i, structure_name in enumerate(ordered_structure_names):
             structure = self.all_structures.structure_dict[structure_name]
-            if list(statistics[i]):
-                if structure.all_extrapolated_structures:
-                    selection = np.append(selection, i)
+            if list(statistics[i]) and structure.all_extrapolated_structures:
+                # If for a given simulated structure we have statistics and add
+                # `all_extrapolated_structures` for it, append to selection.
+                selection = np.append(selection, i)
             elif i in selection:
+                # "_s" denotes the timestep in `names`
                 name_split = names[i].split("_s")
                 if current_name == name_split[0]:
+                    # If we are already considering this `current_name`, append
                     steps.append(int(name_split[1]))
                     indices.append(i)
                 else:
+                    # If we are not yet considering this `current_name`, first reduce for the
+                    # previous `current_name` if we had multiple occurances for that name
                     if len(steps) > 2:
                         selection = self._reduce_selection(
                             selection,
@@ -2405,6 +3004,8 @@ class ActiveLearning:
                     current_name = name_split[0]
                     steps = [int(name_split[1])]
                     indices = [i]
+
+        # Reduce for the final `current_name` if we had multiple occurances for that name
         if len(steps) > 2:
             selection = self._reduce_selection(
                 selection,
@@ -2457,6 +3058,8 @@ class ActiveLearning:
                     counts[i] += 1
                 exception_list = {}
 
+                # If we have maximum allowed extrapolations set and more extrapolations,
+                # register an exception to randomly accept the maximum number allowed
                 if any(max_extrapolated_structures):
                     for i in statistics_unique:
                         structure_name_i = i.split(";")[0]
@@ -2512,6 +3115,7 @@ class ActiveLearning:
                                 )
                             )
 
+                # Remove exceptions for the small extrapolations
                 exception_list_keys = exception_list.keys()
                 if list(exception_list_keys):
                     structure_names_reduced = structure_names_reduced[selection]
@@ -2543,7 +3147,22 @@ class ActiveLearning:
     def _print_statistics(
         self, selection: np.ndarray, statistics: np.ndarray, names: np.ndarray
     ):
-        """ """
+        """
+        Prints information on how many of the new datapoints arise from small and large
+        extrapolations, for each `Structure` in the original dataset.
+
+        Parameters
+        ----------
+        selection : np.ndarray
+            Array of int corresponding to the indices selected to add to the dataset.
+        statistics : np.ndarray
+            Two dimensional array of str representing the statistics for extrapolations
+            that were selected. Shape is (N, 4) where N is number of extrapolations, and the
+            entries in the second dimension are either "large" or "small", the chemical symbol
+            of the element(s) in question, the symfunc index, and the extrapolation value.
+        names : np.ndarray
+            Array of str, the names of the directories that the selected datapoints belong to.
+        """
         structure_names = self.all_structures.structure_dict.keys()
         if structure_names is not None and len(structure_names) > 1:
             for structure_name in structure_names:
@@ -2560,6 +3179,7 @@ class ActiveLearning:
                 print(
                     "{0} missing structures were identified.".format(n_extrapolations)
                 )
+                # Reduce to just the first element of `statistics`, "small"/"large"
                 statistics_reduced = np.array(
                     [
                         statistics[selection][i][0]
@@ -2582,6 +3202,7 @@ class ActiveLearning:
                     )
         else:
             print("{0} missing structures were identified.".format(len(selection)))
+            # Reduce to just the first element of `statistics`, "small"/"large"
             statistics_reduced = np.array(
                 [i[0] for i in statistics[selection] if list(i)]
             )
@@ -2603,7 +3224,19 @@ class ActiveLearning:
             self._analyse_extrapolation_statistics(statistics)
 
     def _analyse_extrapolation_statistics(self, statistics: np.ndarray):
-        """ """
+        """
+        For each element present in `statistics`, writes a file
+        "extrapolation_statistics_X.dat" in which each line has a symfunc index, followed by
+        the value of the extrapolation for that function and element.
+
+        Parameters
+        ----------
+        statistics: np.ndarray
+            Two dimensional array of str representing the statistics for extrapolations
+            that were selected. Shape is (N, 4) where N is number of extrapolations, and the
+            entries in the second dimension are either "large" or "small", the chemical symbol
+            of the element(s) in question, the symfunc index, and the extrapolation value.
+        """
         elements = []
         for line in statistics[:, 1]:
             if ", " in line:
@@ -2611,6 +3244,7 @@ class ActiveLearning:
             else:
                 elements.append(line)
         elements = np.array(elements)
+
         symmetry_functions = []
         for line in statistics[:, 2]:
             if ", " in line:
@@ -2618,6 +3252,7 @@ class ActiveLearning:
             else:
                 symmetry_functions.append(line)
         symmetry_functions = np.array(symmetry_functions).astype(int)
+
         values = []
         for line in statistics[:, 3]:
             if ", " in line:
@@ -2625,6 +3260,7 @@ class ActiveLearning:
             else:
                 values.append(line)
         values = np.array(values).astype(float)
+
         element_list = np.unique(elements)
         for e in element_list:
             symfunc = symmetry_functions[elements == e]
@@ -2642,11 +3278,20 @@ class ActiveLearning:
                         f.write("{0} {1}\n".format(s, v))
 
     def prepare_data_new(self):
-        """ """
+        """
+        For all structures, determines which timesteps from the mode1 simulations should have
+        energy calculations performed (based on the extrapolation and interpolation settings)
+        and writes them to "input.data-new". If this file already exists, it is used to set
+        variables that would otherwise be calculated from scratch.
+        """
         # TODO add in an overwrite check?
         if isfile(join(self.active_learning_directory, "input.data-new")):
-            print("Reading from input.data-new")
+            print(
+                "input.data-new is already present and data will be read from there.\n"
+                "To regenerate input.data-new, delete existing file."
+            )
             self._read_data(join(self.active_learning_directory, "input.data-new"))
+            return
 
         self.lattices = []
         self.elements = []
@@ -2655,7 +3300,8 @@ class ActiveLearning:
         self.names = []
         self.positions = []
         for name, structure in self.all_structures.structure_dict.items():
-            if structure.name is None:
+            # Acquire the extrapolation information from all simulations
+            if name is None:
                 paths = self._get_paths("")
             else:
                 print("Structure: {0}".format(name))
@@ -2677,6 +3323,8 @@ class ActiveLearning:
                 extrapolation_statistics.append(extrapolation_statistic)
             extrapolation_timesteps = np.array(extrapolation_timesteps).astype(int)
             extrapolation_values = np.array(extrapolation_values)
+
+            # Use this information to determine which timesteps to use
             (
                 selected_timesteps,
                 tolerance_indices,
@@ -2688,9 +3336,13 @@ class ActiveLearning:
                 extrapolation_data,
                 structure,
             )
+
+            # Create dictionary mapping chemical symbols to their index
             element2index = {}
             for j in range(len(self.element_types)):
                 element2index[self.element_types[j]] = j
+
+            # Read the actual structures needed from file
             for j in range(len(paths)):
                 tolerance_indices[j] = self._read_structures(
                     paths[j],
@@ -2727,9 +3379,23 @@ class ActiveLearning:
         )
 
     def prepare_data_add(self):
-        """ """
+        """
+        Reads from file the results of running the two networks on the new proposed structures.
+        The resultant energy and forces are compared against the thresholds for each structure,
+        and the final set of datapoints to add to the training determined and written to file.
+        """
         if not isdir(self.active_learning_directory + "/mode2"):
             raise IOError("`mode2` directory not found.")
+
+        # If we do not have the results of `prepare_data_new` in memory, attempt to read from
+        # file, and failing that, call `prepare_data_new` directly
+        if len(self.names) == 0:
+            if isfile(join(self.active_learning_directory, "input.data-new")):
+                print("Reading from input.data-new")
+                self._read_data(join(self.active_learning_directory, "input.data-new"))
+            else:
+                print("No data loaded, calling `prepare_data_new`")
+                self.prepare_data_new()
 
         self._print_performance(len(self.names))
 
@@ -2788,19 +3454,19 @@ class ActiveLearning:
         if conv_energy_0 != 1.0 or conv_length_0 != 1.0:
             print(
                 "`dE` and `dF` converted to internal (normalised) network units: "
-                "`dE={0}`, `dF={1}`".format(dE, dF)
+                "`dE={0}`, `dF={1}`".format(np.unique(dE), np.unique(dF))
             )
 
         energies = energies_1[np.absolute(energies_2[:, 1] - energies_1[:, 1]) > dE, 0]
         forces = forces_1[np.absolute(forces_2[:, 1] - forces_1[:, 1]) > dF, 0]
         print(
-            "{0} structures identified over energy threshold `dE={1}`".format(
-                len(np.unique(energies)), dE
+            "{0} structures identified over energy threshold `dE={1}`:\n{2}".format(
+                len(np.unique(energies)), np.unique(dE), np.unique(energies)
             )
         )
         print(
-            "{0} structures identified over force threshold `dF={1}`".format(
-                len(np.unique(forces)), dF
+            "{0} structures identified over force threshold `dF={1}`:\n{2}".format(
+                len(np.unique(forces)), np.unique(dF), np.unique(forces)
             )
         )
         self.selection = np.unique(np.concatenate((energies, forces)).astype(int))

@@ -61,7 +61,8 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
             ) from e
         values = [float(row[index]) for row in content]
         plt.plot(epochs[1:], values[1:])
-        plt.xticks(range(epochs[1], epochs[-1] + 1))
+        tick_step = (epochs[-1] + 1) // 30 + 1
+        plt.xticks(range(epochs[0], epochs[-1] + 1, tick_step))
         plt.xlabel("Epoch")
     plt.legend(keys)
 
