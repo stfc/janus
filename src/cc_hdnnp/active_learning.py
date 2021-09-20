@@ -176,18 +176,12 @@ class ActiveLearning:
             and barostat_option != "iso"
         ):
             raise ValueError(
-                "Barostat option {0} is not implemented.".format(
-                    barostat_option
-                )
+                "Barostat option {0} is not implemented.".format(barostat_option)
             )
         self.barostat_option = barostat_option
 
         if atom_style != "atomic" and atom_style != "full":
-            raise ValueError(
-                "Atom style {0} is not implemented.".format(
-                    atom_style
-                )
-            )
+            raise ValueError("Atom style {0} is not implemented.".format(atom_style))
         self.atom_style = atom_style
 
         if N_steps % dump_lammpstrj != 0:
@@ -481,9 +475,7 @@ class ActiveLearning:
                 )
             )
         else:
-            raise ValueError(
-                "Integrator {0} is not implemented.".format(integrator)
-            )
+            raise ValueError("Integrator {0} is not implemented.".format(integrator))
         input_lammps += (
             "thermo 1\n"
             + "variable thermo equal 0\n"
@@ -505,9 +497,7 @@ class ActiveLearning:
                 )
             else:
                 raise ValueError(
-                    "Atom style {0} is not implemented.".format(
-                        self.atom_style
-                    )
+                    "Atom style {0} is not implemented.".format(self.atom_style)
                 )
 
             input_lammps += (
@@ -528,9 +518,7 @@ class ActiveLearning:
                 )
             else:
                 raise ValueError(
-                    "Atom style {0} is not implemented.".format(
-                        self.atom_style
-                    )
+                    "Atom style {0} is not implemented.".format(self.atom_style)
                 )
 
             input_lammps += "dump_modify lammpstrj pbc no sort id element {0}\n".format(
@@ -1451,7 +1439,12 @@ class ActiveLearning:
         extrapolation_values: np.ndarray,
         extrapolation_data: List[np.ndarray],
         structure: Structure,
-    ) -> Tuple[List[List[Union[int, List[int]]]], Union[np.ndarray, List[int]], np.ndarray, Literal[2]]:
+    ) -> Tuple[
+        List[List[Union[int, List[int]]]],
+        Union[np.ndarray, List[int]],
+        np.ndarray,
+        Literal[2],
+    ]:
         """
         For each simulation performed in "mode1", compare the number of steps elapsed and the
         nature of extrapiolations that occured to determine the timestep of structures which
@@ -1483,8 +1476,8 @@ class ActiveLearning:
         -------
         list of list of (int or list of int), list or np.ndarray of int, np.ndarray, 2
             First object returned is a list with entries for each simulation, which in turn
-            contains a list with entries that are either int (the  timestep of a selected 
-            interpolation) or a list of int (the timesteps of the chosen small, and all large 
+            contains a list with entries that are either int (the  timestep of a selected
+            interpolation) or a list of int (the timesteps of the chosen small, and all large
             extrapolations).
             Second is a list which gives the index in `self.tolerances` that is appropriate for
             each simulation.
@@ -1526,7 +1519,9 @@ class ActiveLearning:
         # Consider "small" extrapolation including the first `structure_extrapolation`
         # timesteps
         extrapoltation_occured = [extrapolation_timesteps[:, small] >= 0]
-        extrapolated_timesteps = extrapolation_timesteps[:, small][extrapoltation_occured]
+        extrapolated_timesteps = extrapolation_timesteps[:, small][
+            extrapoltation_occured
+        ]
         if not extrapolated_timesteps.any():
             # Set tolerance indices to a dummy value for each structure
             print("There are no small extrapolations.")
@@ -1541,16 +1536,35 @@ class ActiveLearning:
                     round(100.0 * n_simulations_extrapolation / n_simulations, 2),
                 )
             )
-            # If extrapolation_timesteps is -1, no extrapolations occured for this threshold?
+            # NB: Changed from the original implementation. If a timestep is -1, then no
+            # extrapoltion occured and the values would be 0 anyway, in which case taking the
+            # mean and std would be pointless.
+            # extrapolation_values_reduced = extrapolation_values[
+            #     extrapolation_timesteps[:, small] == -1
+            # ]
             extrapolation_values_reduced = extrapolation_values[
-                extrapolation_timesteps[:, small] == -1
+                extrapolation_timesteps[:, small] != -1
             ]
             mean_small = np.mean(extrapolation_values_reduced[:, small])
             std_small = np.std(extrapolation_values_reduced[:, small])
-            criterium = max(mean_small + std_small, self.tolerances[small])
+            if np.isfinite(mean_small + std_small):
+                criterium = max(mean_small + std_small, self.tolerances[small])
+            else:
+                criterium = self.tolerances[small]
+            # TODO REMOVE
+            # print(
+            #     criterium,
+            #     self.tolerances[self.initial_tolerance],
+            #     self.initial_tolerance,
+            #     n_tolerances,
+            # )
+            # NB: Changed from the original implementation, an
             while (
                 criterium > self.tolerances[self.initial_tolerance]
-                and self.initial_tolerance < n_tolerances
+                # NB: Changed from the original implementation to avoid index error when
+                # reaching the final value in tolerances
+                # and self.initial_tolerance < n_tolerances
+                and self.initial_tolerance < n_tolerances - 1
             ):
                 # Increase self.initial_tolerance until it is greater than our criterium to get
                 # the "large" tolerance
@@ -2515,16 +2529,23 @@ class ActiveLearning:
         mode : str
             The mode to open `file_name` in.
         """
-        with open(file_name, mode) as f:
-            # Make sure we have a trailing newline if appending to file
-            if mode == "a+":
+        # Make sure we have a trailing newline if appending to file
+        text = ""
+        if mode == "a+":
+            with open(file_name) as f:
                 lines = f.readlines()
                 if len(lines) > 0 and lines[-1].strip() != "":
-                    f.write("\n")
+                    text = "\n"
 
+        with open(file_name, mode) as f:
+            f.write(text)
             for i in range(len(names)):
                 f.write("begin\ncomment file {0}\n".format(names[i]))
-                if list(self.statistics[i]):
+                if (
+                    self.statistics is not None
+                    and i < len(self.statistics)
+                    and list(self.statistics[i])
+                ):
                     f.write(
                         "comment statistics {0}\n"
                         "comment statistics {1}\n"

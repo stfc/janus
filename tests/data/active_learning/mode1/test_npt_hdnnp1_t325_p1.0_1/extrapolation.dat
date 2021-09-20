@@ -1,0 +1,5 @@
+extrapolation_free_initial_time_steps: -1
+lines_before_first_extrapolation: 37
+timesteps_between_non_extrapolated_structures: 200
+lines_per_structure: 521
+last_timestep: 161

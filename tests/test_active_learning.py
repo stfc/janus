@@ -8,7 +8,6 @@ from shutil import copy, copytree, rmtree
 from typing import List, Tuple, Union
 
 import numpy as np
-from numpy.testing import assert_allclose
 import pytest
 
 from cc_hdnnp.active_learning import ActiveLearning
@@ -202,10 +201,7 @@ def test_init_barostat_option(data: Data):
             barostat_option="unrecognised",
         )
 
-    assert (
-        str(e.value)
-        == "Barostat option unrecognised is not implemented."
-    )
+    assert str(e.value) == "Barostat option unrecognised is not implemented."
 
 
 def test_init_atom_style(data: Data):
@@ -217,10 +213,7 @@ def test_init_atom_style(data: Data):
             atom_style="unrecognised",
         )
 
-    assert (
-        str(e.value)
-        == "Atom style unrecognised is not implemented."
-    )
+    assert str(e.value) == "Atom style unrecognised is not implemented."
 
 
 def test_init_N_steps(data: Data):
@@ -399,12 +392,15 @@ def test_write_validate_timesteps_min_t_separation_interpolation(
 # TEST READ INPUT DATA
 
 
-@pytest.mark.parametrize("periodic, directories", [
-    (
-        False,
-        ["tests/data/n2p2/no_lattice", "tests/data/n2p2/no_lattice"],
-    )
-])
+@pytest.mark.parametrize(
+    "periodic, directories",
+    [
+        (
+            False,
+            ["tests/data/n2p2/no_lattice", "tests/data/n2p2/no_lattice"],
+        )
+    ],
+)
 def test_read_input_data(
     active_learning: ActiveLearning, periodic: bool, directories: List[str]
 ):
@@ -426,34 +422,37 @@ def test_read_input_data(
     assert qs.shape == (1, 512)
 
 
-@pytest.mark.parametrize("periodic, directories, error", [
-    (
-        True,
-        ["tests/data/n2p2_copy", "tests/data/n2p2/no_lattice"],
-        "input.data files in tests/data/n2p2_copy and tests/data/n2p2/no_lattice are differnt."
-    ),
-    (
-        True,
-        ["tests/data/n2p2/no_atoms", "tests/data/n2p2/no_atoms"],
-        "For some of the structures the definition of the atoms is incomplete or missing."
-    ),
-    (
-        True,
-        ["tests/data/n2p2/no_lattice", "tests/data/n2p2/no_lattice"],
+@pytest.mark.parametrize(
+    "periodic, directories, error",
+    [
         (
-            "The periodic keyword is set to True but for some of the structures the "
-            "definition of the lattice is incomplete or missing."
-        )
-    ),
-    (
-        False,
-        ["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
+            True,
+            ["tests/data/n2p2_copy", "tests/data/n2p2/no_lattice"],
+            "input.data files in tests/data/n2p2_copy and tests/data/n2p2/no_lattice are differnt.",
+        ),
         (
-            "The periodic keyword is set to False but for some of the "
-            "structures a definition of a lattice exists."
-        )
-    ),
-])
+            True,
+            ["tests/data/n2p2/no_atoms", "tests/data/n2p2/no_atoms"],
+            "For some of the structures the definition of the atoms is incomplete or missing.",
+        ),
+        (
+            True,
+            ["tests/data/n2p2/no_lattice", "tests/data/n2p2/no_lattice"],
+            (
+                "The periodic keyword is set to True but for some of the structures the "
+                "definition of the lattice is incomplete or missing."
+            ),
+        ),
+        (
+            False,
+            ["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
+            (
+                "The periodic keyword is set to False but for some of the "
+                "structures a definition of a lattice exists."
+            ),
+        ),
+    ],
+)
 def test_read_input_data_errors(
     active_learning: ActiveLearning, periodic: bool, directories: List[str], error: str
 ):
@@ -470,7 +469,10 @@ def test_read_input_data_errors(
 
 # TEST WRITE INPUT LAMMPS
 
-@pytest.mark.parametrize("periodic, periodic_dump", [(True, " x y z"), (False, " xu yu zu")])
+
+@pytest.mark.parametrize(
+    "periodic, periodic_dump", [(True, " x y z"), (False, " xu yu zu")]
+)
 @pytest.mark.parametrize("atom_style, charge_dump", [("atomic", ""), ("full", " q")])
 def test_write_input_lammps(
     active_learning: ActiveLearning,
@@ -490,7 +492,8 @@ def test_write_input_lammps(
         f.write("run 5")
 
     active_learning._write_input_lammps(
-        path=output_directory, seed=1, temperature=1, pressure=1., integrator="npt")
+        path=output_directory, seed=1, temperature=1, pressure=1.0, integrator="npt"
+    )
 
     assert isfile(output_directory + "/input.lammps")
     with open(output_directory + "/input.lammps") as f:
@@ -502,10 +505,13 @@ def test_write_input_lammps(
 
 
 @pytest.mark.parametrize("periodic", [True, False])
-@pytest.mark.parametrize("atom_style, integrator, error", [
-    ("atomic", "unrecognised", "Integrator unrecognised is not implemented."),
-    ("unrecognised", "npt", "Atom style unrecognised is not implemented."),
-])
+@pytest.mark.parametrize(
+    "atom_style, integrator, error",
+    [
+        ("atomic", "unrecognised", "Integrator unrecognised is not implemented."),
+        ("unrecognised", "npt", "Atom style unrecognised is not implemented."),
+    ],
+)
 def test_write_input_lammps_errors(
     active_learning: ActiveLearning,
     periodic: bool,
@@ -525,10 +531,48 @@ def test_write_input_lammps_errors(
 
     with pytest.raises(ValueError) as e:
         active_learning._write_input_lammps(
-            path=output_directory, seed=1, temperature=1, pressure=1., integrator=integrator
+            path=output_directory,
+            seed=1,
+            temperature=1,
+            pressure=1.0,
+            integrator=integrator,
         )
 
     assert str(e.value) == error
+
+
+# TEST WRITE STRUCTURE LAMMPS
+
+
+@pytest.mark.parametrize(
+    "atom_style, charge_str", [("atomic", ""), ("full", "1  0.000 ")]
+)
+def test_write_structure_lammps(
+    active_learning: ActiveLearning,
+    atom_style: str,
+    charge_str: str,
+):
+    """
+    Test the `_write_structure_lammps` function is successful for both `atom_style` values
+    leading to differences in the output file.
+    """
+    output_directory = "tests/data/tests_output"
+    active_learning.atom_style = atom_style
+    with open(output_directory + "/simulation.lammps", "w") as f:
+        f.write("run 5")
+
+    active_learning._write_structure_lammps(
+        path=output_directory,
+        lattice=np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+        element=np.array(["H"]),
+        xyz=np.array([[0, 0, 0]]),
+        q=np.array([0]),
+    )
+
+    assert isfile(output_directory + "/structure.lammps")
+    with open(output_directory + "/structure.lammps") as f:
+        lines = f.readlines()
+    assert lines[-1] == "   1 1 {}  0.00000   0.00000   0.00000\n".format(charge_str)
 
 
 # TEST WRITE LAMMPS
@@ -585,14 +629,8 @@ def test_write_lammps_choose_weights(
     active_learning.write_lammps(range(1))
 
     assert isfile(output_directory + "/joblist_mode1.dat")
-    assert isfile(
-        output_directory
-        + "/mode1/test_npt_hdnnp1_t0_p1.0_1/input.lammps"
-    )
-    assert isfile(
-        output_directory
-        + "/mode1/test_npt_hdnnp2_t0_p1.0_2/input.lammps"
-    )
+    assert isfile(output_directory + "/mode1/test_npt_hdnnp1_t0_p1.0_1/input.lammps")
+    assert isfile(output_directory + "/mode1/test_npt_hdnnp2_t0_p1.0_2/input.lammps")
     assert capsys.readouterr().out == (
         "Starting from the 0th structure every 1th structure of the input.data file is used.\n"
         "The given variations of the settings are repeated 1 times\n"
@@ -739,8 +777,7 @@ def test_write_lammps_comment_name_keyword_none(
 def test_read_lammps_log(
     active_learning: ActiveLearning, extrapolation_free_timesteps_expected: int
 ):
-    """
-    """
+    """ """
     if extrapolation_free_timesteps_expected > 161:
         extrapolation_free_lines_expected = -1
     else:
@@ -748,10 +785,14 @@ def test_read_lammps_log(
     timesteps_counter = -3
     text = ""
     directory = "tests/data/tests_output"
-    with open("tests/data/active_learning/mode1/test_npt_hdnnp1_t325_p1.0_1/log.lammps") as f:
+    with open(
+        "tests/data/active_learning/mode1/test_npt_hdnnp1_t325_p1.0_1/log.lammps"
+    ) as f:
         for line in f.readlines():
-            if (timesteps_counter > extrapolation_free_timesteps_expected
-                    or not line.startswith("### NNP EXTRAPOLATION WARNING ###")):
+            if (
+                timesteps_counter > extrapolation_free_timesteps_expected
+                or not line.startswith("### NNP EXTRAPOLATION WARNING ###")
+            ):
                 text += line
             if line.startswith("thermo"):
                 timesteps_counter += 1
@@ -760,25 +801,26 @@ def test_read_lammps_log(
         f.write(text)
 
     (
-        timesteps, extrapolation_free_lines, extrapolation_free_timesteps
+        timesteps,
+        extrapolation_free_lines,
+        extrapolation_free_timesteps,
     ) = active_learning._read_lammps_log(dump_lammpstrj=1, directory=directory)
 
     assert all(timesteps == np.arange(1, 162))
     assert extrapolation_free_lines == extrapolation_free_lines_expected
-    assert extrapolation_free_timesteps == min(extrapolation_free_timesteps_expected, 161)
+    assert extrapolation_free_timesteps == min(
+        extrapolation_free_timesteps_expected, 161
+    )
 
 
 def test_read_lammps_log_errors(active_learning: ActiveLearning):
-    """
-    """
+    """ """
     directory = "tests/data/tests_output"
     with open(directory + "/log.lammps", "w"):
         pass
 
     with pytest.raises(ValueError) as e:
-        active_learning._read_lammps_log(
-            dump_lammpstrj=1, directory=directory
-        )
+        active_learning._read_lammps_log(dump_lammpstrj=1, directory=directory)
 
     assert str(e.value) == "{}/log.lammps was empty".format(directory)
 
@@ -824,11 +866,10 @@ def test_prepare_lammps_trajectory(active_learning: ActiveLearning):
 
 
 # TEST GET PATHS
-    
+
 
 def test_get_paths_os_error(active_learning: ActiveLearning):
-    """
-    """
+    """ """
     structure_name = "missing"
 
     with pytest.raises(Exception) as e:
@@ -838,8 +879,7 @@ def test_get_paths_os_error(active_learning: ActiveLearning):
 
 
 def test_get_paths_value_error(active_learning: ActiveLearning):
-    """
-    """
+    """ """
     mkdir("tests/data/tests_output/mode1")
     mkdir("tests/data/tests_output/mode1/nve_hdnnp")
 
@@ -852,13 +892,18 @@ def test_get_paths_value_error(active_learning: ActiveLearning):
 # TEST READ LOG FORMAT
 
 
-@pytest.mark.parametrize("text, expected_format", [
-    ("**********\n\n   NNP LIBRARY v2.0.0", "v2.0.0"),
-    ("**********\n\n\n\n\nn²p² version      : v2.1.1", "v2.1.1"),
-    ("**********\n\n\n\n\nn²p² version  (from git): v2.1.4", "v2.1.1"),
-])
+@pytest.mark.parametrize(
+    "text, expected_format",
+    [
+        ("**********\n\n   NNP LIBRARY v2.0.0", "v2.0.0"),
+        ("**********\n\n\n\n\nn²p² version      : v2.1.1", "v2.1.1"),
+        ("**********\n\n\n\n\nn²p² version  (from git): v2.1.4", "v2.1.1"),
+    ],
+)
 def test_read_log_format(
-    active_learning: ActiveLearning, text: str, expected_format: str,
+    active_learning: ActiveLearning,
+    text: str,
+    expected_format: str,
 ):
     """
     Test that all expected log formats can be correctly determined from "log.lammps"
@@ -874,10 +919,13 @@ def test_read_log_format(
     assert extrapolation_format == expected_format
 
 
-@pytest.mark.parametrize("text", [
-    ("**********\n\n\n\n\nn²p² version      : v0.0.0"),
-    ("\n\n\n\n\nn²p² version      : v2.1.1"),
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        ("**********\n\n\n\n\nn²p² version      : v0.0.0"),
+        ("\n\n\n\n\nn²p² version      : v2.1.1"),
+    ],
+)
 def test_read_log_format_errors(active_learning: ActiveLearning, text: str):
     """
     Test that errors are raised for unrecognised "log.lammps" formats.
@@ -901,28 +949,43 @@ def test_read_log_format_errors(active_learning: ActiveLearning, text: str):
 # TEST READ LOG
 
 
-@pytest.mark.parametrize("extrapolation_data, expected", [
-    (np.array([-1, -1, -1, -1, -1]), ([-1, -1], [0, 0], [None, None])),
-    (np.array([1, 1, 1, 521, 1]), ([1, -1], [1., 0.], [[np.array([1., 486, 26])], [None]])),
-])
-@pytest.mark.parametrize("extrapolation_format, text", [
-    ("v2.0.0", (
-        "thermo        0\n"
-        "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 SYMFUNC: 26 "
-        "VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
-        "thermo        1     0.0000  374.000    -53015.39756    -52990.69413    4.7906   "
-        "42.2281 -107549.23  18.58077  18.58077  18.58077  90.00000  90.00000  90.00000  "
-        "0.89576\n"
-        "final line is skipped"
-    )),
-    ("v2.1.1", (
-        "thermo        0\n"
-        "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 ELEMENT:  C "
-        "SYMFUNC:   26 TYPE:  2 VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
-        "thermo        1\n"
-        "final line is skipped"
-    )),
-])
+@pytest.mark.parametrize(
+    "extrapolation_data, expected",
+    [
+        (np.array([-1, -1, -1, -1, -1]), ([-1, -1], [0, 0], [None, None])),
+        (
+            np.array([1, 1, 1, 521, 1]),
+            ([1, -1], [1.0, 0.0], [[np.array([1.0, 486, 26])], [None]]),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "extrapolation_format, text",
+    [
+        (
+            "v2.0.0",
+            (
+                "thermo        0\n"
+                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 SYMFUNC: 26 "
+                "VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
+                "thermo        1     0.0000  374.000    -53015.39756    -52990.69413    4.7906   "
+                "42.2281 -107549.23  18.58077  18.58077  18.58077  90.00000  90.00000  90.00000  "
+                "0.89576\n"
+                "final line is skipped"
+            ),
+        ),
+        (
+            "v2.1.1",
+            (
+                "thermo        0\n"
+                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 ELEMENT:  C "
+                "SYMFUNC:   26 TYPE:  2 VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
+                "thermo        1\n"
+                "final line is skipped"
+            ),
+        ),
+    ],
+)
 def test_read_log(
     active_learning: ActiveLearning,
     text: str,
@@ -939,10 +1002,12 @@ def test_read_log(
     mkdir("tests/data/tests_output/mode1/directory")
     with open("tests/data/tests_output/mode1/directory/log.lammps", "w") as f:
         f.write(text)
-    active_learning.tolerances = [0.5, 2.]
+    active_learning.tolerances = [0.5, 2.0]
 
     (
-        extrapolation_timestep, extrapolation_value, extrapolation_statistic,
+        extrapolation_timestep,
+        extrapolation_value,
+        extrapolation_statistic,
     ) = active_learning._read_log(
         path=path,
         extrapolation_data=extrapolation_data,
@@ -968,20 +1033,182 @@ def test_read_log(
 @pytest.mark.parametrize(
     (
         "extrapolation_timesteps, extrapolation_values, extrapolation_data, tolerances, "
-        "expected_selected_timesteps, expected_tolerance_indices, expected_smalls"
+        "expected_selected_timesteps, expected_tolerance_indices, expected_smalls, stdout"
     ),
     [
         (
             np.array([[-1, -1]]),
             np.array([[0, 0]]),
             [np.array([-1, -1, -1, -1, -1])],
-            [1., 2.],
+            [0.01, 0.1],
             [[-1, []]],
             [-1],
             np.array([0]),
+            (
+                "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
+                "of {0} is employed (the initial {1} time steps are neglected). The tolerance "
+                "value is reduced to {2}.\n"
+                "There are no small extrapolations.\n"
+                "WARNING: A simulation ended due to too many extrapolations but no one of "
+                "these was larger than the tolerance of {3}. If this message is printed "
+                "several times you should consider to reduce the first and second entry of "
+                "tolerances.\n".format(0.1, 20, 0.01, 0.01)
+            ),
         ),
-
-    ]
+        (
+            np.array([[101, 102, 103, 104]]),
+            np.array([[0.1, 0.2, 0.3, 0.4]]),
+            [np.array([-1, -1, -1, -1, 104])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[102, np.array([103, 104])]],
+            [-1],
+            np.array([1]),
+            ("Small extrapolations are present in 1 of 1 simulations (100.0%).\n"),
+        ),
+        (
+            np.array([[101, 102, 103, 104]]),
+            np.array([[np.nan, np.nan, np.nan, np.nan]]),
+            [np.array([-1, -1, -1, -1, 104])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[102, np.array([103, 104])]],
+            [-1],
+            np.array([1]),
+            ("Small extrapolations are present in 1 of 1 simulations (100.0%).\n"),
+        ),
+        (
+            np.array([[101, 102, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 104])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[102, np.array([-1, -1])]],
+            [0],
+            np.array([1]),
+            (
+                "Small extrapolations are present in 1 of 1 simulations (100.0%).\n"
+                "There are no large extrapolations.\n"
+            ),
+        ),
+        (
+            np.array([[101, -1, -1, -1], [101, 102, -1, -1]]),
+            np.array([[0.06, 0.09, 0.0, 0.0], [0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 104]), np.array([-1, -1, -1, -1, 104])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[101, np.array([-1, -1])], [102, np.array([-1, -1])]],
+            [-1, 0],
+            np.array([0, 1]),
+            (
+                "Small extrapolations are present in 1 of 2 simulations (50.0%).\n"
+                "There are no large extrapolations.\n"
+                "WARNING: A simulation ended due to too many extrapolations but no one of "
+                "these was larger than the tolerance of 0.1. If this message is printed "
+                "several times you should consider to reduce the first and second entry of "
+                "tolerances.\n"
+                "With the reduction of the tolerance to 0.05 an extrapolated structure could "
+                "be found in this case.\n"
+            ),
+        ),
+        (
+            np.array([[50001, 50002, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 100000])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[20000, 30000, 40000, 50002, np.array([-1, -1])]],
+            [0],
+            np.array([1]),
+            (
+                "Small extrapolations are present in 1 of 1 simulations (100.0%).\n"
+                "There are no large extrapolations.\n"
+            ),
+        ),
+        (
+            np.array([[10001, 10002, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 100000])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[4000, 6000, 8000, 10002, np.array([-1, -1])]],
+            [0],
+            np.array([1]),
+            (
+                "Small extrapolations are present in 1 of 1 simulations (100.0%).\n"
+                "There are no large extrapolations.\n"
+            ),
+        ),
+        (
+            np.array([[-1, -1, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 100000])],
+            [0.05, 0.1, 0.15, 0.2],
+            [
+                [
+                    20000,
+                    30000,
+                    40000,
+                    50000,
+                    60000,
+                    70000,
+                    80000,
+                    90000,
+                    100000,
+                    -1,
+                    np.array([-1, -1]),
+                ]
+            ],
+            [-1],
+            np.array([0]),
+            (
+                "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
+                "of 0.1 is employed (the initial 20 time steps are neglected). The tolerance "
+                "value is reduced to 0.05.\n"
+                "There are no small extrapolations.\n"
+                "WARNING: A simulation ended due to too many extrapolations but no one of "
+                "these was larger than the tolerance of 0.05. If this message is printed "
+                "several times you should consider to reduce the first and second entry of "
+                "tolerances.\n"
+            ),
+        ),
+        (
+            np.array([[-1, -1, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 50000])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[20000, 30000, 40000, 50000, -1, np.array([-1, -1])]],
+            [-1],
+            np.array([0]),
+            (
+                "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
+                "of 0.1 is employed (the initial 20 time steps are neglected). The tolerance "
+                "value is reduced to 0.05.\n"
+                "There are no small extrapolations.\n"
+                "WARNING: A simulation ended due to too many extrapolations but no one of "
+                "these was larger than the tolerance of 0.05. If this message is printed "
+                "several times you should consider to reduce the first and second entry of "
+                "tolerances.\n"
+                "Included the last regularly dumped structure of the simulation as it ended "
+                "due to too many extrapolations.\n"
+            ),
+        ),
+        (
+            np.array([[-1, -1, -1, -1]]),
+            np.array([[0.06, 0.11, 0.0, 0.0]]),
+            [np.array([-1, -1, -1, -1, 300])],
+            [0.05, 0.1, 0.15, 0.2],
+            [[300, -1, np.array([-1, -1])]],
+            [-1],
+            np.array([0]),
+            (
+                "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
+                "of 0.1 is employed (the initial 20 time steps are neglected). The tolerance "
+                "value is reduced to 0.05.\n"
+                "There are no small extrapolations.\n"
+                "WARNING: A simulation ended due to too many extrapolations but no one of "
+                "these was larger than the tolerance of 0.05. If this message is printed "
+                "several times you should consider to reduce the first and second entry of "
+                "tolerances.\n"
+                "Included the last regularly dumped structure of the simulation as it ended "
+                "due to too many extrapolations.\n"
+            ),
+        ),
+    ],
 )
 def test_get_timesteps(
     active_learning: ActiveLearning,
@@ -993,17 +1220,18 @@ def test_get_timesteps(
     expected_selected_timesteps: List[List[Union[int, List[int]]]],
     expected_tolerance_indices: List[int],
     expected_smalls: np.ndarray,
-
+    stdout: str,
 ):
-    """
-    # Test that for all expected log formats, "log.lammps" can be correctly read and
-    # extrapolations match expected values.
-    """
+    """ """
+    active_learning.initial_tolerance = 2
     active_learning.tolerances = tolerances
     structure = list(active_learning.all_structures.structure_dict.values())[0]
 
     (
-        selected_timesteps, tolerance_indices, smalls, n_small,
+        selected_timesteps,
+        tolerance_indices,
+        smalls,
+        n_small,
     ) = active_learning._get_timesteps(
         extrapolation_timesteps=extrapolation_timesteps,
         extrapolation_values=extrapolation_values,
@@ -1011,20 +1239,25 @@ def test_get_timesteps(
         structure=structure,
     )
 
-    assert selected_timesteps == expected_selected_timesteps
-    assert tolerance_indices == expected_tolerance_indices
-    assert all(smalls == expected_smalls)
+    assert len(selected_timesteps) == len(expected_selected_timesteps)
+    assert len(tolerance_indices) == len(expected_tolerance_indices)
+    assert len(smalls) == len(expected_smalls)
+    for i in range(len(selected_timesteps)):
+        assert len(selected_timesteps[i]) == len(expected_selected_timesteps[i])
+        for j in range(len(selected_timesteps[i]) - 1):
+            assert selected_timesteps[i][j] == expected_selected_timesteps[i][j]
+
+        assert len(selected_timesteps[i][-1]) == len(expected_selected_timesteps[i][-1])
+        if len(selected_timesteps[i][-1]) > 1:
+            assert all(selected_timesteps[i][-1] == expected_selected_timesteps[i][-1])
+        else:
+            assert selected_timesteps[i][-1] == expected_selected_timesteps[i][-1]
+
+        assert tolerance_indices[i] == expected_tolerance_indices[i]
+        assert smalls[i] == expected_smalls[i]
+
     assert n_small == 2
-    assert capsys.readouterr().out == (
-        "Only less than 0.1% of the simulations show an extrapolation if a tolerance "
-        "of {0} is employed (the initial {1} time steps are neglected). The tolerance "
-        "value is reduced to {2}.\n"
-        "There are no small extrapolations.\n"
-        "WARNING: A simulation ended due to too many extrapolations but no one of "
-        "these was larger than the tolerance of {3}. If this message is printed "
-        "several times you should consider to reduce the first and second entry of "
-        "tolerances.\n".format(2., 20, 1., 1.)
-    )
+    assert capsys.readouterr().out == stdout
 
 
 def test_prepare_data_new(
@@ -1610,30 +1843,68 @@ def test_read_data(active_learning: ActiveLearning):
     assert active_learning.statistics == np.array(["stats"])
 
 
-@pytest.mark.parametrize("extrapolation_timesteps, tolerance_indices, output", [
-    (np.array([[1, 3], [2, 4]]), np.array([1, 1]), (
-        "The median number of time steps to a small extrapolation is "
-        "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
-        "The median number of time steps between the first and second selected "
-        "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
-        "".format(2, 1, 2, 2, 2, 2)
-    )),
-    (np.array([[-1, -1], [2, 4]]), np.array([-1, 1]), (
-        "The median number of time steps to a small extrapolation is "
-        "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
-        "The median number of time steps between the first and second selected "
-        "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
-        "".format(2, "nan", 2, 2, "nan", 2)
-    )),
-    (np.array([[1, 3], [-1, -1]]), np.array([1, -1]), (
-        "The median number of time steps to a small extrapolation is "
-        "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
-        "The median number of time steps between the first and second selected "
-        "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
-        "".format(1, 1, "nan", 2, 2, "nan")
-    )),
-    (np.array([[-1, -1], [-1, -1]]), np.array([-1, -1]), ""),
-])
+def test_write_data_append(
+    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
+):
+    """"""
+    with open("tests/data/tests_output/test.data", "w") as f:
+        f.write("no trailing newline")
+
+    active_learning._write_data(
+        lattices=np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]]),
+        elements=np.array([["H" for _ in range(512)]]),
+        charges=np.array([[0 for _ in range(512)]]),
+        names=np.array(["test_s0"]),
+        positions=np.array([[[0, 0, 0] for _ in range(512)]]),
+        file_name="tests/data/tests_output/test.data",
+        mode="a+",
+    )
+
+    assert isfile("tests/data/tests_output/test.data")
+    with open("tests/data/tests_output/test.data") as f:
+        lines = f.readlines()
+    assert lines[0] == "no trailing newline\n"
+
+
+@pytest.mark.parametrize(
+    "extrapolation_timesteps, tolerance_indices, output",
+    [
+        (
+            np.array([[1, 3], [2, 4]]),
+            np.array([1, 1]),
+            (
+                "The median number of time steps to a small extrapolation is "
+                "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
+                "The median number of time steps between the first and second selected "
+                "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
+                "".format(2, 1, 2, 2, 2, 2)
+            ),
+        ),
+        (
+            np.array([[-1, -1], [2, 4]]),
+            np.array([-1, 1]),
+            (
+                "The median number of time steps to a small extrapolation is "
+                "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
+                "The median number of time steps between the first and second selected "
+                "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
+                "".format(2, "nan", 2, 2, "nan", 2)
+            ),
+        ),
+        (
+            np.array([[1, 3], [-1, -1]]),
+            np.array([1, -1]),
+            (
+                "The median number of time steps to a small extrapolation is "
+                "{0} (HDNNP_1: {1}, HDNNP_2: {2}).\n"
+                "The median number of time steps between the first and second selected "
+                "extrapolated structure is {3} (HDNNP_1: {4}, HDNNP_2: {5}).\n"
+                "".format(1, 1, "nan", 2, 2, "nan")
+            ),
+        ),
+        (np.array([[-1, -1], [-1, -1]]), np.array([-1, -1]), ""),
+    ],
+)
 def test_print_reliability(
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,

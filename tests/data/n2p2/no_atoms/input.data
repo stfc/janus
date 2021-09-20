@@ -1,0 +1,11 @@
+begin
+comment config_index=0 units=Hartree and Bohr radii
+comment structure test
+comment file test_s0
+comment statistics stats
+lattice 33.47242428046817 0.0 0.0
+lattice 0.0 33.47242428046817 0.0
+lattice 0.0 0.0 33.47242428046817
+energy -1949.436275704543732
+charge 0.055
+end
