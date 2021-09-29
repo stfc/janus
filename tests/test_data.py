@@ -3,10 +3,12 @@ Unit tests for `data.py`
 """
 
 from os import listdir, remove
-from os.path import isfile
+from os.path import isfile, join
 from shutil import copy, rmtree
+from typing import List, Literal, Union
 
 from genericpath import isdir
+import numpy as np
 import pytest
 
 from cc_hdnnp.data import Data
@@ -55,15 +57,19 @@ def test_data_read_trajectory_bohr(data: Data):
     assert data.trajectory[0].cell[0, 0] == 9.373233444108351
 
 
-def test_data_convert_active_learning_to_xyz(data: Data):
+@pytest.mark.parametrize(
+    "file_xyz", ["tests_output/{}.xyz", "tests_output/sub_directory/{}.xyz"]
+)
+def test_data_convert_active_learning_to_xyz(data: Data, file_xyz: str):
     """
-    Test that active learning structures can be written in xyz format.
+    Test that active learning structures can be written in xyz format, creating a subdirectory
+    if needed.
     """
     data.convert_active_learning_to_xyz(
-        file_structure="input.data-add", file_xyz="tests_output/{}.xyz"
+        file_structure="input.data-add", file_xyz=file_xyz
     )
 
-    assert isfile("tests/data/tests_output/0.xyz")
+    assert isfile("tests/data/" + file_xyz.format(0))
 
 
 def test_data_write_xyz(data: Data):
@@ -476,22 +482,35 @@ def test_data_write_lammps_pair(data: Data):
     assert isfile("tests/data/tests_output/md.lmp")
 
 
-def test_data_write_lammps_pair_units(data: Data):
+@pytest.mark.parametrize(
+    "lammps_unit_style, cflength, cfenergy",
+    [
+        ("real", 1.8897261258369282, 0.001593601438080425),
+        ("metal", 1.8897261258369282, 0.03674932247495664),
+        ("si", 18897261258.369282, 2.2937123159746854e17),
+        ("cgs", 188972612.58369282, 22937123159.746857),
+        ("micro", 18897.261258369283, 229371.23159746855),
+        ("nano", 18.897261258369284, 0.22937123159746856),
+    ],
+)
+def test_data_write_lammps_pair_units(
+    data: Data, lammps_unit_style: str, cflength: float, cfenergy: float
+):
     """
-    Test that LAMMPS data is written successfully with custom units.
-    # TODO generalise to all possible LAMMPS units
+    Test that LAMMPS data is written successfully with custom units
+    (i.e. not the default "electron").
     """
     data.write_lammps_pair(
         r_cutoff=6.35,
         file_lammps_template="lammps/template.lmp",
         file_out="tests_output/md.lmp",
-        lammps_unit_style="metal",
+        lammps_unit_style=lammps_unit_style,
     )
 
     assert isfile("tests/data/tests_output/md.lmp")
     with open("tests/data/tests_output/md.lmp") as f:
         lines = f.readlines()
-        assert "cflength 1.8897261258369282 cfenergy 0.03674932247495664" in lines[20]
+        assert "cflength {0} cfenergy {1}".format(cflength, cfenergy) in lines[20]
 
 
 def test_data_write_lammps_pair_unknown_units(data: Data):
@@ -594,3 +613,214 @@ def test_choose_weights_epoch(data: Data):
             assert f.read() == "10\n"
     finally:
         remove("tests/data/n2p2/weights.001.data")
+
+
+@pytest.mark.parametrize(
+    "energy_threshold, force_threshold, stdout",
+    [(np.inf, np.inf, "0 outliers found: []\n"), (0.0, 0.0, "1 outliers found: [0]\n")],
+)
+def test_remove_outliers(
+    data: Data,
+    energy_threshold: float,
+    force_threshold: float,
+    stdout: str,
+    capsys: pytest.CaptureFixture,
+):
+    """
+    Test that `remove_outliers` gives the exptected outcome when removing outliers, and when
+    not.
+    """
+    copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    copy("tests/data/n2p2/output.data", "tests/data/tests_output/output.data")
+    data.n2p2_directory = "tests/data/tests_output"
+    data.remove_outliers(
+        energy_threshold=energy_threshold, force_threshold=force_threshold
+    )
+
+    assert stdout in capsys.readouterr().out
+
+
+def test_write_extrapolations_lammps_script(
+    data: Data,
+    capsys: pytest.CaptureFixture,
+):
+    """
+    Test that the script is written to file successfully.
+    """
+    data.scripts_directory = "tests/data/tests_output"
+    data.write_extrapolations_lammps_script(
+        file_batch_template="../n2p2/template.sh",
+        file_batch_out="lammps_extrapolations.sh",
+    )
+
+    assert capsys.readouterr().out == (
+        "Batch script written to tests/data/tests_output/lammps_extrapolations.sh\n"
+    )
+    assert isfile("tests/data/tests_output/lammps_extrapolations.sh")
+
+
+def test_analyse_extrapolations(
+    data: Data,
+    capsys: pytest.CaptureFixture,
+):
+    """
+    Test that the results of the extrapolations are read from file, and formatted as expected.
+    """
+    timestep_data = data.analyse_extrapolations()
+
+    assert capsys.readouterr().out == (
+        "nve\n"
+        "Temp | T_step\n"
+        "MEAN |   484\n"
+        "\n"
+        "nvt\n"
+        "Temp | T_step\n"
+        " 340 |   156\n"
+        "MEAN |   156\n"
+        "\n"
+        "npt\n"
+        "Temp | T_step\n"
+        " 340 |   255\n"
+        "MEAN |   255\n"
+        "\n"
+    )
+    assert timestep_data == {
+        "nve": {"mean": 484},
+        "nvt": {340: 156, "mean": 156},
+        "npt": {340: 255, "mean": 255},
+    }
+
+
+@pytest.mark.parametrize(
+    "separation, expected_indices, stdout",
+    [
+        (
+            0.0,
+            [],
+            "Removing 0 frames for having atoms within minimum separation.\n"
+            "No frames to remove\n",
+        ),
+        (
+            np.inf,
+            [0],
+            "Removing 1 frames for having atoms within minimum separation.\n",
+        ),
+    ],
+)
+def test_trim_dataset_separation(
+    data: Data,
+    separation: float,
+    expected_indices: List[int],
+    stdout: str,
+    capsys: pytest.CaptureFixture,
+):
+    """
+    Test that frames are removed (or not) as expected based on the separation value.
+    """
+    copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    data.n2p2_directory = "tests/data/tests_output"
+    structure = list(data.all_structures.structure_dict.values())[0]
+    for species in structure.all_species.species_list:
+        species.min_separation = {"H": separation, "C": separation, "O": separation}
+
+    remove_indices = data.trim_dataset_separation(
+        structure,
+    )
+
+    assert remove_indices == expected_indices
+    assert capsys.readouterr().out == stdout
+    if len(expected_indices) > 0:
+        assert isfile(
+            join("tests/data/tests_output/input.data.minimum_separation_backup")
+        )
+
+
+@pytest.mark.parametrize("starting_frame_indices", [None, [2]])
+@pytest.mark.parametrize(
+    "criteria, difference",
+    [
+        (
+            0.5,
+            "[0.6480741 1.9442222]",
+        ),
+        (
+            "mean",
+            "[0.6658329 1.9502137]",
+        ),
+    ],
+)
+def test_rebuild_dataset(
+    data: Data,
+    capsys: pytest.CaptureFixture,
+    criteria: Union[float, Literal["mean"]],
+    difference: str,
+    starting_frame_indices: List[int],
+):
+    """
+    Test that the expected frame is removed, with the expected metric value(s),
+    for a given input.
+    """
+    copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
+    copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    data.n2p2_directory = "tests/data/tests_output"
+    data.elements = ["H"]
+    selected_indices = data.rebuild_dataset(
+        atoms_per_frame=2,
+        n_frames_to_select=1,
+        n_frames_to_compare=1,
+        n_frames_to_propose=2,
+        seed=0,
+        criteria=criteria,
+        starting_frame_indices=starting_frame_indices,
+    )
+
+    assert 0 in selected_indices
+    assert 1 not in selected_indices
+    assert 2 in selected_indices
+    text = capsys.readouterr().out
+    assert "Atomic environments read from file in " in text
+    assert "Proposed indices:\n[1 0]\n" in text
+    assert (
+        "Difference metric summed over all elements:\n{}\n".format(difference) in text
+    )
+    assert "Selected indices:\n[0]\n" in text
+    assert "Time taken: " in text
+
+
+@pytest.mark.parametrize(
+    "criteria, error",
+    [
+        (
+            1.5,
+            "`criteria` must be between 0 and 1, but was 1.5",
+        ),
+        (
+            "mode",
+            "`criteria` must be a quantile (float) between 0 and 1 or 'mean', but was mode",
+        ),
+    ],
+)
+def test_rebuild_dataset_errors(
+    data: Data,
+    criteria: Union[float, Literal["mean"]],
+    error: str,
+):
+    """
+    Test that the expected errors are raised by giving the incorrect `critera`.
+    """
+    copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
+    copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    data.n2p2_directory = "tests/data/tests_output"
+    data.elements = ["H"]
+
+    with pytest.raises(ValueError) as e:
+        data.rebuild_dataset(
+            atoms_per_frame=2,
+            n_frames_to_select=1,
+            n_frames_to_compare=1,
+            n_frames_to_propose=2,
+            seed=0,
+            criteria=criteria,
+        )
+
+    assert str(e.value) == error

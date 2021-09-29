@@ -17,15 +17,22 @@ from os import mkdir
 from os.path import isdir, isfile, join as join_paths
 import re
 from shutil import copy
-from typing import List, Tuple
+import time
+from typing import List, Literal, Tuple, Union
 
 from ase.io import read, write
 from ase.units import create_units
 import numpy as np
 
-from cc_hdnnp.file_operations import format_template_file
+from cc_hdnnp.data_operations import check_structure
+from cc_hdnnp.file_operations import (
+    format_template_file,
+    read_atomenv,
+    read_data_file,
+    remove_data,
+)
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
-from cc_hdnnp.structure import AllStructures
+from cc_hdnnp.structure import AllStructures, Structure
 
 
 class Data:
@@ -198,11 +205,24 @@ class Data:
                     f.write(text)
                 i += 1
 
-    def remove_outliers(self, energy_threshold: float, force_threshold: float):
+    def remove_outliers(
+        self,
+        energy_threshold: float,
+        force_threshold: float,
+        data_file_in: str = "input.data",
+        data_file_out: str = "input.data",
+        data_file_backup: str = "input.data",
+        reference_file: str = "output.data",
+    ):
         """
-        Following the "nnp-norm" command, "output.data" contains the normalised energies and
-        forces. Read these and in "input.data", comment out the structures which have an energy
-        or force above the specified threshold values.
+        Read `reference_file` for energy and force values, and in these and in `target_file`
+        comment out the structures which have an energy or force above the specified
+        threshold values.
+
+        Practically, if "input.data" is the `reference_file`, then the `energy_threshold` and
+        `force_threshold` should be in the same units as that file, i.e. physical units. If
+        "output.data" is used, then normalised thresholds can be given (i.e. setting the
+        theshold in multiples of the datasets standard deviations).
 
         Note that scaling, normalising and pruning should be redone after this.
 
@@ -214,8 +234,20 @@ class Data:
         energy_threshold : float
             Structures with a force component more than `energy_threshold` standard deviations
             away from the 0 will be removed from the dataset.
+        data_file_in: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to read from. Default is "input.data".
+        data_file_out: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to write to. Default is "input.data".
+        data_file_backup: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
+        reference_file: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to read the energy and force values from. Default is "input.data".
         """
-        with open(join_paths(self.n2p2_directory, "output.data")) as f:
+        with open(join_paths(self.n2p2_directory, reference_file)) as f:
             lines = f.readlines()
 
         remove_indices = []
@@ -256,25 +288,14 @@ class Data:
                 atom_count = 0
                 i += 1
 
-        if len(remove_indices) == 0:
-            print("No outliers found")
-            return
-
         print("{0} outliers found: {1}".format(len(remove_indices), remove_indices))
-        copy(
-            join_paths(self.n2p2_directory, "input.data"),
-            join_paths(self.n2p2_directory, "input.data.outliers_included"),
-        )
-        with open(join_paths(self.n2p2_directory, "input.data"), "r") as f:
-            lines = f.readlines()
-        with open(join_paths(self.n2p2_directory, "input.data"), "w") as f:
-            i = 0
-            for line in lines:
-                if i not in remove_indices:
-                    f.write(line)
 
-                if line.strip() == "end":
-                    i += 1
+        remove_data(
+            remove_indices,
+            join_paths(self.n2p2_directory, data_file_in),
+            join_paths(self.n2p2_directory, data_file_out),
+            join_paths(self.n2p2_directory, data_file_backup),
+        )
 
     def write_xyz(self, file_xyz: str = "xyz/{}.xyz", unit_out: str = "Ang"):
         """
@@ -1386,7 +1407,28 @@ class Data:
         file_batch_template: str = "template.sh",
         file_batch_out: str = "lammps_extrapolations.sh",
     ):
-        """"""
+        """
+        Write batch script for using using LAMMPS to test the number of extrapolations that
+        occur during simulation.
+
+        Parameters
+        ----------
+        lammps_directory: str, optional
+            Directory to read and write LAMMPS files to, relative to the main directory.
+            Default is "lammps".
+        ensembles: tuple of str
+            Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
+            and "npt". Default is ("nve", "nvt", "npt").
+        temperatures: tuple of int
+            Contains all temperatures to run simulations at, in Kelvin. Only applies to "nvt"
+            and "npt" ensembles. Default is (340,).
+        file_batch_template: str, optional
+            File location of template to use for batch scripts relative to
+            `scripts_sub_directory`. Default is 'template.sh'.
+        file_batch_out: str, optional
+            File location to write the batch script to relative to
+            `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
+        """
         lammps_directory = join_paths(self.main_directory, lammps_directory)
         with open(join_paths(self.scripts_directory, file_batch_template)) as f:
             batch_template_text = f.read()
@@ -1451,14 +1493,30 @@ class Data:
         ensembles: Tuple[str] = ("nve", "nvt", "npt"),
         temperatures: Tuple[int] = (340,),
     ):
-        """"""
+        """
+        Read the number of successful steps taken in a LAMMPS simulation before stopping due to
+        extrapolation warnings. This information is printed, and in the case of multiple
+        temperature values the average number of steps is calculated.
+
+        Parameters
+        ----------
+        lammps_directory: str, optional
+            Directory to read and write LAMMPS files to, relative to the main directory.
+            Default is "lammps".
+        ensembles: tuple of str
+            Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
+            and "npt". Default is ("nve", "nvt", "npt").
+        temperatures: tuple of int
+            Contains all temperatures to run simulations at, in Kelvin. Only applies to "nvt"
+            and "npt" ensembles. Default is (340,).
+        """
         lammps_directory = join_paths(self.main_directory, lammps_directory)
         timestep_data = {}
 
         for ensemble in ensembles:
             timestep_data[ensemble] = {}
             print(ensemble)
-            print("Epoch | T_step")
+            print("Temp | T_step")
             if "t" in ensemble:
                 for t in temperatures:
                     log_file = "{0}/{1}-t{2}.log".format(
@@ -1476,12 +1534,12 @@ class Data:
                             line = lines.pop()
                         timestep = int(line.split()[0])
                     timestep_data[ensemble][t] = timestep
-                    print("{0:5d} | {1:5d}".format(t, timestep))
+                    print("{0:4d} | {1:5d}".format(t, timestep))
                 timestep_data[ensemble]["mean"] = np.mean(
                     list(timestep_data[ensemble].values())
                 )
                 print(
-                    "MEAN  | {0:5d}\n".format(
+                    "MEAN | {0:5d}\n".format(
                         int(round(timestep_data[ensemble]["mean"]))
                     )
                 )
@@ -1493,11 +1551,235 @@ class Data:
                 )
                 with open(log_file) as f:
                     lines = f.readlines()
-                    if "Too many extrapolation warnings" in lines[-1]:
-                        timestep = int(lines[-2].split()[0])
-                    else:
-                        timestep = int(lines[-1].split()[0])
+                    line = lines.pop()
+                    while "Too many extrapolation warnings" in line or line.startswith(
+                        "###"
+                    ):
+                        line = lines.pop()
+                    timestep = int(line.split()[0])
                 timestep_data[ensemble]["mean"] = timestep
-                print("MEAN  | {0:5d}\n".format(timestep_data[ensemble]["mean"]))
+                print("MEAN | {0:5d}\n".format(timestep_data[ensemble]["mean"]))
 
         return timestep_data
+
+    def trim_dataset_separation(
+        self,
+        structure: Structure,
+        data_file_in: str = "input.data",
+        data_file_out: str = "input.data",
+        data_file_backup: str = "input.data.minimum_separation_backup",
+        data_file_unit: str = "Bohr",
+    ):
+        """
+        Removes individual frames from `data_file_in` that do not meet the criteria on
+        minimum separation set by `structure`. The frames that do satisfy the requirement
+        are written to `data_file_out`. To prevent accidental overwrites, the original contents
+        of `data_file_in` are also copied to `data_file_backup`.
+
+        Parameters
+        ----------
+        structure: Structure
+            The `Structure` represented in `data_file_in`, with requirements on the minimum
+            separation of all constituent species with each other.
+        data_file_in: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to read from. Default is "input.data".
+        data_file_out: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to write to. Default is "input.data".
+        data_file_backup: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
+        data_file_unit: str, optional
+            Length unit used in the data files, to ensure compatibility with the separation
+            specified on `structure`.
+        """
+        remove_indices = []
+        data = read_data_file(join_paths(self.n2p2_directory, data_file_in))
+        for i, frame_data in enumerate(data):
+            if not check_structure(
+                lattice=frame_data[0] * self.units[data_file_unit],
+                element=frame_data[1],
+                position=frame_data[2] * self.units[data_file_unit],
+                structure=structure,
+            ):
+                remove_indices.append(i)
+
+        print(
+            "Removing {} frames for having atoms within minimum separation."
+            "".format(len(remove_indices))
+        )
+
+        remove_data(
+            remove_indices,
+            join_paths(self.n2p2_directory, data_file_in),
+            join_paths(self.n2p2_directory, data_file_out),
+            join_paths(self.n2p2_directory, data_file_backup),
+        )
+
+        return remove_indices
+
+    def rebuild_dataset(
+        self,
+        atoms_per_frame: int,
+        n_frames_to_select: int,
+        n_frames_to_propose: int,
+        n_frames_to_compare: int,
+        starting_frame_indices: List[int] = None,
+        criteria: Union[Literal["mean"], float] = "mean",
+        seed: int = None,
+        dtype: str = "float32",
+        data_file_in: str = "input.data",
+        data_file_out: str = "input.data",
+        data_file_backup: str = "input.data.rebuild_backup",
+    ):
+        """
+        Taking the frames in `data_file_in` as the original dataset, reconstructs a new,
+        smaller dataset and writes it to `data_file_out`.
+
+        The selection of new structures is based on the separation of their symmetry functions,
+        or fingerprints. A number of frames are proposed, and the euclidean distance of their
+        fingerprint vectors to the vectors of already accepted frames are compared. Note that
+        as multiple atomic environments are present in each frame, this difference is taken
+        between all atoms of the same species. Using `criteria`, the proposed frame(s) that
+        are most different from already accepted frames are added to the new dataset.
+
+        Because of the high dimensionality involved, this is done in batches, with the number of
+        frames to propose, compare against and select being configurable.
+
+        Parameters
+        ----------
+        atoms_per_frame: int
+            The number of atoms present in each frame.
+        n_frames_to_select: int
+            The number of frames to select from each batch.
+        n_frames_to_propose: int
+            The number of frames proposed at each batch.
+        n_frames_to_compare: int
+            The number of already accepted frames to compare against at each batch.
+        starting_frame_indices: list of int, optional
+            If provided, these frames will be used as the initial set to compare against.
+            If `None`, then `n_frames_compare` will be randomly selected instead.
+            Default is `None`.
+        criteria: float or "mean", optional
+            If a float between 0 and 1, defines the quantile to take when comparing frames.
+            For example, 1 would mean the maximum separation between two atomic environments
+            is used to determine which frames to add, 0.5 would take the median separation.
+            If "mean", then the mean of all environments is compared. Default is "mean".
+        seed: int, optional
+            The seed is used to randomly order the frames for selection. Default is `None`.
+        dtype: str, optional
+            numpy data type to use. Default is "float32".
+        data_file_in: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to read from. Default is "input.data".
+        data_file_out: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            to write to. Default is "input.data".
+        data_file_backup: str, optional
+            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
+        """
+        np.random.seed(seed)
+        t1 = time.time()
+        atom_environments = read_atomenv(
+            join_paths(self.n2p2_directory, "atomic-env.G"),
+            self.elements,
+            atoms_per_frame,
+            dtype=dtype,
+        )
+        t2 = time.time()
+        print("Atomic environments read from file in {} s".format(t2 - t1))
+
+        # If starting_frame_indices provided, use those. Otherwise select starting frames
+        # at random from the shuffled list of all frames.
+        remove_indices = np.array([])
+        frame_indices = np.random.permutation(len(list(atom_environments.values())[0]))
+        if starting_frame_indices is None:
+            selected_indices = frame_indices[:n_frames_to_compare]
+            frame_indices = frame_indices[n_frames_to_compare:]
+        else:
+            selected_indices = np.array(starting_frame_indices)
+            for starting_index in starting_frame_indices:
+                frame_indices = frame_indices[frame_indices != starting_index]
+
+        while len(frame_indices) > 0:
+            t3 = time.time()
+            frames_compare = selected_indices[-n_frames_to_compare:]
+            frames_proposed = frame_indices[:n_frames_to_propose]
+            frame_indices = frame_indices[n_frames_to_propose:]
+            total_metric = np.zeros(len(frames_proposed), dtype=dtype)
+
+            for element_environments in atom_environments.values():
+                environments_compare = element_environments[frames_compare].reshape(
+                    element_environments[frames_compare].shape[0],
+                    1,
+                    element_environments[frames_compare].shape[1],
+                    1,
+                    element_environments[frames_compare].shape[2],
+                )
+                environments_proposed = element_environments[frames_proposed].reshape(
+                    1,
+                    element_environments[frames_proposed].shape[0],
+                    1,
+                    element_environments[frames_proposed].shape[1],
+                    element_environments[frames_proposed].shape[2],
+                )
+
+                if isinstance(criteria, float):
+                    if criteria > 1 or criteria < 0:
+                        raise ValueError(
+                            "`criteria` must be between 0 and 1, but was {}".format(
+                                criteria
+                            )
+                        )
+                    rmsd = (
+                        np.mean(
+                            ((environments_compare - environments_proposed)) ** 2,
+                            axis=4,
+                        )
+                        ** 0.5
+                    )
+                    metric = np.quantile(rmsd, q=criteria, axis=(0, 2, 3))
+                elif criteria == "mean":
+                    metric = (
+                        np.mean(
+                            ((environments_compare - environments_proposed)) ** 2,
+                            axis=(0, 2, 3, 4),
+                        )
+                        ** 0.5
+                    )
+                else:
+                    raise ValueError(
+                        "`criteria` must be a quantile (float) between 0 and 1 "
+                        "or 'mean', but was {}".format(criteria)
+                    )
+                total_metric += metric
+
+            max_separation_indicies = frames_proposed[
+                np.argsort(total_metric)[-n_frames_to_select:]
+            ]
+            min_separation_indicies = frames_proposed[
+                np.argsort(total_metric)[:-n_frames_to_select]
+            ]
+            selected_indices = np.concatenate(
+                (selected_indices, max_separation_indicies)
+            )
+            remove_indices = np.concatenate((remove_indices, min_separation_indicies))
+            print(
+                "Proposed indices:\n{0}\n"
+                "Difference metric summed over all elements:\n{1}\n".format(
+                    frames_proposed, total_metric
+                )
+            )
+            print("Selected indices:\n{}\n".format(max_separation_indicies))
+            print("Time taken: {}\n".format(time.time() - t3))
+
+        remove_data(
+            remove_indices,
+            join_paths(self.n2p2_directory, data_file_in),
+            join_paths(self.n2p2_directory, data_file_out),
+            join_paths(self.n2p2_directory, data_file_backup),
+        )
+
+        return selected_indices

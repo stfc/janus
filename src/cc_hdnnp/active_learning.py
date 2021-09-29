@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 
 from cc_hdnnp.data import Data
+from cc_hdnnp.file_operations import read_normalisation
 from cc_hdnnp.structure import Structure
 
 # TODO combine all unit conversions
@@ -2881,33 +2882,6 @@ class ActiveLearning:
 
         return forces
 
-    def _read_normalisation(self, input_name: str) -> Tuple[float, float]:
-        """
-        Read the forces from the n2p2 settings file provided.
-
-        Parameters
-        ----------
-        input_name : str
-            The file path of the file to read normalisation from. Should be in a recognisable
-            format, namely the "input.nn" file used for the network training.
-
-        Returns
-        -------
-        float, float
-            The conversion factor for energy and length respectively. If not found in the file,
-            (1., 1.) is returned.
-        """
-        with open(input_name) as f:
-            lines = f.readlines()[5:7]
-
-        if (
-            lines[0].split()[0] == "conv_energy"
-            and lines[1].split()[0] == "conv_length"
-        ):
-            return float(lines[0].split()[1]), float(lines[1].split()[1])
-
-        return 1.0, 1.0
-
     def _reduce_selection(
         self,
         selection: np.ndarray,
@@ -3434,10 +3408,10 @@ class ActiveLearning:
         )
 
         # Read normalisation factors from file
-        conv_energy_0, conv_length_0 = self._read_normalisation(
+        conv_energy_0, conv_length_0 = read_normalisation(
             join(self.n2p2_directories[0], "input.nn")
         )
-        conv_energy_1, conv_length_1 = self._read_normalisation(
+        conv_energy_1, conv_length_1 = read_normalisation(
             join(self.n2p2_directories[1], "input.nn")
         )
         if conv_energy_0 != conv_energy_1 or conv_length_0 != conv_length_1:

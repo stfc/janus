@@ -428,7 +428,10 @@ def test_read_input_data(
         (
             True,
             ["tests/data/n2p2_copy", "tests/data/n2p2/no_lattice"],
-            "input.data files in tests/data/n2p2_copy and tests/data/n2p2/no_lattice are differnt.",
+            (
+                "input.data files in tests/data/n2p2_copy and tests/data/n2p2/no_lattice "
+                "are differnt."
+            ),
         ),
         (
             True,
@@ -966,11 +969,11 @@ def test_read_log_format_errors(active_learning: ActiveLearning, text: str):
             "v2.0.0",
             (
                 "thermo        0\n"
-                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 SYMFUNC: 26 "
-                "VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
-                "thermo        1     0.0000  374.000    -53015.39756    -52990.69413    4.7906   "
-                "42.2281 -107549.23  18.58077  18.58077  18.58077  90.00000  90.00000  90.00000  "
-                "0.89576\n"
+                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 "
+                "SYMFUNC: 26 VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
+                "thermo        1     0.0000  374.000    -53015.39756    -52990.69413    "
+                "4.7906   42.2281 -107549.23  18.58077  18.58077  18.58077  "
+                "90.00000  90.00000  90.00000  0.89576\n"
                 "final line is skipped"
             ),
         ),
@@ -978,8 +981,9 @@ def test_read_log_format_errors(active_learning: ActiveLearning, text: str):
             "v2.1.1",
             (
                 "thermo        0\n"
-                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 ELEMENT:  C "
-                "SYMFUNC:   26 TYPE:  2 VALUE:  2.000E+00 MIN:  0.000E+00 MAX:  1.000E+00\n"
+                "### NNP EXTRAPOLATION WARNING ### STRUCTURE:      0 ATOM:       486 "
+                "ELEMENT:  C SYMFUNC:   26 TYPE:  2 VALUE:  2.000E+00 "
+                "MIN:  0.000E+00 MAX:  1.000E+00\n"
                 "thermo        1\n"
                 "final line is skipped"
             ),
@@ -1843,8 +1847,148 @@ def test_read_data(active_learning: ActiveLearning):
     assert active_learning.statistics == np.array(["stats"])
 
 
+# TEST GET STRUCTURE
+
+
+def test_get_structure(
+    active_learning: ActiveLearning,
+):
+    """"""
+    data = [
+        "ITEM: TIMESTEP",
+        "0",
+        "ITEM: NUMBER OF ATOMS",
+        "1",
+        "ITEM: BOX BOUNDS xy xz yz",
+        "0.0000000000000000e+00 1. 0.0000000000000000e+00",
+        "0.0000000000000000e+00 1. 0.0000000000000000e+00",
+        "0.0000000000000000e+00 1. 0.0000000000000000e+00",
+        "ITEM: ATOMS id element x y z q",
+        "1 O 12.3466 3.95684 5.12344 0.000",
+    ]
+
+    lattice, element, position, charge = active_learning._get_structure(
+        data=data,
+    )
+
+    assert lattice == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    assert element == np.array("O")
+    assert np.allclose(position, np.array([[12.3466, 3.95684, 5.12344]]))
+    assert charge == np.array([0.0])
+
+
+# TEST CHECK NEAREST NEIGHBOURS
+
+
+@pytest.mark.parametrize(
+    "pos_i, pos_j",
+    [
+        (np.array([]), np.array([])),
+        (np.array([0.0, 0.0, 0.0]), np.array([0.5, 0.5, 0.5])),
+    ],
+)
+def test_check_nearest_neighbours(
+    active_learning: ActiveLearning,
+    pos_i: np.ndarray,
+    pos_j: np.ndarray,
+):
+    """"""
+    accepted, d = active_learning._check_nearest_neighbours(
+        lat=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        pos_i=pos_i,
+        pos_j=pos_j,
+        ii=False,
+        d_min=0.1,
+    )
+
+    assert accepted
+    assert d == -1
+
+
+# TEST CHECK STRUCTURES
+
+
+def test_check_structure(
+    active_learning: ActiveLearning,
+    capsys: pytest.CaptureFixture,
+):
+    """"""
+    path = "test"
+    timestep = 1
+    lattice = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    element = np.array(["H", "H"])
+    position = np.zeros((2, 3))
+    structure = active_learning.all_structures.structure_dict["test"]
+
+    accepted = active_learning._check_structure(
+        lattice=lattice,
+        element=element,
+        position=position,
+        path=path,
+        timestep=timestep,
+        structure=structure,
+    )
+
+    assert not accepted
+    assert capsys.readouterr().out == (
+        "Too small interatomic distance in test_s1: H-H: 0.0 Ang\n"
+    )
+
+
+# TEST READ STRUCTURES
+
+
+@pytest.mark.parametrize(
+    "selected_timestep, expected_index",
+    [
+        ([0, 1, [2, 2, 2]], -1),
+        ([100, 101, [102, 102, 102]], 1),
+        ([-1, 100, [101, 101, 101]], 1),
+        ([-1, -1, [100, 100, 100]], 1),
+    ],
+)
+def test_read_structures(
+    active_learning: ActiveLearning,
+    selected_timestep: List[int],
+    expected_index: List[int],
+):
+    """"""
+    path = "test_npt_hdnnp1_t325_p1.0_1"
+    extrapolation_data = np.array([-1, -1, -1, 521, -1])
+    n_small = 2
+    small = 1
+    tolerance_index = 1
+    extrapolation_statistic = [
+        [[1.0, 1, 1]],
+        [[1.0, 1, 1]],
+        [[1.0, 1, 1]],
+        [[1.0, 1, 1]],
+        [[1.0, 1, 1]],
+    ]
+    element2index = {"H": 0, "C": 1, "O": 2}
+    structure = active_learning.all_structures.structure_dict["test"]
+    copytree(
+        "tests/data/active_learning/mode1",
+        "tests/data/tests_output/mode1",
+    )
+
+    returned_index = active_learning._read_structures(
+        path=path,
+        extrapolation_data=extrapolation_data,
+        selected_timestep=selected_timestep,
+        n_small=n_small,
+        small=small,
+        tolerance_index=tolerance_index,
+        extrapolation_statistic=extrapolation_statistic,
+        element2index=element2index,
+        structure=structure,
+    )
+
+    assert returned_index == expected_index
+
+
 def test_write_data_append(
-    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
+    active_learning: ActiveLearning,
 ):
     """"""
     with open("tests/data/tests_output/test.data", "w") as f:
