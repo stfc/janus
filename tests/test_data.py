@@ -5,7 +5,7 @@ Unit tests for `data.py`
 from os import listdir, remove
 from os.path import isfile, join
 from shutil import copy, rmtree
-from typing import List, Literal, Union
+from typing import Dict, List, Literal, Union
 
 from genericpath import isdir
 import numpy as np
@@ -461,9 +461,9 @@ def test_data_write_lammps_data(data: Data):
     """
     Test that LAMMPS data is written successfully.
     """
+    data.lammps_directory = "tests/data/tests_output"
     data.write_lammps_data(
         file_xyz="cp2k_input/0.xyz",
-        file_data="tests_output/lammps.data",
     )
 
     assert isfile("tests/data/tests_output/lammps.data")
@@ -735,26 +735,121 @@ def test_trim_dataset_separation(
         )
 
 
-@pytest.mark.parametrize("starting_frame_indices", [None, [2]])
 @pytest.mark.parametrize(
-    "criteria, difference",
+    "criteria, differences",
     [
         (
             0.5,
-            "[0.6480741 1.9442222]",
+            {
+                "0[2]": 1.9442222,
+                "1[2]": 0.6480741,
+                "1[0]": 1.2961481,
+                "1[0 2]": 0.6480741,
+                "2[0]": 1.9442222,
+            },
         ),
         (
             "mean",
-            "[0.6658329 1.9502137]",
+            {
+                "0[2]": 1.9502137,
+                "1[2]": 0.6658329,
+                "1[0]": 1.3051181,
+                "1[0 2]": 0.6658329,
+                "2[0]": 1.9502137,
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "starting_frame_indices, settings, scaling, expected_starting_indices, "
+    "expected_proposed_indices, expected_selected_indices, select_extreme_frames",
+    [
+        (
+            None,
+            "",
+            "1 1 -1.0 -1.0 0.5 1.0\n1 2 -1.0 -1.0 1.0 2.0\n1 3 -1.0 -1.0 1.5 3.0\n",
+            np.array([2]),
+            np.array([1, 0]),
+            np.array([2, 0]),
+            False,
+        ),
+        (
+            [2],
+            "",
+            "1 1 -1.0 -1.0 0.5 1.0\n1 2 -1.0 -1.0 1.0 2.0\n1 3 -1.0 -1.0 1.5 3.0\n",
+            np.array([2]),
+            np.array([1, 0]),
+            np.array([2, 0]),
+            False,
+        ),
+        (
+            None,
+            "",
+            "1 1 0.0 1.0 0.5 1.0\n1 2 0.0 2.0 1.0 2.0\n1 3 0.0 3.0 1.5 3.0\n",
+            np.array([0, 2]),
+            np.array([1]),
+            np.array([0, 2, 1]),
+            True,
+        ),
+        (
+            [2],
+            "",
+            "1 1 0.0 1.0 0.5 1.0\n1 2 0.0 2.0 1.0 2.0\n1 3 0.0 3.0 1.5 3.0\n",
+            np.array([0, 2]),
+            np.array([1]),
+            np.array([0, 2, 1]),
+            True,
+        ),
+        (
+            None,
+            "scale_symmetry_functions_sigma 1",
+            "1 1 0.0 0.1 0.0 1.0\n1 2 0.0 0.4 0.0 2.0\n1 3 0.0 0.9 0.0 3.0\n",
+            np.array([0]),
+            np.array([2, 1]),
+            np.array([0, 2]),
+            True,
+        ),
+        (
+            [2],
+            "scale_symmetry_functions_sigma 1",
+            "1 1 0.0 0.1 0.0 1.0\n1 2 0.0 0.4 0.0 2.0\n1 3 0.0 0.9 0.0 3.0\n",
+            np.array([0, 2]),
+            np.array([1]),
+            np.array([0, 2, 1]),
+            True,
+        ),
+        (
+            None,
+            "scale_symmetry_functions 1\nscale_min_short -0.3\nscale_max_short 0.3",
+            "1 1 0.0 0.1 0.0 1.0\n1 2 0.0 0.4 0.0 2.0\n1 3 0.0 0.9 0.0 3.0\n",
+            np.array([0]),
+            np.array([2, 1]),
+            np.array([0, 2]),
+            True,
+        ),
+        (
+            [2],
+            "scale_symmetry_functions 1\nscale_min_short -0.3\nscale_max_short 0.3",
+            "1 1 0.0 0.1 0.0 1.0\n1 2 0.0 0.4 0.0 2.0\n1 3 0.0 0.9 0.0 3.0\n",
+            np.array([0, 2]),
+            np.array([1]),
+            np.array([0, 2, 1]),
+            True,
         ),
     ],
 )
 def test_rebuild_dataset(
     data: Data,
     capsys: pytest.CaptureFixture,
+    settings: str,
+    scaling: str,
+    expected_starting_indices: List[int],
+    expected_proposed_indices: List[int],
+    expected_selected_indices: List[int],
     criteria: Union[float, Literal["mean"]],
-    difference: str,
+    differences: Dict[str, float],
     starting_frame_indices: List[int],
+    select_extreme_frames: bool,
 ):
     """
     Test that the expected frame is removed, with the expected metric value(s),
@@ -762,8 +857,19 @@ def test_rebuild_dataset(
     """
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.nn", "w") as f:
+        f.write(settings)
+    with open("tests/data/tests_output/scaling.data", "w") as f:
+        f.write(scaling)
     data.n2p2_directory = "tests/data/tests_output"
     data.elements = ["H"]
+    difference = np.array(
+        [
+            differences["{0}{1}".format(i, expected_starting_indices)]
+            for i in expected_proposed_indices
+        ]
+    )
+
     selected_indices = data.rebuild_dataset(
         atoms_per_frame=2,
         n_frames_to_select=1,
@@ -772,44 +878,74 @@ def test_rebuild_dataset(
         seed=0,
         criteria=criteria,
         starting_frame_indices=starting_frame_indices,
+        select_extreme_frames=select_extreme_frames,
     )
 
-    assert 0 in selected_indices
-    assert 1 not in selected_indices
-    assert 2 in selected_indices
     text = capsys.readouterr().out
-    assert "Atomic environments read from file in " in text
-    assert "Proposed indices:\n[1 0]\n" in text
+    print(text)
+    assert "Values read from file in " in text
+    assert (
+        "Starting rebuild with the following frames selected:\n{}\n".format(
+            expected_starting_indices
+        )
+        in text
+    )
+    assert "Proposed indices:\n{}\n".format(expected_proposed_indices) in text
     assert (
         "Difference metric summed over all elements:\n{}\n".format(difference) in text
     )
-    assert "Selected indices:\n[0]\n" in text
+    assert (
+        "Selected indices:\n{}\n".format(
+            [expected_proposed_indices[np.argmax(difference)]]
+        )
+        in text
+    )
     assert "Time taken: " in text
+    assert np.all(selected_indices == expected_selected_indices)
 
 
 @pytest.mark.parametrize(
-    "criteria, error",
+    "criteria, settings, error",
     [
         (
             1.5,
+            "",
             "`criteria` must be between 0 and 1, but was 1.5",
         ),
         (
             "mode",
+            "",
             "`criteria` must be a quantile (float) between 0 and 1 or 'mean', but was mode",
+        ),
+        (
+            0.5,
+            "scale_symmetry_functions True\nscale_symmetry_functions_sigma True\n",
+            "Both scale_symmetry_functions and scale_symmetry_functions_sigma "
+            "were present in settings file.",
+        ),
+        (
+            0.5,
+            "scale_symmetry_functions True\n",
+            "If scale_symmetry_functions is set, both scale_min_short and "
+            "scale_max_short must be present.",
         ),
     ],
 )
 def test_rebuild_dataset_errors(
     data: Data,
     criteria: Union[float, Literal["mean"]],
+    settings: str,
     error: str,
 ):
     """
-    Test that the expected errors are raised by giving the incorrect `critera`.
+    Test that the expected errors are raised by giving the incorrect `critera` or `settings`.
     """
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.nn", "w") as f:
+        f.write(settings)
+    with open("tests/data/tests_output/scaling.data", "w") as f:
+        f.write("1 1 0.0 1.0 0.5 1.0\n1 2 0.0 2.0 1.0 2.0\n1 3 0.0 3.0 1.5 3.0\n")
     data.n2p2_directory = "tests/data/tests_output"
     data.elements = ["H"]
 

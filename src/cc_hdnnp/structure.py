@@ -3,7 +3,10 @@ Class for containing information about atomic species in the structure of intere
 """
 
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
+
+from ase.atoms import Atoms
+import numpy as np
 
 
 class Species:
@@ -312,3 +315,162 @@ class AllStructures:
         self.element_list = structures[0].all_species.element_list
         self.atomic_number_list = structures[0].all_species.atomic_number_list
         self.mass_list = structures[0].all_species.mass_list
+
+
+class Frame:
+    """
+    Holds information for a single frame of a `Structure`.
+
+    Parameters
+    ----------
+    lattice: np.ndarray
+        Array of float with shape (3, 3) representing the lattice vectors of the frame.
+    symbols: np.ndarray
+        Array of str with shape (N), where N is the number of atoms in the frame,
+        representing the chemical symbols of each atom.
+    positions: np.ndarray
+        Array of float with shape (N, 3), where N is the number of atoms in the frame,
+        representing the positions of each atom.
+    forces: np.ndarray
+        Array of float with shape (N, 3), where N is the number of atoms in the frame,
+        representing the forces of each atom.
+    energy: float
+        float with shape representing the total energy of the frame.
+    """
+
+    def __init__(
+        self,
+        lattice: np.ndarray,
+        symbols: np.ndarray,
+        positions: np.ndarray,
+        forces: np.ndarray,
+        energy: float,
+    ):
+        self.atoms = Atoms(symbols=symbols, positions=positions, cell=lattice)
+        self.forces = forces
+        self.energy = energy
+
+    @property
+    def symbols(self) -> np.ndarray:
+        """
+        Get the chemical symbols of all constituent atoms, in order.
+
+        Returns
+        -------
+        ndarray of str
+        """
+        return np.array(self.atoms.symbols)
+
+    @property
+    def positions(self) -> np.ndarray:
+        """
+        Get the positions of all constituent atoms, in order.
+
+        Returns
+        -------
+        ndarray of float
+        """
+        return np.array(self.atoms.positions)
+
+    @property
+    def lattice(self) -> np.ndarray:
+        """
+        Get the chemical symbols of all constituent atoms, in order.
+
+        Returns
+        -------
+        ndarray of float
+        """
+        return np.array(self.atoms.cell)
+
+
+class Dataset:
+    """
+    Holds a series of `Frame` objects representing a dataset.
+
+    Parameters
+    ----------
+    data_file: str
+        Complete file path of the n2p2 data file to read.
+    """
+
+    def __init__(
+        self,
+        data_file: str,
+    ):
+        self.frames = self.read_data_file(data_file=data_file)
+
+    def read_data_file(
+        self,
+        data_file: str,
+    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]]:
+        """
+        Read n2p2 structure file and return the data as python objects.
+
+        Parameters
+        ----------
+        data_file: str
+            The complete n2p2 structure file path to read from.
+
+        Returns
+        -------
+        list of tuple of `ndarray` and float
+            Each tuple within the outer list represents a single frame from the structure file.
+            Within the tuple, the elements are as follows:
+            - ndarray of float with shape (3, 3) representing the lattice vectors
+            - ndarray of str with length N, where N is the number of atoms in the frame,
+                representing the chemical species of the atom
+            - ndarray of float with shape (N, 3), where N is the number of atoms in the frame,
+                representing the position vector of each atom
+            - ndarray of float with shape (N, 3), where N is the number of atoms in the frame,
+                representing the force vector of each atom
+            - float of the frames total energy
+        """
+        with open(data_file) as f:
+            lines = f.readlines()
+
+        frames = []
+        lattice = []
+        elements = []
+        positions = []
+        forces = []
+        energy = None
+        for line in lines:
+            if line.strip() == "begin":
+                lattice = []
+                elements = []
+                positions = []
+                forces = []
+                energy = None
+            elif line.split()[0] == "lattice":
+                lattice.append(np.array([float(line.split()[j]) for j in (1, 2, 3)]))
+            elif line.split()[0] == "atom":
+                elements.append(line.split()[4])
+                positions.append(
+                    [
+                        float(line.split()[1]),
+                        float(line.split()[2]),
+                        float(line.split()[3]),
+                    ]
+                )
+                forces.append(
+                    [
+                        float(line.split()[-3]),
+                        float(line.split()[-2]),
+                        float(line.split()[-1]),
+                    ]
+                )
+            elif line.split()[0] == "energy":
+                energy = float(line.split()[1])
+            elif line.strip() == "end":
+                frames.append(
+                    Frame(
+                        lattice=np.array(lattice),
+                        symbols=np.array(elements),
+                        positions=np.array(positions),
+                        forces=np.array(forces),
+                        energy=energy,
+                    )
+                )
+
+        return frames

@@ -14,12 +14,13 @@ cp2k uses units of:
 """
 
 from os import mkdir
-from os.path import isdir, isfile, join as join_paths
+from os.path import exists, isdir, isfile, join as join_paths
 import re
 from shutil import copy
 import time
-from typing import List, Literal, Tuple, Union
+from typing import Dict, List, Literal, Tuple, Union
 
+from ase.atoms import Atoms
 from ase.io import read, write
 from ase.units import create_units
 import numpy as np
@@ -29,6 +30,8 @@ from cc_hdnnp.file_operations import (
     format_template_file,
     read_atomenv,
     read_data_file,
+    read_nn_settings,
+    read_scaling,
     remove_data,
 )
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
@@ -60,6 +63,9 @@ class Data:
     active_learning_sub_directory : str, optional
         Path for the directory to read/write active learning files from/to, relative to the
         `main_directory`. Default is "active_learning".
+    lammps_sub_directory : str, optional
+        Path for the directory to read/write LAMMPS files from/to, relative to the
+        `main_directory`. Default is "lammps".
     """
 
     def __init__(
@@ -71,8 +77,10 @@ class Data:
         scripts_sub_directory: str = "scripts",
         n2p2_sub_directory: str = "n2p2",
         active_learning_sub_directory: str = "active_learning",
+        lammps_sub_directory: str = "lammps",
     ):
         self.units = create_units("2014")
+        self.units["au"] = self.units["Bohr"]
         self.all_structures = structures
         # TODO convert to getters
         self.structure_names = structures.structure_dict.keys()
@@ -85,6 +93,7 @@ class Data:
         self.active_learning_directory = join_paths(
             main_directory, active_learning_sub_directory
         )
+        self.lammps_directory = join_paths(main_directory, lammps_sub_directory)
 
         self.trajectory = None
 
@@ -207,7 +216,7 @@ class Data:
 
     def remove_outliers(
         self,
-        energy_threshold: float,
+        energy_threshold: Union[float, Tuple[float, float]],
         force_threshold: float,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
@@ -228,12 +237,12 @@ class Data:
 
         Parameters
         ----------
-        energy_threshold : float
-            Structures which lie more than `energy_threshold` standard deviations away from the
-            mean value will be removed from the dataset.
-        energy_threshold : float
-            Structures with a force component more than `energy_threshold` standard deviations
-            away from the 0 will be removed from the dataset.
+        energy_threshold : float or tuple of float
+            Structures which lie outside the range of `energy_threshold` will be removed from
+            the dataset. The units depend on `reference_file`.
+        force_threshold : float
+            Structures with a force component more than `force_threshold` will be removed from
+            the dataset. The units depend on `reference_file`.
         data_file_in: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directory`,
             to read from. Default is "input.data".
@@ -247,6 +256,9 @@ class Data:
             File path of the n2p2 structure file, relative to `self.n2p2_directory`,
             to read the energy and force values from. Default is "input.data".
         """
+        if isinstance(energy_threshold, float):
+            energy_threshold = (-energy_threshold, energy_threshold)
+
         with open(join_paths(self.n2p2_directory, reference_file)) as f:
             lines = f.readlines()
 
@@ -274,9 +286,9 @@ class Data:
                     remove = True
             elif line_split[0] == "energy":
                 energy = float(line_split[-1]) / atom_count
-                if abs(energy) > energy_threshold:
+                if energy < energy_threshold[0] or energy > energy_threshold[1]:
                     print(
-                        "Structure {0} above threshold with an energy of {1}".format(
+                        "Structure {0} outside threshold with an energy of {1}".format(
                             i, energy
                         )
                     )
@@ -526,7 +538,7 @@ class Data:
                                 structure_name=structure_name,
                                 basis_set=basis_set,
                                 potential=potential,
-                                **format_dict
+                                **format_dict,
                             )
                         )
 
@@ -557,6 +569,232 @@ class Data:
             f.write(bash_text)
 
         return "bash {}".format(self.main_directory + file_bash)
+
+    def write_qe_input(
+        self,
+        atoms: Atoms,
+        frame_directory: str,
+        structure: Structure,
+        pseudos: List[str],
+    ):
+        """
+        Writes the input file for Quantum Esspresso to `frame_directory` for the `atoms`
+        provided.
+
+        Parameters
+        ----------
+        atoms: Atoms
+            The configuration to run QE on as an ASE Atoms object.
+        frame_directory: str
+            Complete path to the directory in which to write the QE input file.
+        structure: Stucture
+            The `Structure` being simulated. Will be used to determine the file name and
+            get relevant elements.
+        pseudos: list of str
+            File names of the pseudo potentials to use, found within `pseudos` directory and
+            ordered by atomic number.
+        """
+        cell = atoms.get_cell()
+        symbols = structure.all_species.element_list
+        masses = structure.all_species.mass_list
+        with open(
+            join_paths(frame_directory, "{}.in".format(structure.name)), "w"
+        ) as f:
+            print(
+                """&control
+  calculation = 'scf'
+  tstress=.true
+  tprnfor = .true.
+  verbosity="high"
+  pseudo_dir="../pseudos/"
+  disk_io="low"
+  outdir = './{}'
+/
+
+&system
+  ibrav=0,
+  nat={},
+  ntyp=4
+  ecutwfc=60
+  ecutrho=400
+  input_dft='pbe'
+  occupations='fixed'
+/
+
+&electrons
+  diagonalization='david'
+  conv_thr=1.0e-8
+  mixing_beta=0.7
+/
+
+&ions
+  bfgs_ndim=3
+/
+
+CELL_PARAMETERS {{ angstrom }}
+{:17.10f} {:17.10f} {:17.10f}
+{:17.10f} {:17.10f} {:17.10f}
+{:17.10f} {:17.10f} {:17.10f}
+
+K_POINTS {{automatic}}
+1 1 1 0 0 0
+
+ATOMIC_SPECIES""".format(
+                    structure.name,
+                    len(atoms),
+                    *cell[0],
+                    *cell[1],
+                    *cell[2],
+                ),
+                file=f,
+            )
+
+            for i in range(len(symbols)):
+                print(
+                    "{:2s} {:17.10f} {}".format(symbols[i], masses[i], pseudos[i]),
+                    file=f,
+                )
+
+            print(
+                """
+ATOMIC_POSITIONS {{angstrom}}"""
+            )
+
+            for atom in atoms:
+                print(
+                    "{:2s} {:17.10f} {:17.10f} {:17.10f}".format(
+                        atom.symbol, *atom.position
+                    ),
+                    file=f,
+                )
+
+    def write_qe_pp(self, frame_directory: str, structure: Structure):
+        """
+        Write "pp.in" input script for Quantum Espresso plottting.
+
+        Parameters
+        ----------
+        frame_directory: str
+            Complete path to the directory in which to write the QE input file.
+        structure: Stucture
+            The `Structure` being simulated. Will be used to determine the file name and
+            get relevant elements.
+        """
+        with open(join_paths(frame_directory, "pp.in"), "w") as f:
+            print(
+                """&inputpp
+    prefix  = 'pwscf'
+    outdir = './{structure_name}'
+    plot_num= 0
+/
+&plot
+    nfile = 1
+    iflag = 3
+    output_format = 6
+    fileout = '{structure_name}.cube'
+/""".format(
+                    structure_name=structure.name
+                ),
+                file=f,
+            )
+
+    def write_qe_slurm(self, frame_directory: str, structure: Structure):
+        """
+        Writes the batch script for running all stages of Quantum Espresso.
+
+        Parameters
+        ----------
+        frame_directory: str
+            Complete path to the directory in which to write the QE input file.
+        structure: Stucture
+            The `Structure` being simulated. Will be used to determine the file name and
+            get relevant elements.
+        """
+        with open(join_paths(frame_directory, "qe.slurm"), "w") as f:
+            print(
+                """#!/usr/bin/env bash
+
+#SBATCH -n 128
+#SBATCH --exclusive
+#SBATCH --reservation=scddevel
+#SBATCH -t 2:00:00
+#SBATCH -C amd
+
+module purge
+
+module use /work3/cse/dlp//scd/modules/all
+module load QuantumESPRESSO/6.6-foss-2020a
+n=$SLURM_NTASKS
+
+export OMP_NUM_THREADS=1
+
+cd {frame_directory}
+mpirun -n $n pw.x  -i  {structure_name}.in > {structure_name}.log
+mpirun -n 32 pp.x  <  pp.in > {structure_name}-pp.log
+/home/vol02/scarf562/bin/bader {structure_name}.cube > bader.log
+rm -f {structure_name}.cube
+rm -rf ./{structure_name}/pwscf.save
+rm -f tmp.pp
+""".format(
+                    frame_directory=frame_directory, structure_name=structure.name
+                ),
+                file=f,
+            )
+
+        return "sbatch {}\n".format(join_paths(frame_directory, "qe.slurm"))
+
+    def prepare_qe(
+        self,
+        qe_directory: str,
+        temperatures: List[int],
+        pressures: List[int],
+        structure: Structure,
+        selection: Tuple[int, int] = (0, 1),
+    ):
+        """
+        Prepare input and batch scripts needed for Quantum Espresso. Expects a trajectory file
+        to be in `qe_directory` with the naming patten
+        "{structure.name}-T{temperature}-p{pressure}.xyz".
+
+        Parameters
+        ----------
+        qe_directory: str
+            Directory for all Quantum Espresso files and sub directories.
+        temperatures: list of int
+            All temperatures to run Quantum Espresso for.
+        pressures: list of int
+            All pressures to run Quantum Espresso for.
+        structure: Structure
+            The Structure which is being simulated.
+        selection: tuple of int
+            Allows for subsampling of the trajectory files. First entry is the index of the
+            first frame to use, second allows for every nth frame to be selected.
+
+        """
+        submit_all_text = ""
+        for t in temperatures:
+            for p in pressures:
+                traj = read(
+                    join_paths(
+                        qe_directory,
+                        "UiO-66Zr-T" + str(t) + "-p" + str(p) + ".xyz",
+                    ),
+                    index=":",
+                )
+                for j, a in enumerate(traj[selection[0] :]):
+                    if j % selection[1] == 0:
+                        folder = join_paths(
+                            qe_directory, "T{:d}-p{}-{:d}".format(t, p, j)
+                        )
+                        if not exists(folder):
+                            mkdir(folder)
+                        self.write_qe_input(a, folder, structure=structure)
+                        self.write_qe_pp(folder)
+                        submit_all_text += self.write_qe_slurm(folder)
+
+        if submit_all_text:
+            with open(join_paths(self.scripts_directory, "qe_all.sh"), "w") as f:
+                f.write(submit_all_text)
 
     def print_cp2k_table(
         self,
@@ -661,11 +899,193 @@ class Data:
                                 energy=energy,
                                 time_per_step=time_per_step,
                                 total_time=total_time,
-                                **format_dict
+                                **format_dict,
                             )
                         )
                         msg_out += " | ".join(m_grid)
                         print(msg_out + " |")
+
+    def read_charges_qe(self, acf_file: str, n_atoms: int):
+        """
+        Reads the atomic charges from the ACF file output from Quantum Espresso.
+
+        Parameters
+        ----------
+        acf_file: str
+            Complete file path to read from in the .acf format.
+        n_atoms:
+            The number of atoms present in the frame in question.
+        """
+        charges = []
+        with open(acf_file) as f:
+            f.readline()
+            f.readline()
+            k = 0
+            for line in f:
+                k = k + 1
+                aid, _, _, _, ch, _, _ = line.split()
+                charges += [float(ch)]
+                if k == n_atoms:
+                    break
+            return charges
+
+    def write_n2p2_data_qe(
+        self,
+        structure_name: str,
+        temperatures: List[int],
+        pressures: List[int],
+        valences: Dict[str, int],
+        qe_directory: str = "qe",
+        file_qe_log: str = "T{temperature}-p{pressure}-{index}/{structure_name}.log",
+        file_qe_charges: str = "T{temperature}-p{pressure}-{index}/ACF.log",
+        file_xyz: str = "{structure_name}-T{temperature}-p{pressure}.xyz",
+        file_n2p2_input: str = "input.data",
+        n2p2_units: dict = None,
+    ):
+        """
+        Read the Quantum Espresso output files, then format the information for n2p2 and write
+        to file.
+
+        Parameters
+        ----------
+        structure_name: str
+            The name of the Structure in question.
+        temperatures: list of int
+            All temperatures that Quantum Espresso was run for.
+        pressures: list of int
+            All pressures that Quantum Espresso was run for.
+        valences: dict of str, int
+            The valences of the species comprising `strucuture`. The keys should be the
+            chemical symbols, with positive int values.
+        qe_directory: str
+            Directory for all Quantum Espresso files and sub directories. Default is "qe".
+        file_qe_log: str
+            File path for the Quantum Espresso log file, relative to `qe_directory`. Should be
+            formatable with the `temperature`, `pressure`, `index` and `structure_name`.
+            Default is "T{temperature}-p{pressure}-{index}/{structure_name}.log".
+        file_qe_charges: str
+            File path for the Quantum Espresso charge file, relative to `qe_directory`.
+            Should be formatable with the `temperature`, `pressure` and `index`.
+            Default is "T{temperature}-p{pressure}-{index}/ACF.log".
+        file_xyz: str
+            File path for the initial trajectory file, relative to `qe_directory`. Should be
+            formatable with the `temperature`, `pressure` and `structure_name`.
+            Default is "{structure_name}-T{temperature}-p{pressure}.xyz".
+        file_n2p2_input: str
+            File path to write the n2p2 data to, relative to `self.n2p2_directory`.
+            Default is "input.data".
+        n2p2_units: dict, optional
+            The units to use for n2p2. No specific units are required, however
+            they should be consistent (i.e. positional data and symmetry
+            functions can use 'Ang' or 'Bohr' provided both do). Default is `None`, which will
+            lead to `{'length': 'Bohr', 'energy': 'Ha', 'force': 'Ha / Bohr'}` being used.
+        """
+        if structure_name not in self.structure_names:
+            raise ValueError(
+                "`structure_name` {} not recognized".format(structure_name)
+            )
+
+        text = ""
+        if n2p2_units is None:
+            n2p2_units = {"length": "Bohr", "energy": "Ha", "force": "Ha / Bohr"}
+
+        for temperature in temperatures:
+            for pressure in pressures:
+                trajectory = read(
+                    join_paths(
+                        self.main_directory,
+                        qe_directory,
+                        file_xyz.format(
+                            structure_name=structure_name,
+                            temperature=temperature,
+                            pressure=pressure,
+                        ),
+                    ),
+                    index=":",
+                )
+                for index, frame in enumerate(trajectory):
+                    full_filepath = join_paths(
+                        self.main_directory,
+                        qe_directory,
+                        file_qe_log.format(
+                            structure_name=structure_name,
+                            temperature=temperature,
+                            pressure=pressure,
+                            index=index,
+                        ),
+                    )
+                    charge_filepath = join_paths(
+                        self.main_directory,
+                        qe_directory,
+                        file_qe_charges.format(
+                            temperature=temperature,
+                            pressure=pressure,
+                            index=index,
+                        ),
+                    )
+                    if exists(full_filepath):
+                        if n2p2_units["length"] != "Ang":
+                            frame.set_cell(
+                                frame.get_cell() / self.units[n2p2_units["length"]],
+                                scale_atoms=True,
+                            )
+
+                        if exists(charge_filepath):
+                            charges = self.read_charges_qe(charge_filepath, len(frame))
+                        else:
+                            charges = [0.0] * len(frame)
+
+                        with open(full_filepath) as f:
+                            lines = f.readlines()
+                        for i, line in enumerate(lines):
+                            if line.startswith("!    total energy"):
+                                energy = (
+                                    float(line.split()[4])
+                                    * self.units[line.split()[5]]
+                                    / self.units[n2p2_units["energy"]]
+                                )
+                            elif line.startswith("     Forces acting on atoms"):
+                                forces = [
+                                    force_line.split()[-3:]
+                                    for force_line in lines[i + 2 : i + 2 + len(frame)]
+                                ]
+                                forces = np.array(forces).astype(float)
+                                qe_force_unit = line.split()[-1][:-2]
+                                forces *= self.units[qe_force_unit.split("/")[0]]
+                                forces /= self.units[qe_force_unit.split("/")[1]]
+                                forces /= self.units[n2p2_units["energy"]]
+                                forces *= self.units[n2p2_units["length"]]
+
+                        text += "begin\n"
+                        text += "comment frame_index={0} units={1}\n".format(
+                            index, n2p2_units
+                        )
+                        text += "comment structure {}\n".format(structure_name)
+                        for vector in frame.get_cell():
+                            text += "lattice {} {} {}\n".format(*vector)
+
+                        symbols = frame.get_chemical_symbols()
+                        positions = frame.get_positions()
+                        for i in range(len(frame)):
+                            text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
+                                *positions[i],
+                                symbols[i],
+                                valences[symbols[i]] - charges[i],
+                                *forces[i],
+                            )
+
+                        text += "energy {}\n".format(energy)
+                        text += "charge {}\n".format(0.0)
+                        text += "end\n"
+                    else:
+                        print("{} not found, skipping".format(full_filepath))
+
+        if isfile(join_paths(self.n2p2_directory, file_n2p2_input)):
+            with open(join_paths(self.n2p2_directory, file_n2p2_input), "a") as f:
+                f.write(text)
+        else:
+            with open(join_paths(self.n2p2_directory, file_n2p2_input), "w") as f:
+                f.write(text)
 
     def write_n2p2_data(
         self,
@@ -838,8 +1258,8 @@ class Data:
         zetas: list = None,
         r_lower: float = None,
         r_upper: float = None,
-        file_nn_template: str = "n2p2/input.nn.template",
-        file_nn: str = "n2p2/input.nn",
+        file_nn_template: str = "input.nn.template",
+        file_nn: str = "input.nn",
     ):
         """
         Based on `file_template`, write the input.nn file for n2p2 with
@@ -1021,7 +1441,7 @@ class Data:
     def write_lammps_data(
         self,
         file_xyz: str,
-        file_data: str = "lammps/lammps.data",
+        file_data: str = "lammps.data",
         lammps_unit_style: str = "electron",
     ):
         """
@@ -1032,8 +1452,8 @@ class Data:
         file_xyz : str
             Complete file name to read the xyz positions from.
         file_data: str, optional
-            Complete file name to write the LAMMPS formatted positions to.
-            Default is 'lammps/lammps.data'.
+            File name to write the LAMMPS formatted positions to.
+            Default is 'lammps.data'.
         lammps_unit_style: str, optional
             The LAMMPS unit system to use. The xyz is assumed to be in ASE
             default units (i.e. 'Ang' for length). Default is 'electron'.
@@ -1042,7 +1462,7 @@ class Data:
         format_out = "lammps-data"
         atoms = read(join_paths(self.main_directory, file_xyz), format=format_in)
         write(
-            join_paths(self.main_directory, file_data),
+            join_paths(self.lammps_directory, file_data),
             atoms,
             format=format_out,
             units=lammps_unit_style,
@@ -1401,7 +1821,6 @@ class Data:
 
     def write_extrapolations_lammps_script(
         self,
-        lammps_directory: str = "lammps",
         ensembles: Tuple[str] = ("nve", "nvt", "npt"),
         temperatures: Tuple[int] = (340,),
         file_batch_template: str = "template.sh",
@@ -1413,9 +1832,6 @@ class Data:
 
         Parameters
         ----------
-        lammps_directory: str, optional
-            Directory to read and write LAMMPS files to, relative to the main directory.
-            Default is "lammps".
         ensembles: tuple of str
             Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
             and "npt". Default is ("nve", "nvt", "npt").
@@ -1429,7 +1845,6 @@ class Data:
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
         """
-        lammps_directory = join_paths(self.main_directory, lammps_directory)
         with open(join_paths(self.scripts_directory, file_batch_template)) as f:
             batch_template_text = f.read()
 
@@ -1443,7 +1858,7 @@ class Data:
 
         # Setup
         output_text += "\nln -s {0} {1}/nnp".format(
-            self.n2p2_directory, lammps_directory
+            self.n2p2_directory, self.lammps_directory
         )
 
         for ensemble in ensembles:
@@ -1453,7 +1868,7 @@ class Data:
                     output_text += (
                         "{0} -in {1}/md-{2}-t{3}.lmp > {1}/{2}-t{3}.log".format(
                             self.lammps_executable,
-                            lammps_directory,
+                            self.lammps_directory,
                             ensemble,
                             t,
                         )
@@ -1461,10 +1876,10 @@ class Data:
                     # Create lammps input file
                     format_template_file(
                         template_file="{0}/md-{1}.lmp".format(
-                            lammps_directory, ensemble
+                            self.lammps_directory, ensemble
                         ),
                         formatted_file="{0}/md-{1}-t{2}.lmp".format(
-                            lammps_directory, ensemble, t
+                            self.lammps_directory, ensemble, t
                         ),
                         format_dict={"temp": str(t)},
                         format_shell_variables=True,
@@ -1473,11 +1888,11 @@ class Data:
                 output_text += "\nmpirun -np ${SLURM_NTASKS} "
                 output_text += "{0} -in {1}/md-{2}.lmp > {1}/{2}.log".format(
                     self.lammps_executable,
-                    lammps_directory,
+                    self.lammps_directory,
                     ensemble,
                 )
 
-        output_text += "\nrm {0}/nnp".format(lammps_directory)
+        output_text += "\nrm {0}/nnp".format(self.lammps_directory)
 
         with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
             f.write(output_text)
@@ -1489,7 +1904,6 @@ class Data:
 
     def analyse_extrapolations(
         self,
-        lammps_directory: str = "lammps",
         ensembles: Tuple[str] = ("nve", "nvt", "npt"),
         temperatures: Tuple[int] = (340,),
     ):
@@ -1500,9 +1914,6 @@ class Data:
 
         Parameters
         ----------
-        lammps_directory: str, optional
-            Directory to read and write LAMMPS files to, relative to the main directory.
-            Default is "lammps".
         ensembles: tuple of str
             Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
             and "npt". Default is ("nve", "nvt", "npt").
@@ -1510,7 +1921,6 @@ class Data:
             Contains all temperatures to run simulations at, in Kelvin. Only applies to "nvt"
             and "npt" ensembles. Default is (340,).
         """
-        lammps_directory = join_paths(self.main_directory, lammps_directory)
         timestep_data = {}
 
         for ensemble in ensembles:
@@ -1520,7 +1930,7 @@ class Data:
             if "t" in ensemble:
                 for t in temperatures:
                     log_file = "{0}/{1}-t{2}.log".format(
-                        lammps_directory,
+                        self.lammps_directory,
                         ensemble,
                         t,
                     )
@@ -1546,7 +1956,7 @@ class Data:
             else:
                 timestep_data[ensemble] = {}
                 log_file = "{0}/{1}.log".format(
-                    lammps_directory,
+                    self.lammps_directory,
                     ensemble,
                 )
                 with open(log_file) as f:
@@ -1625,6 +2035,7 @@ class Data:
         n_frames_to_select: int,
         n_frames_to_propose: int,
         n_frames_to_compare: int,
+        select_extreme_frames: bool = True,
         starting_frame_indices: List[int] = None,
         criteria: Union[Literal["mean"], float] = "mean",
         seed: int = None,
@@ -1632,7 +2043,7 @@ class Data:
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
         data_file_backup: str = "input.data.rebuild_backup",
-    ):
+    ) -> np.ndarray:
         """
         Taking the frames in `data_file_in` as the original dataset, reconstructs a new,
         smaller dataset and writes it to `data_file_out`.
@@ -1657,10 +2068,15 @@ class Data:
             The number of frames proposed at each batch.
         n_frames_to_compare: int
             The number of already accepted frames to compare against at each batch.
+        select_extreme_frames: bool, optional
+            If True, then frames containing a maximal or minimal symmetry function value is
+            automatically selected and used in addition to `starting_frame_indices`. Note that
+            if multiple frames minimise the same function, only one of these will be added.
+            Default is True
         starting_frame_indices: list of int, optional
             If provided, these frames will be used as the initial set to compare against.
-            If `None`, then `n_frames_compare` will be randomly selected instead.
-            Default is `None`.
+            If `None`, and `select_extreme_frames` is False, then `n_frames_compare` will be
+            randomly selected instead. Default is `None`.
         criteria: float or "mean", optional
             If a float between 0 and 1, defines the quantile to take when comparing frames.
             For example, 1 would mean the maximum separation between two atomic environments
@@ -1688,20 +2104,146 @@ class Data:
             atoms_per_frame,
             dtype=dtype,
         )
+        scaling_settings = read_nn_settings(
+            join_paths(self.n2p2_directory, "input.nn"),
+            requested_settings=[
+                "scale_symmetry_functions",
+                "scale_symmetry_functions_sigma",
+                "scale_min_short",
+                "scale_max_short",
+                "center_symmetry_functions",
+            ],
+        )
+        scaling = read_scaling(
+            join_paths(self.n2p2_directory, "scaling.data"),
+            self.elements,
+        )
         t2 = time.time()
-        print("Atomic environments read from file in {} s".format(t2 - t1))
+        print("Values read from file in {} s".format(t2 - t1))
+        remove_indices = np.array([])
+        frame_indices = np.random.permutation(len(list(atom_environments.values())[0]))
+        range_indices = []
+
+        if select_extreme_frames:
+            # Calculate the min and max values for symmetry functions taking scaling into
+            # account. Any frames that contain a minimal or maximal value are automatically
+            # selected.
+            if (
+                "scale_symmetry_functions" in scaling_settings
+                and "scale_symmetry_functions_sigma" in scaling_settings
+            ):
+                raise ValueError(
+                    "Both scale_symmetry_functions and scale_symmetry_functions_sigma "
+                    "were present in settings file."
+                )
+            elif "scale_symmetry_functions" in scaling_settings:
+                if (
+                    "scale_min_short" not in scaling_settings
+                    or "scale_max_short" not in scaling_settings
+                ):
+                    raise ValueError(
+                        "If scale_symmetry_functions is set, both scale_min_short and "
+                        "scale_max_short must be present."
+                    )
+                for element_environments in atom_environments.values():
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    float(scaling_settings["scale_min_short"]),
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    float(scaling_settings["scale_max_short"]),
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
+            elif "scale_symmetry_functions_sigma" in scaling_settings:
+                for element, element_environments in atom_environments.items():
+                    min_array = np.array(scaling[element]["min"])
+                    max_array = np.array(scaling[element]["max"])
+                    mean_array = np.array(scaling[element]["mean"])
+                    sigma_array = np.array(scaling[element]["sigma"])
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    (min_array - mean_array) / sigma_array,
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    (max_array - mean_array) / sigma_array,
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
+            else:
+                for element, element_environments in atom_environments.items():
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    np.array(scaling[element]["min"]),
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
+                    range_indices += list(
+                        np.argmax(
+                            np.any(
+                                np.isclose(
+                                    element_environments,
+                                    np.array(scaling[element]["max"]),
+                                ),
+                                axis=1,
+                            ),
+                            axis=0,
+                        )
+                    )
 
         # If starting_frame_indices provided, use those. Otherwise select starting frames
         # at random from the shuffled list of all frames.
-        remove_indices = np.array([])
-        frame_indices = np.random.permutation(len(list(atom_environments.values())[0]))
-        if starting_frame_indices is None:
+        if starting_frame_indices is None and len(range_indices) == 0:
             selected_indices = frame_indices[:n_frames_to_compare]
             frame_indices = frame_indices[n_frames_to_compare:]
-        else:
-            selected_indices = np.array(starting_frame_indices)
-            for starting_index in starting_frame_indices:
+        elif starting_frame_indices is None:
+            selected_indices = np.unique(range_indices)
+            for starting_index in selected_indices:
                 frame_indices = frame_indices[frame_indices != starting_index]
+        else:
+            selected_indices = np.unique(starting_frame_indices + range_indices)
+            for starting_index in selected_indices:
+                frame_indices = frame_indices[frame_indices != starting_index]
+        print(
+            "Starting rebuild with the following frames selected:\n{}\n"
+            "".format(selected_indices)
+        )
 
         while len(frame_indices) > 0:
             t3 = time.time()

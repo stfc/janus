@@ -215,7 +215,9 @@ def read_normalisation(input_name: str) -> Tuple[float, float]:
     return 1.0, 1.0
 
 
-def read_scaling(scaling_file: str, elements: List[str]) -> Dict[str, np.ndarray]:
+def read_scaling(
+    scaling_file: str, elements: List[str]
+) -> Dict[str, Dict[str, List[float]]]:
     """
     Read the min/max ranges of an n2p2 "scaling.data" file for all elements and symmetry
     functions.
@@ -233,18 +235,64 @@ def read_scaling(scaling_file: str, elements: List[str]) -> Dict[str, np.ndarray
         Each key is the str of chemical species, with the value being a ndarray of float with
         length equal to the number of symmetry functions for that element.
     """
-    element_ranges = {element: [] for element in elements}
+    element_ranges = {
+        element: {
+            "min": [],
+            "max": [],
+            "mean": [],
+            "sigma": [],
+        }
+        for element in elements
+    }
     with open(scaling_file) as f:
         line = f.readline()
         while line:
             if not line.startswith("#"):
                 data = line.split()
                 element = elements[int(data[0]) - 1]
-                element_ranges[element].append(float(data[3]) - float(data[2]))
+                element_ranges[element]["min"].append(float(data[2]))
+                element_ranges[element]["max"].append(float(data[3]))
+                element_ranges[element]["mean"].append(float(data[4]))
+                element_ranges[element]["sigma"].append(float(data[5]))
 
             line = f.readline()
 
-    return {key: np.array(value) for key, value in element_ranges.items()}
+    return element_ranges
+
+
+def read_nn_settings(
+    settings_file: str, requested_settings: List[str]
+) -> Dict[str, str]:
+    """
+    Read the settings of an n2p2 "input.nn" file and returns those in `requested_settings`.
+
+    Parameters
+    ----------
+    settings_file: str
+        The complete file path of an n2p2 "input.nn" file.
+    requested_settings: list of str
+        The list of settings keys to return.
+
+    Returns
+    -------
+    dict of str and str
+        Each key is the str of a setting name, with the value being the corresponding value.
+        In general this may be a str, float, or int, so the returned value is kept as a str.
+    """
+    returned_settings = {}
+    with open(settings_file) as f:
+        lines = f.readlines()
+        for setting in requested_settings:
+            for line in lines:
+                if line.strip() and line.split()[0] == setting:
+                    returned_settings[setting] = line.split()[1]
+                    break
+            if setting not in returned_settings:
+                print(
+                    "Could not find setting {0} in {1}".format(setting, settings_file)
+                )
+
+    return returned_settings
 
 
 # def read_atomenv_segments(

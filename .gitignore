@@ -11,3 +11,4 @@ out/
 *.log.*
 *.bash
 examples/m_cresol/
+examples/MOF/
