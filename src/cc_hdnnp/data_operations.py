@@ -264,7 +264,6 @@ def check_structure(
     structure: Structure,
 ) -> bool:
     """
-    TODO UPDATE
     Checks the interatomic distances for each element present in the structure to ensure
     that none are within the minimum requried seperation.
 
@@ -279,10 +278,6 @@ def check_structure(
         Array where the first dimension indexes the atoms in the structure, and
         the second is length 3 representing the position of that atom in the cartesian
         co-ordinates.
-    path : str
-        The path of the directory containing the simulation in question.
-    timestep : int
-        The timestep of the simulation that the `data` corresponds to.
     structure : Structure
         The `Structure` present in `data`
 

@@ -2,7 +2,7 @@
 Unit tests for `data.py`
 """
 
-from os import listdir, remove
+from os import listdir, mkdir, remove
 from os.path import isfile, join
 from shutil import copy, rmtree
 from typing import Dict, List, Literal, Union
@@ -957,6 +957,132 @@ def test_rebuild_dataset_errors(
             n_frames_to_propose=2,
             seed=0,
             criteria=criteria,
+        )
+
+    assert str(e.value) == error
+
+
+# QUANTUM ESPRESSO UNIT TESTS
+
+
+def test_prepare_qe(data: Data):
+    """
+    Test that the input files and submission scripts are generated for QE in the correct
+    locations.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    data.scripts_directory = "tests/data/tests_output"
+    data.prepare_qe(
+        qe_directory="tests_output",
+        temperatures=[300],
+        pressures=[1],
+        structure=data.all_structures.structure_dict["test"],
+        pseudos=["H.pseudo"],
+    )
+    assert isdir("tests/data/tests_output/T300-p1-0")
+    assert isfile("tests/data/tests_output/T300-p1-0/test.in")
+    assert isfile("tests/data/tests_output/T300-p1-0/pp.in")
+    assert isfile("tests/data/tests_output/T300-p1-0/qe.slurm")
+    assert isfile("tests/data/tests_output/qe_all.sh")
+
+
+def test_write_n2p2_data_qe(data: Data):
+    """
+    Test that the output from QE can be read and formatted into an n2p2 "input.data" file.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    mkdir("tests/data/tests_output/T300-p1-0")
+    copy(
+        "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
+    )
+    copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
+    data.n2p2_directory = "tests/data/tests_output"
+
+    data.write_n2p2_data_qe(
+        structure_name="test",
+        temperatures=[300],
+        pressures=[1],
+        valences={"H": 1},
+        qe_directory="tests_output",
+    )
+
+    assert isfile("tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.data") as f:
+        assert len(f.readlines()) == 112 + 9
+
+    data.write_n2p2_data_qe(
+        structure_name="test",
+        temperatures=[300],
+        pressures=[1],
+        valences={"H": 1},
+        qe_directory="tests_output",
+    )
+
+    assert isfile("tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.data") as f:
+        assert len(f.readlines()) == 2 * (112 + 9)
+
+
+def test_write_n2p2_data_qe_charge_default(data: Data):
+    """
+    Test that the output from QE can be read and formatted into an n2p2 "input.data" file,
+    but if charges are absent then 0 is assumed.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    mkdir("tests/data/tests_output/T300-p1-0")
+    copy(
+        "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
+    )
+    data.n2p2_directory = "tests/data/tests_output"
+
+    data.write_n2p2_data_qe(
+        structure_name="test",
+        temperatures=[300],
+        pressures=[1],
+        valences={"H": 1},
+        qe_directory="tests_output",
+    )
+
+    assert isfile("tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.data") as f:
+        lines = f.readlines()
+        assert len(lines) == 112 + 9
+        for line in lines[6:-3]:
+            assert line.split()[-4] == "0.0"
+
+    data.write_n2p2_data_qe(
+        structure_name="test",
+        temperatures=[300],
+        pressures=[1],
+        valences={"H": 1},
+        qe_directory="tests_output",
+    )
+
+    assert isfile("tests/data/tests_output/input.data")
+    with open("tests/data/tests_output/input.data") as f:
+        assert len(f.readlines()) == 2 * (112 + 9)
+
+
+@pytest.mark.parametrize(
+    "structure_name, error",
+    [
+        ("unrecognised", "`structure_name` unrecognised not recognized"),
+        ("test", "No files found."),
+    ],
+)
+def test_write_n2p2_data_qe_errors(data: Data, structure_name: str, error: str):
+    """
+    Test an error is raised if an invalid `structure_name` is provided,
+    or if no filepaths can be found.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    with pytest.raises(Exception) as e:
+        data.write_n2p2_data_qe(
+            structure_name=structure_name,
+            temperatures=[300],
+            pressures=[1],
+            valences={"H": 1},
+            qe_directory="tests_output",
         )
 
     assert str(e.value) == error

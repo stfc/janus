@@ -4,7 +4,7 @@ Unit tests for `structure.py`
 
 import pytest
 
-from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
+from cc_hdnnp.structure import AllSpecies, AllStructures, Dataset, Species, Structure
 
 
 def test_all_structures_same_name():
@@ -284,3 +284,16 @@ def test_all_structures_empty():
     with pytest.raises(ValueError) as e:
         AllStructures()
     assert str(e.value) == "At least one `Structure` object must be passed."
+
+
+def test_dataset():
+    """
+    Test that we can init a Dataset from file and check its properties.
+    """
+    dataset = Dataset(data_file="tests/data/n2p2/input.data")
+    assert len(dataset.frames) == 1
+    assert dataset.frames[0].lattice.shape == (3, 3)
+    assert dataset.frames[0].positions.shape == (512, 3)
+    assert dataset.frames[0].symbols.shape == (512,)
+    assert dataset.frames[0].forces.shape == (512, 3)
+    assert dataset.frames[0].energy != 0

@@ -8,7 +8,8 @@ import warnings
 import numpy as np
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.file_operations import read_normalisation
+from cc_hdnnp.data_operations import check_nearest_neighbours
+from cc_hdnnp.file_operations import read_lammps_log, read_normalisation
 from cc_hdnnp.structure import Structure
 
 # TODO combine all unit conversions
@@ -642,7 +643,9 @@ class ActiveLearning:
 
         return [lx, ly, lz, xy, xz, yz]
 
-    def write_lammps(self, temperatures: range, seed: int = 1):
+    def write_lammps(
+        self, temperatures: range, seed: int = 1, comment_name_separator: str = "-"
+    ):
         """
         Generates the mode1 directory and  LAMMPS files needed to run simulations using the
         two networks.
@@ -670,7 +673,7 @@ class ActiveLearning:
             elements_all,
             xyzs_all,
             qs_all,
-        ) = self._read_input_data()
+        ) = self._read_input_data(comment_name_separator=comment_name_separator)
 
         if self.max_len_joblist == 0:
             joblist_name = self.active_learning_directory + "/joblist_mode1.dat"
@@ -886,87 +889,6 @@ class ActiveLearning:
             n_simulations=n_simulations
         )
 
-    def _read_lammps_log(
-        self, dump_lammpstrj: int, directory: str
-    ) -> Tuple[np.ndarray, int, int]:
-        """
-        Reads the "log.lammps" file in `directory` and extracts information about if and at
-        what timestep extrapolation of the network potential occured.
-
-        Parameters
-        ----------
-        dump_lammpstrj : int
-            Integer which defines that only every nth structure is kept in the
-            structures.lammpstrj file if no extrapolation occured. The value has to be a
-            divisor of N_steps.
-        directory : str
-            The directory in which to find the "log.lammps" file.
-
-        Returns
-        -------
-        (np.ndarray, int, int)
-            First element is array of int corresponding to timesteps, second is the number of
-            extrapolation free lines and the third is the timestep that corresponds to that
-            line.
-        """
-        with open(directory + "/log.lammps") as f:
-            data = [line for line in f.readlines()]
-
-        if len(data) == 0:
-            raise ValueError("{}/log.lammps was empty".format(directory))
-
-        # Count the number of lines that precede the simulation so they can be skipped
-        counter = 0
-        n_lines = len(data)
-        while counter < n_lines and not data[counter].startswith("**********"):
-            counter += 1
-
-        # Starting at `counter`, check for extrapolation warnings
-        extrapolation = False
-        i = counter
-        while i < n_lines and not data[i].startswith(
-            "### NNP EXTRAPOLATION WARNING ###"
-        ):
-            i += 1
-        if i < n_lines:
-            extrapolation = True
-        i -= 1
-
-        # The extrapolation warning (or end of simulation) look backwards to see how many steps
-        # occured
-        while i > counter and not data[i].startswith("thermo"):
-            i -= 1
-        if extrapolation:
-            extrapolation_free_lines = i
-            if i > counter:
-                extrapolation_free_timesteps = int(data[i].split()[1])
-            else:
-                extrapolation_free_timesteps = -1
-        else:
-            extrapolation_free_lines = -1
-            extrapolation_free_timesteps = int(data[i].split()[1])
-
-        data = [
-            int(line.split()[1]) if line.startswith("thermo") else -1
-            for line in data[counter:]
-            if line.startswith("thermo")
-            or line.startswith("### NNP EXTRAPOLATION WARNING ###")
-        ]
-
-        # Subsample using `dump_lammpstrj`
-        timesteps = np.unique(
-            np.array(
-                [
-                    data[i]
-                    for i in range(1, len(data))
-                    if data[i] != -1
-                    and (data[i] % dump_lammpstrj == 0 or data[i - 1] == -1)
-                ]
-            )
-        )
-
-        return timesteps, extrapolation_free_lines, extrapolation_free_timesteps
-
     def _read_lammpstrj(
         self, timesteps: np.ndarray, directory: str
     ) -> Tuple[List[str], int]:
@@ -1086,7 +1008,9 @@ class ActiveLearning:
                 timesteps,
                 extrapolation_free_lines,
                 extrapolation_free_timesteps,
-            ) = self._read_lammps_log(self.dump_lammpstrj, directory=directory)
+            ) = read_lammps_log(
+                self.dump_lammpstrj, log_lammps_file=join(directory, "log.lammps"),
+            )
             structures, structure_lines = self._read_lammpstrj(
                 timesteps, directory=directory
             )
@@ -1871,257 +1795,6 @@ class ActiveLearning:
 
         return lattice, element, position, charge
 
-    def _check_nearest_neighbours(
-        self,
-        lat: List[List[float]],
-        pos_i: np.ndarray,
-        pos_j: np.ndarray,
-        ii: bool,
-        d_min: float,
-    ) -> Tuple[bool, float]:
-        """
-        Checks all positions in `pos_i` against those of `pos_j`, and checks whether they
-        satisfy the nearest neighbour constraint `d_min`.
-
-        Parameters
-        ----------
-        lat : list of list of float
-            A list with three entries, each another three entry list representing a lattice
-            vector of the structure.
-        pos_i : np.ndarray
-            Array where the first dimension indexes the atoms of a particular element in the
-            structure, and the second is length 3 representing the position of that atom in the
-            cartesian co-ordinates.
-        pos_j : np.ndarray
-            Array where the first dimension indexes the atoms of a particular element in the
-            structure, and the second is length 3 representing the position of that atom in the
-            cartesian co-ordinates.
-        ii : bool
-            Whether the element of `pos_i` and `pos_j` is the same.
-        d_min : float
-            The minimum seperatation allowed for the positions of elements i and j.
-
-        Returns
-        -------
-        bool, float
-            First element is whether the positions satisfy the minimum seperation criteria.
-            Second element is the seperation that caused rejection, or -1 in the case of
-            acceptance.
-        """
-        if len(pos_i) == 0 or len(pos_j) == 0:
-            return True, -1
-
-        if pos_i.ndim == 1:
-            pos_i = np.array([pos_i])
-        if pos_j.ndim == 1:
-            pos_j = np.array([pos_j])
-
-        pos = np.array(deepcopy(pos_j))
-        pos = np.concatenate(
-            (
-                pos,
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] - lat[1][0] - lat[2][0],
-                        pos[:, 1] - lat[0][1] - lat[1][1] - lat[2][1],
-                        pos[:, 2] - lat[0][2] - lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] - lat[1][0],
-                        pos[:, 1] - lat[0][1] - lat[1][1],
-                        pos[:, 2] - lat[0][2] - lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] - lat[1][0] + lat[2][0],
-                        pos[:, 1] - lat[0][1] - lat[1][1] + lat[2][1],
-                        pos[:, 2] - lat[0][2] - lat[1][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] - lat[2][0],
-                        pos[:, 1] - lat[0][1] - lat[2][1],
-                        pos[:, 2] - lat[0][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0],
-                        pos[:, 1] - lat[0][1],
-                        pos[:, 2] - lat[0][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] + lat[2][0],
-                        pos[:, 1] - lat[0][1] + lat[2][1],
-                        pos[:, 2] - lat[0][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] + lat[1][0] - lat[2][0],
-                        pos[:, 1] - lat[0][1] + lat[1][1] - lat[2][1],
-                        pos[:, 2] - lat[0][2] + lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] + lat[1][0],
-                        pos[:, 1] - lat[0][1] + lat[1][1],
-                        pos[:, 2] - lat[0][2] + lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[0][0] + lat[1][0] + lat[2][0],
-                        pos[:, 1] - lat[0][1] + lat[1][1] + lat[2][1],
-                        pos[:, 2] - lat[0][2] + lat[1][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[1][0] - lat[2][0],
-                        pos[:, 1] - lat[1][1] - lat[2][1],
-                        pos[:, 2] - lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[1][0],
-                        pos[:, 1] - lat[1][1],
-                        pos[:, 2] - lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[1][0] + lat[2][0],
-                        pos[:, 1] - lat[1][1] + lat[2][1],
-                        pos[:, 2] - lat[1][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] - lat[2][0],
-                        pos[:, 1] - lat[2][1],
-                        pos[:, 2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[2][0],
-                        pos[:, 1] + lat[2][1],
-                        pos[:, 2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[1][0] - lat[2][0],
-                        pos[:, 1] + lat[1][1] - lat[2][1],
-                        pos[:, 2] + lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[1][0],
-                        pos[:, 1] + lat[1][1],
-                        pos[:, 2] + lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[1][0] + lat[2][0],
-                        pos[:, 1] + lat[1][1] + lat[2][1],
-                        pos[:, 2] + lat[1][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] - lat[1][0] - lat[2][0],
-                        pos[:, 1] + lat[0][1] - lat[1][1] - lat[2][1],
-                        pos[:, 2] + lat[0][2] - lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] - lat[1][0],
-                        pos[:, 1] + lat[0][1] - lat[1][1],
-                        pos[:, 2] + lat[0][2] - lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] - lat[1][0] + lat[2][0],
-                        pos[:, 1] + lat[0][1] - lat[1][1] + lat[2][1],
-                        pos[:, 2] + lat[0][2] - lat[1][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] - lat[2][0],
-                        pos[:, 1] + lat[0][1] - lat[2][1],
-                        pos[:, 2] + lat[0][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0],
-                        pos[:, 1] + lat[0][1],
-                        pos[:, 2] + lat[0][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] + lat[2][0],
-                        pos[:, 1] + lat[0][1] + lat[2][1],
-                        pos[:, 2] + lat[0][2] + lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] + lat[1][0] - lat[2][0],
-                        pos[:, 1] + lat[0][1] + lat[1][1] - lat[2][1],
-                        pos[:, 2] + lat[0][2] + lat[1][2] - lat[2][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] + lat[1][0],
-                        pos[:, 1] + lat[0][1] + lat[1][1],
-                        pos[:, 2] + lat[0][2] + lat[1][2],
-                    )
-                )[0],
-                np.dstack(
-                    (
-                        pos[:, 0] + lat[0][0] + lat[1][0] + lat[2][0],
-                        pos[:, 1] + lat[0][1] + lat[1][1] + lat[2][1],
-                        pos[:, 2] + lat[0][2] + lat[1][2] + lat[2][2],
-                    )
-                )[0],
-            ),
-            axis=0,
-        )
-
-        # If elements are the same, then the shortest distance will be 0.0 (as the "central"
-        # included in the array), so select index 1 instead.
-        if ii:
-            select = 1
-        else:
-            select = 0
-
-        for p in pos_i:
-            d = np.dstack((pos[:, 0] - p[0], pos[:, 1] - p[1], pos[:, 2] - p[2]))[0]
-            d = np.sqrt(d[:, 0] ** 2 + d[:, 1] ** 2 + d[:, 2] ** 2)
-            d = d[d.argsort()[select]]
-            if d < d_min:
-                return False, d
-
-        return True, -1
-
     def _check_structure(
         self,
         lattice: List[List[float]],
@@ -2160,7 +1833,7 @@ class ActiveLearning:
         """
         for i, element_i in enumerate(self.element_types):
             for element_j in self.element_types[i:]:
-                accepted, d = self._check_nearest_neighbours(
+                accepted, d = check_nearest_neighbours(
                     lattice,
                     position[element == element_i],
                     position[element == element_j],
@@ -3414,7 +3087,9 @@ class ActiveLearning:
         conv_energy_1, conv_length_1 = read_normalisation(
             join(self.n2p2_directories[1], "input.nn")
         )
-        if conv_energy_0 != conv_energy_1 or conv_length_0 != conv_length_1:
+        if not np.isclose(conv_energy_0, conv_energy_1) or not np.isclose(
+            conv_length_0, conv_length_1
+        ):
             raise ValueError(
                 "Normalisation factors conv_energy={0}, conv_length={1} in {2} are different "
                 "to conv_energy={3}, conv_length={4} in {5}".format(

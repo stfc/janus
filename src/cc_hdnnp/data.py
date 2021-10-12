@@ -158,7 +158,11 @@ class Data:
         self.trajectory = trajectory
 
     def convert_active_learning_to_xyz(
-        self, file_structure: str, file_xyz: str, unit_in: str = "Bohr"
+        self,
+        file_structure: str,
+        file_xyz: str,
+        unit_in: str = "Bohr",
+        single_output: bool = False,
     ):
         """
         Reads `file_structure` from `self.active_learning_directory` and writes it as a series
@@ -208,10 +212,14 @@ class Data:
                 )
                 for atom in atoms:
                     text += "\n" + " ".join(atom)
-                with open(
-                    join_paths(self.main_directory, file_xyz.format(i)), "w"
-                ) as f:
-                    f.write(text)
+                if single_output:
+                    with open(join_paths(self.main_directory, file_xyz), "a") as f:
+                        f.write(text + "\n")
+                else:
+                    with open(
+                        join_paths(self.main_directory, file_xyz.format(i)), "w"
+                    ) as f:
+                        f.write(text)
                 i += 1
 
     def remove_outliers(
@@ -657,7 +665,8 @@ ATOMIC_SPECIES""".format(
 
             print(
                 """
-ATOMIC_POSITIONS {{angstrom}}"""
+ATOMIC_POSITIONS {{angstrom}}""",
+                file=f,
             )
 
             for atom in atoms:
@@ -745,10 +754,11 @@ rm -f tmp.pp
 
     def prepare_qe(
         self,
-        qe_directory: str,
         temperatures: List[int],
         pressures: List[int],
         structure: Structure,
+        pseudos: List[str],
+        qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
     ):
         """
@@ -766,6 +776,9 @@ rm -f tmp.pp
             All pressures to run Quantum Espresso for.
         structure: Structure
             The Structure which is being simulated.
+        pseudos: list of str
+            File names of the pseudo potentials to use, found within `pseudos` directory and
+            ordered by atomic number.
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.
@@ -776,21 +789,26 @@ rm -f tmp.pp
             for p in pressures:
                 traj = read(
                     join_paths(
+                        self.main_directory,
                         qe_directory,
-                        "UiO-66Zr-T" + str(t) + "-p" + str(p) + ".xyz",
+                        structure.name + "-T" + str(t) + "-p" + str(p) + ".xyz",
                     ),
                     index=":",
                 )
-                for j, a in enumerate(traj[selection[0] :]):
-                    if j % selection[1] == 0:
+                for j, a in enumerate(traj):
+                    if j >= selection[0] and j % selection[1] == 0:
                         folder = join_paths(
-                            qe_directory, "T{:d}-p{}-{:d}".format(t, p, j)
+                            self.main_directory,
+                            qe_directory,
+                            "T{:d}-p{}-{:d}".format(t, p, j),
                         )
                         if not exists(folder):
                             mkdir(folder)
-                        self.write_qe_input(a, folder, structure=structure)
-                        self.write_qe_pp(folder)
-                        submit_all_text += self.write_qe_slurm(folder)
+                        self.write_qe_input(
+                            a, folder, structure=structure, pseudos=pseudos
+                        )
+                        self.write_qe_pp(folder, structure=structure)
+                        submit_all_text += self.write_qe_slurm(folder, structure)
 
         if submit_all_text:
             with open(join_paths(self.scripts_directory, "qe_all.sh"), "w") as f:
@@ -937,7 +955,7 @@ rm -f tmp.pp
         valences: Dict[str, int],
         qe_directory: str = "qe",
         file_qe_log: str = "T{temperature}-p{pressure}-{index}/{structure_name}.log",
-        file_qe_charges: str = "T{temperature}-p{pressure}-{index}/ACF.log",
+        file_qe_charges: str = "T{temperature}-p{pressure}-{index}/ACF.dat",
         file_xyz: str = "{structure_name}-T{temperature}-p{pressure}.xyz",
         file_n2p2_input: str = "input.data",
         n2p2_units: dict = None,
@@ -966,7 +984,7 @@ rm -f tmp.pp
         file_qe_charges: str
             File path for the Quantum Espresso charge file, relative to `qe_directory`.
             Should be formatable with the `temperature`, `pressure` and `index`.
-            Default is "T{temperature}-p{pressure}-{index}/ACF.log".
+            Default is "T{temperature}-p{pressure}-{index}/ACF.dat".
         file_xyz: str
             File path for the initial trajectory file, relative to `qe_directory`. Should be
             formatable with the `temperature`, `pressure` and `structure_name`.
@@ -1033,7 +1051,7 @@ rm -f tmp.pp
                         if exists(charge_filepath):
                             charges = self.read_charges_qe(charge_filepath, len(frame))
                         else:
-                            charges = [0.0] * len(frame)
+                            charges = None
 
                         with open(full_filepath) as f:
                             lines = f.readlines()
@@ -1067,10 +1085,14 @@ rm -f tmp.pp
                         symbols = frame.get_chemical_symbols()
                         positions = frame.get_positions()
                         for i in range(len(frame)):
+                            if charges is None or len(frame) > len(charges):
+                                charge = 0.0
+                            else:
+                                charge = valences[symbols[i]] - charges[i]
                             text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
                                 *positions[i],
                                 symbols[i],
-                                valences[symbols[i]] - charges[i],
+                                charge,
                                 *forces[i],
                             )
 
@@ -1079,6 +1101,9 @@ rm -f tmp.pp
                         text += "end\n"
                     else:
                         print("{} not found, skipping".format(full_filepath))
+
+        if len(text) == 0:
+            raise IOError("No files found.")
 
         if isfile(join_paths(self.n2p2_directory, file_n2p2_input)):
             with open(join_paths(self.n2p2_directory, file_n2p2_input), "a") as f:

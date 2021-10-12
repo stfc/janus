@@ -16,7 +16,22 @@ def format_template_file(
     format_dict: Dict[str, str],
     format_shell_variables: bool = True,
 ):
-    """"""
+    """
+    Uses the key value pairs in `format_dict` to format the text from `template_file` and write
+    to `formatted_file`.
+
+    Parameters
+    ----------
+    template_file: str
+        The complete filepath to the text that will be formatted.
+    formatted_file: str
+        The complete filepath that the output is written to.
+    format_dict: dict of str, str
+        Each key value pair is a variable to format and its value.
+    format_shell_variables: bool, optional
+        If True, any shell variables marked as ${variable} will also be formatted.
+        Default is True.
+    """
     with open(template_file) as f:
         template_text = f.read()
 

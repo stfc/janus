@@ -773,61 +773,6 @@ def test_write_lammps_comment_name_keyword_none(
     assert isfile("tests/data/tests_output/mode1/npt_hdnnp2_t0_p1.0_2/input.lammps")
 
 
-# TEST READ LAMMPS LOG
-
-
-@pytest.mark.parametrize("extrapolation_free_timesteps_expected", [162, 100])
-def test_read_lammps_log(
-    active_learning: ActiveLearning, extrapolation_free_timesteps_expected: int
-):
-    """ """
-    if extrapolation_free_timesteps_expected > 161:
-        extrapolation_free_lines_expected = -1
-    else:
-        extrapolation_free_lines_expected = 3613 + extrapolation_free_timesteps_expected
-    timesteps_counter = -3
-    text = ""
-    directory = "tests/data/tests_output"
-    with open(
-        "tests/data/active_learning/mode1/test_npt_hdnnp1_t325_p1.0_1/log.lammps"
-    ) as f:
-        for line in f.readlines():
-            if (
-                timesteps_counter > extrapolation_free_timesteps_expected
-                or not line.startswith("### NNP EXTRAPOLATION WARNING ###")
-            ):
-                text += line
-            if line.startswith("thermo"):
-                timesteps_counter += 1
-
-    with open(directory + "/log.lammps", "w") as f:
-        f.write(text)
-
-    (
-        timesteps,
-        extrapolation_free_lines,
-        extrapolation_free_timesteps,
-    ) = active_learning._read_lammps_log(dump_lammpstrj=1, directory=directory)
-
-    assert all(timesteps == np.arange(1, 162))
-    assert extrapolation_free_lines == extrapolation_free_lines_expected
-    assert extrapolation_free_timesteps == min(
-        extrapolation_free_timesteps_expected, 161
-    )
-
-
-def test_read_lammps_log_errors(active_learning: ActiveLearning):
-    """ """
-    directory = "tests/data/tests_output"
-    with open(directory + "/log.lammps", "w"):
-        pass
-
-    with pytest.raises(ValueError) as e:
-        active_learning._read_lammps_log(dump_lammpstrj=1, directory=directory)
-
-    assert str(e.value) == "{}/log.lammps was empty".format(directory)
-
-
 # TEST READ LAMMPSTRJ
 
 
@@ -1875,34 +1820,6 @@ def test_get_structure(
     assert element == np.array("O")
     assert np.allclose(position, np.array([[12.3466, 3.95684, 5.12344]]))
     assert charge == np.array([0.0])
-
-
-# TEST CHECK NEAREST NEIGHBOURS
-
-
-@pytest.mark.parametrize(
-    "pos_i, pos_j",
-    [
-        (np.array([]), np.array([])),
-        (np.array([0.0, 0.0, 0.0]), np.array([0.5, 0.5, 0.5])),
-    ],
-)
-def test_check_nearest_neighbours(
-    active_learning: ActiveLearning,
-    pos_i: np.ndarray,
-    pos_j: np.ndarray,
-):
-    """"""
-    accepted, d = active_learning._check_nearest_neighbours(
-        lat=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-        pos_i=pos_i,
-        pos_j=pos_j,
-        ii=False,
-        d_min=0.1,
-    )
-
-    assert accepted
-    assert d == -1
 
 
 # TEST CHECK STRUCTURES
