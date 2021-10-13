@@ -4,5 +4,4 @@ out/
 examples/m_cresol/
 examples/MOF/
 .coverage
-.vscode
 tests/data/tests_output/
