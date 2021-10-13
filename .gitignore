@@ -1,14 +1,8 @@
 __pycache__/
 err/
 out/
-*.out
-*.err
-*.log
-*.xyz
-*.history
-*.inp
-*.histo
-*.log.*
-*.bash
 examples/m_cresol/
 examples/MOF/
+.coverage
+.vscode
+tests/data/tests_output/

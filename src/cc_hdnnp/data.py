@@ -13,10 +13,10 @@ cp2k uses units of:
     Force:  Ha / Bohr
 """
 
-from os import mkdir
+from os import mkdir, remove
 from os.path import exists, isdir, isfile, join as join_paths
 import re
-from shutil import copy
+from shutil import copy, move
 import time
 from typing import Dict, List, Literal, Tuple, Union
 
@@ -228,7 +228,7 @@ class Data:
         force_threshold: float,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
-        data_file_backup: str = "input.data",
+        data_file_backup: str = "input.data.outliers_backup",
         reference_file: str = "output.data",
     ):
         """
@@ -259,7 +259,7 @@ class Data:
             to write to. Default is "input.data".
         data_file_backup: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
-            the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
+            the original `data_file_in` to. Default is "input.data.outliers_backup".
         reference_file: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directory`,
             to read the energy and force values from. Default is "input.data".
@@ -409,8 +409,8 @@ class Data:
         structure_name: str,
         basis_set: str,
         potential: str,
-        file_bash: str = "scripts/all.sh",
-        file_batch: str = "scripts/{}.sh",
+        file_bash: str = "all.sh",
+        file_batch: str = "{}.sh",
         file_input: str = "cp2k_input/{}.inp",
         file_xyz: str = "xyz/{}.xyz",
         n_config: int = None,
@@ -435,14 +435,14 @@ class Data:
             Filepath to the CP2K potential to use.
         file_bash : str, optional
             File name to write a utility script which submits all of the batch
-            scripts created by this function. Default is 'scripts/all.bash'.
+            scripts created by this function. Default is 'all.sh'.
         file_batch : str, optional
             Formatable file name to write the batch scripts to. Will be
             formatted with the frame number and any other `**kwargs`, so should
             contain '{}' as part of the string. There should already be a
             template of this file with 'template' instead of '{}' containing
             the details of the system that will remain constant across all
-            frames and so do not need formatting. Default is 'scripts/{}.bat'.
+            frames and so do not need formatting. Default is '{}.sh'.
         file_input : str, optional
             Formatable file name to write the cp2k input files to. Will be
             formatted with the frame number and any other `**kwargs`, so should
@@ -493,7 +493,7 @@ class Data:
             input_template = f_template.read()
 
         with open(
-            join_paths(self.main_directory, file_batch.format("template"))
+            join_paths(self.scripts_directory, file_batch.format("template"))
         ) as f_template:
             batch_text_template = f_template.read()
 
@@ -567,16 +567,17 @@ class Data:
                     )
 
                     with open(
-                        join_paths(self.main_directory, file_batch.format(file_id)), "w"
+                        join_paths(self.scripts_directory, file_batch.format(file_id)),
+                        "w",
                     ) as f:
                         f.write(batch_text)
 
         bash_text = "sbatch "
         bash_text += "\nsbatch ".join(batch_scripts)
-        with open(join_paths(self.main_directory, file_bash), "w") as f:
+        with open(join_paths(self.scripts_directory, file_bash), "w") as f:
             f.write(bash_text)
 
-        return "bash {}".format(self.main_directory + file_bash)
+        return "bash {}".format(self.scripts_directory + file_bash)
 
     def write_qe_input(
         self,
@@ -1386,9 +1387,9 @@ rm -f tmp.pp
         n_scaling_bins: int = 500,
         range_threshold: float = 1e-4,
         nodes: int = 1,
-        file_batch_template: str = "scripts/template.sh",
-        file_prune: str = "scripts/n2p2_prune.sh",
-        file_train: str = "scripts/n2p2_train.sh",
+        file_batch_template: str = "template.sh",
+        file_prepare: str = "n2p2_prepare.sh",
+        file_train: str = "n2p2_train.sh",
         file_nn: str = "input.nn",
     ):
         """
@@ -1408,18 +1409,18 @@ rm -f tmp.pp
             Number of nodes to request for the batch job. Default is `1`.
         file_batch_template: str, optional
             File location of template to use for batch scripts. Default is
-            'scripts/template.sh'.
-        file_prune: str, optional
+            'template.sh'.
+        file_prepare: str, optional
             File location to write scaling and pruning batch script to.
-            Default is 'scripts/n2p2_prune.sh'.
+            Default is 'n2p2_prepare.sh'.
         file_train: str, optional
             File location to write training batch script to.
-            Default is 'scripts/n2p2_train.sh'.
+            Default is 'n2p2_train.sh'.
         file_nn: str, optional
             File location of n2p2 file defining the neural network. Default is
             "input.nn".
         """
-        with open(join_paths(self.main_directory, file_batch_template)) as f:
+        with open(join_paths(self.scripts_directory, file_batch_template)) as f:
             batch_template_text = f.read()
 
         format_dict = {"job_name": "n2p2_scale_prune", "nodes": nodes, "job_array": ""}
@@ -1450,7 +1451,7 @@ rm -f tmp.pp
             + str(n_scaling_bins)
         )
 
-        with open(join_paths(self.main_directory, file_prune), "w") as f:
+        with open(join_paths(self.scripts_directory, file_prepare), "w") as f:
             f.write(output_text)
 
         format_dict["job_name"] = "n2p2_train"
@@ -1460,7 +1461,7 @@ rm -f tmp.pp
             self.n2p2_bin, "nnp-train"
         )
 
-        with open(join_paths(self.main_directory, file_train), "w") as f:
+        with open(join_paths(self.scripts_directory, file_train), "w") as f:
             f.write(output_text)
 
     def write_lammps_data(
@@ -1493,8 +1494,10 @@ rm -f tmp.pp
             units=lammps_unit_style,
         )
 
-    def write_lammps_pair(
+    def format_lammps_input(
         self,
+        structure: Structure,
+        n_steps: int,
         r_cutoff: float,
         file_lammps_template: str = "lammps/template.lmp",
         file_out: str = "lammps/md.lmp",
@@ -1513,8 +1516,14 @@ rm -f tmp.pp
 
         `r_cutoff` must be given in the LAMMPS units regardless of what was used for training.
 
+        Also sets {masses}, {n_steps}, and configures the atomic symbols in the dump.
+
         Parameters
         ----------
+        structure: Structure
+            The Structure that will be simulated by LAMMPS.
+        n_steps: int
+            The number of steps to run LAMMPS for.
         r_cutoff: float
             The cutoff distance for the symmetry functions.
         file_lammps_template: str, optional
@@ -1529,14 +1538,21 @@ rm -f tmp.pp
         lammps_unit_style: str, optional
             The LAMMPS unit system to use. Default is 'electron'.
         """
-        with open(join_paths(self.main_directory, file_lammps_template)) as f:
-            template_text = f.read()
+        # with open(join_paths(self.main_directory, file_lammps_template)) as f:
+        #     template_text = f.read()
 
+        # LAMMPS required alphabetically sorted elements
         elements = self.elements
         elements.sort()
         elements_map = '"'
+        masses = ""
+        elements = ""
         for i, element in enumerate(elements):
             elements_map += "{0}:{1},".format(i + 1, element)
+            species = structure.all_species.get_species(element)
+            masses += "mass {} {}\n".format(i + 1, species.mass)
+            elements += " {}".format(element)
+
         elements_map = elements_map[:-1] + '"'
 
         pair_style = (
@@ -1582,13 +1598,27 @@ rm -f tmp.pp
             )
 
         pair_coeff = "pair_coeff * * {}".format(r_cutoff)
-        output_text = template_text.format(
-            pair_commands=pair_style + "\n" + pair_coeff,
-            lammps_unit_style=lammps_unit_style,
+
+        # output_text = template_text.format(
+        #     pair_commands=pair_style + "\n" + pair_coeff,
+        #     lammps_unit_style=lammps_unit_style,
+        #     elements=elements,
+        #     masses=masses,
+        # )
+        format_template_file(
+            template_file=join_paths(self.main_directory, file_lammps_template),
+            formatted_file=join_paths(self.main_directory, file_out),
+            format_dict={
+                "pair_commands": pair_style + "\n" + pair_coeff,
+                "lammps_unit_style": lammps_unit_style,
+                "elements": elements,
+                "masses": masses,
+                "n_steps": str(n_steps),
+            },
         )
 
-        with open(join_paths(self.main_directory, file_out), "w") as f:
-            f.write(output_text)
+        # with open(join_paths(self.main_directory, file_out), "w") as f:
+        #     f.write(output_text)
 
     def _write_active_learning_lammps_script(
         self,
@@ -2350,3 +2380,19 @@ rm -f tmp.pp
         )
 
         return selected_indices
+
+    def remove_n2p2_normalisation(self):
+        """
+        Removes files associated with the output of nnp-norm, and reverts "input.nn" to
+        "input.nn.bak".
+        """
+        move(
+            join_paths(self.n2p2_directory, "input.nn.bak"),
+            join_paths(self.n2p2_directory, "input.nn"),
+        )
+        remove(
+            join_paths(self.n2p2_directory, "output.data"),
+        )
+        remove(
+            join_paths(self.n2p2_directory, "evsv.dat"),
+        )

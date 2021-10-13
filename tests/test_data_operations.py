@@ -19,7 +19,8 @@ def test_check_nearest_neighbours(
     pos_j: np.ndarray,
 ):
     """
-    Test that we accept the neighbours in the cases where they are empty or only have 1 dimension.
+    Test that we accept the neighbours in the cases
+    where they are empty or only have 1 dimension.
     """
     accepted, d = check_nearest_neighbours(
         lat=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],

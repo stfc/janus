@@ -14,7 +14,9 @@ from cc_hdnnp.file_operations import format_template_file, read_lammps_log
         (False, "{normal} ${shell}", "one $two"),
     ],
 )
-def test_format_template_file(format_shell_variables: bool, text_in: str, text_out: str):
+def test_format_template_file(
+    format_shell_variables: bool, text_in: str, text_out: str
+):
     """
     Test that the file is formatted correctly depending on `format_shell_variables`.
     """

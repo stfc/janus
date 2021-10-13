@@ -1009,7 +1009,8 @@ class ActiveLearning:
                 extrapolation_free_lines,
                 extrapolation_free_timesteps,
             ) = read_lammps_log(
-                self.dump_lammpstrj, log_lammps_file=join(directory, "log.lammps"),
+                self.dump_lammpstrj,
+                log_lammps_file=join(directory, "log.lammps"),
             )
             structures, structure_lines = self._read_lammpstrj(
                 timesteps, directory=directory

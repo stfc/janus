@@ -171,12 +171,13 @@ def test_write_cp2k(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
+    data.scripts_directory = "tests/data/tests_output"
     data.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
-        file_bash="tests_output/all.sh",
-        file_batch="tests_output/{}.sh",
+        file_bash="all.sh",
+        file_batch="{}.sh",
         file_input="tests_output/{}.inp",
         file_xyz="cp2k_input/{}.xyz",
         n_config=1,
@@ -196,12 +197,13 @@ def test_write_cp2k_kwargs(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
+    data.scripts_directory = "tests/data/tests_output"
     data.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
-        file_bash="tests_output/all.sh",
-        file_batch="tests_output/{}.sh",
+        file_bash="all.sh",
+        file_batch="{}.sh",
         file_input="tests_output/{}.inp",
         file_xyz="cp2k_input/{}.xyz",
         n_config=1,
@@ -223,12 +225,13 @@ def test_write_cp2k_kwargs_floats(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
+    data.scripts_directory = "tests/data/tests_output"
     data.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
-        file_bash="tests_output/all.sh",
-        file_batch="tests_output/{}.sh",
+        file_bash="all.sh",
+        file_batch="{}.sh",
         file_input="tests_output/{}.inp",
         file_xyz="cp2k_input/{}.xyz",
         n_config=1,
@@ -428,10 +431,11 @@ def test_data_write_n2p2_scripts(data: Data):
     """
     Test that n2p2 scripts are written successfully.
     """
+    data.scripts_directory = "tests/data/tests_output"
     data.write_n2p2_scripts(
-        file_batch_template="n2p2/template.sh",
-        file_prune="tests_output/n2p2_prune.sh",
-        file_train="tests_output/n2p2_train.sh",
+        file_batch_template="../scripts/template.sh",
+        file_prepare="n2p2_prune.sh",
+        file_train="n2p2_train.sh",
     )
 
     assert isfile("tests/data/tests_output/n2p2_prune.sh")
@@ -444,10 +448,11 @@ def test_data_write_n2p2_scripts_norm(data: Data):
     """
     Test that n2p2 scripts are written successfully with `normalise=True`.
     """
+    data.scripts_directory = "tests/data/tests_output"
     data.write_n2p2_scripts(
-        file_batch_template="n2p2/template.sh",
-        file_prune="tests_output/n2p2_prune.sh",
-        file_train="tests_output/n2p2_train.sh",
+        file_batch_template="../scripts/template.sh",
+        file_prepare="n2p2_prune.sh",
+        file_train="n2p2_train.sh",
         normalise=True,
     )
 
@@ -469,11 +474,13 @@ def test_data_write_lammps_data(data: Data):
     assert isfile("tests/data/tests_output/lammps.data")
 
 
-def test_data_write_lammps_pair(data: Data):
+def test_data_format_lammps_input(data: Data):
     """
     Test that LAMMPS data is written successfully.
     """
-    data.write_lammps_pair(
+    data.format_lammps_input(
+        structure=data.all_structures.structure_dict["test"],
+        n_steps=1000,
         r_cutoff=6.35,
         file_lammps_template="lammps/template.lmp",
         file_out="tests_output/md.lmp",
@@ -493,14 +500,16 @@ def test_data_write_lammps_pair(data: Data):
         ("nano", 18.897261258369284, 0.22937123159746856),
     ],
 )
-def test_data_write_lammps_pair_units(
+def test_data_format_lammps_input_units(
     data: Data, lammps_unit_style: str, cflength: float, cfenergy: float
 ):
     """
     Test that LAMMPS data is written successfully with custom units
     (i.e. not the default "electron").
     """
-    data.write_lammps_pair(
+    data.format_lammps_input(
+        structure=data.all_structures.structure_dict["test"],
+        n_steps=1000,
         r_cutoff=6.35,
         file_lammps_template="lammps/template.lmp",
         file_out="tests_output/md.lmp",
@@ -513,13 +522,15 @@ def test_data_write_lammps_pair_units(
         assert "cflength {0} cfenergy {1}".format(cflength, cfenergy) in lines[20]
 
 
-def test_data_write_lammps_pair_unknown_units(data: Data):
+def test_data_format_lammps_input_unknown_units(data: Data):
     """
     Test that an error is raised when given unrecognised units.
     """
     lammps_unit_style = "bad_units"
     with pytest.raises(ValueError) as e:
-        data.write_lammps_pair(
+        data.format_lammps_input(
+            structure=data.all_structures.structure_dict["test"],
+            n_steps=1000,
             r_cutoff=6.35,
             file_lammps_template="lammps/template.lmp",
             file_out="tests_output/md.lmp",
@@ -649,7 +660,7 @@ def test_write_extrapolations_lammps_script(
     """
     data.scripts_directory = "tests/data/tests_output"
     data.write_extrapolations_lammps_script(
-        file_batch_template="../n2p2/template.sh",
+        file_batch_template="../scripts/template.sh",
         file_batch_out="lammps_extrapolations.sh",
     )
 
@@ -1086,3 +1097,27 @@ def test_write_n2p2_data_qe_errors(data: Data, structure_name: str, error: str):
         )
 
     assert str(e.value) == error
+
+
+def test_remove_n2p2_normalisation(data: Data):
+    """
+    Test that the files are moved and removed correctly.
+    """
+    with open("tests/data/tests_output/input.nn", "w") as f:
+        f.write("Normalised file.")
+    with open("tests/data/tests_output/input.nn.bak", "w") as f:
+        f.write("Unnormalised file.")
+    with open("tests/data/tests_output/output.data", "w") as f:
+        f.write("Output file.")
+    with open("tests/data/tests_output/evsv.dat", "w") as f:
+        f.write("EVSV file.")
+    data.n2p2_directory = "tests/data/tests_output"
+
+    data.remove_n2p2_normalisation()
+
+    assert not isfile("tests/data/tests_output/input.nn.bak")
+    assert not isfile("tests/data/tests_output/output.data")
+    assert not isfile("tests/data/tests_output/evsv.dat")
+    assert isfile("tests/data/tests_output/input.nn")
+    with open("tests/data/tests_output/input.nn") as f:
+        assert f.read() == "Unnormalised file."

@@ -111,10 +111,13 @@ def active_learning(data: Data) -> ActiveLearning:
     Fixture to create a ActiveLearning object for testing,
     including linking and removal of relevant files.
     """
-    symlink("weights.001.000020.out", "tests/data/n2p2/weights.001.data")
-    symlink("weights.001.000020.out", "tests/data/n2p2/weights.006.data")
-    symlink("weights.001.000020.out", "tests/data/n2p2/weights.008.data")
-    copy("tests/data/n2p2/template.sh", "tests/data/tests_output/template.sh")
+    if not isfile("tests/data/n2p2/weights.001.data"):
+        symlink("weights.001.000020.out", "tests/data/n2p2/weights.001.data")
+    if not isfile("tests/data/n2p2/weights.006.data"):
+        symlink("weights.001.000020.out", "tests/data/n2p2/weights.006.data")
+    if not isfile("tests/data/n2p2/weights.008.data"):
+        symlink("weights.001.000020.out", "tests/data/n2p2/weights.008.data")
+    copy("tests/data/scripts/template.sh", "tests/data/tests_output/template.sh")
     copytree("tests/data/n2p2", "tests/data/n2p2_copy")
 
     yield ActiveLearning(
@@ -1232,7 +1235,7 @@ def test_prepare_data_new_name_none(
 ):
     """ """
     prepare_mode1_files()
-    copy("tests/data/n2p2/template.sh", "tests/data/tests_output/template.sh")
+    copy("tests/data/scripts/template.sh", "tests/data/tests_output/template.sh")
     structure = Structure(name=None, all_species=all_species, delta_E=1.0, delta_F=1.0)
     data = Data(
         structures=AllStructures(structure),
