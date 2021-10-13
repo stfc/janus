@@ -57,8 +57,8 @@ class Data:
     scripts_sub_directory : str, optional
         Path for the directory to read/write scripts from/to, relative to the
         `main_directory`. Default is "scripts".
-    n2p2_sub_directory : str, optional
-        Path for the directory to read/write n2p2 files from/to, relative to the
+    n2p2_sub_directory : str or list of str, optional
+        Path(s) for the directory to read/write n2p2 files from/to, relative to the
         `main_directory`. Default is "n2p2".
     active_learning_sub_directory : str, optional
         Path for the directory to read/write active learning files from/to, relative to the
@@ -75,7 +75,7 @@ class Data:
         lammps_executable: str,
         n2p2_bin: str,
         scripts_sub_directory: str = "scripts",
-        n2p2_sub_directory: str = "n2p2",
+        n2p2_sub_directories: Union[str, List[str]] = "n2p2",
         active_learning_sub_directory: str = "active_learning",
         lammps_sub_directory: str = "lammps",
     ):
@@ -89,7 +89,9 @@ class Data:
         self.lammps_executable = lammps_executable
         self.n2p2_bin = n2p2_bin
         self.scripts_directory = join_paths(main_directory, scripts_sub_directory)
-        self.n2p2_directory = join_paths(main_directory, n2p2_sub_directory)
+        if isinstance(n2p2_sub_directories, str):
+            n2p2_sub_directories = [n2p2_sub_directories]
+        self.n2p2_directories = [join_paths(main_directory, s) for s in n2p2_sub_directories]
         self.active_learning_directory = join_paths(
             main_directory, active_learning_sub_directory
         )
@@ -252,70 +254,72 @@ class Data:
             Structures with a force component more than `force_threshold` will be removed from
             the dataset. The units depend on `reference_file`.
         data_file_in: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to read from. Default is "input.data".
         data_file_out: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to write to. Default is "input.data".
         data_file_backup: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`, to copy
             the original `data_file_in` to. Default is "input.data.outliers_backup".
         reference_file: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to read the energy and force values from. Default is "input.data".
         """
         if isinstance(energy_threshold, float):
             energy_threshold = (-energy_threshold, energy_threshold)
 
-        with open(join_paths(self.n2p2_directory, reference_file)) as f:
-            lines = f.readlines()
+        for n2p2_directory in self.n2p2_directories:
+            print("Removing outliers in {}".format(n2p2_directory))
+            with open(join_paths(n2p2_directory, reference_file)) as f:
+                lines = f.readlines()
 
-        remove_indices = []
-        remove = False
-        atom_count = 0
-        i = 0
-        for line in lines:
-            line_split = line.split()
-            if line_split[0] == "atom":
-                atom_count += 1
-                force = np.array(
-                    [
-                        float(line_split[-3]),
-                        float(line_split[-2]),
-                        float(line_split[-1]),
-                    ]
-                )
-                if any(abs(force) > force_threshold):
-                    print(
-                        "Structure {0} above threshold with a force of {1}".format(
-                            i, force
-                        )
+            remove_indices = []
+            remove = False
+            atom_count = 0
+            i = 0
+            for line in lines:
+                line_split = line.split()
+                if line_split[0] == "atom":
+                    atom_count += 1
+                    force = np.array(
+                        [
+                            float(line_split[-3]),
+                            float(line_split[-2]),
+                            float(line_split[-1]),
+                        ]
                     )
-                    remove = True
-            elif line_split[0] == "energy":
-                energy = float(line_split[-1]) / atom_count
-                if energy < energy_threshold[0] or energy > energy_threshold[1]:
-                    print(
-                        "Structure {0} outside threshold with an energy of {1}".format(
-                            i, energy
+                    if any(abs(force) > force_threshold):
+                        print(
+                            "Structure {0} above threshold with a force of {1}".format(
+                                i, force
+                            )
                         )
-                    )
-                    remove = True
-            elif line_split[0] == "end":
-                if remove:
-                    remove_indices.append(i)
-                remove = False
-                atom_count = 0
-                i += 1
+                        remove = True
+                elif line_split[0] == "energy":
+                    energy = float(line_split[-1]) / atom_count
+                    if energy < energy_threshold[0] or energy > energy_threshold[1]:
+                        print(
+                            "Structure {0} outside threshold with an energy of {1}".format(
+                                i, energy
+                            )
+                        )
+                        remove = True
+                elif line_split[0] == "end":
+                    if remove:
+                        remove_indices.append(i)
+                    remove = False
+                    atom_count = 0
+                    i += 1
 
-        print("{0} outliers found: {1}".format(len(remove_indices), remove_indices))
+            print("{0} outliers found: {1}".format(len(remove_indices), remove_indices))
 
-        remove_data(
-            remove_indices,
-            join_paths(self.n2p2_directory, data_file_in),
-            join_paths(self.n2p2_directory, data_file_out),
-            join_paths(self.n2p2_directory, data_file_backup),
-        )
+            remove_data(
+                remove_indices,
+                join_paths(n2p2_directory, data_file_in),
+                join_paths(n2p2_directory, data_file_out),
+                join_paths(n2p2_directory, data_file_backup),
+            )
 
     def write_xyz(self, file_xyz: str = "xyz/{}.xyz", unit_out: str = "Ang"):
         """
@@ -991,7 +995,7 @@ rm -f tmp.pp
             formatable with the `temperature`, `pressure` and `structure_name`.
             Default is "{structure_name}-T{temperature}-p{pressure}.xyz".
         file_n2p2_input: str
-            File path to write the n2p2 data to, relative to `self.n2p2_directory`.
+            File path to write the n2p2 data to, relative to `self.n2p2_directories`.
             Default is "input.data".
         n2p2_units: dict, optional
             The units to use for n2p2. No specific units are required, however
@@ -1106,12 +1110,13 @@ rm -f tmp.pp
         if len(text) == 0:
             raise IOError("No files found.")
 
-        if isfile(join_paths(self.n2p2_directory, file_n2p2_input)):
-            with open(join_paths(self.n2p2_directory, file_n2p2_input), "a") as f:
-                f.write(text)
-        else:
-            with open(join_paths(self.n2p2_directory, file_n2p2_input), "w") as f:
-                f.write(text)
+        for n2p2_directory in self.n2p2_directories:
+            if isfile(join_paths(n2p2_directory, file_n2p2_input)):
+                with open(join_paths(n2p2_directory, file_n2p2_input), "a") as f:
+                    f.write(text)
+            else:
+                with open(join_paths(n2p2_directory, file_n2p2_input), "w") as f:
+                    f.write(text)
 
     def write_n2p2_data(
         self,
@@ -1160,7 +1165,7 @@ rm -f tmp.pp
             Formatable file name to read the xyz files from. Will be formatted with the
             frame number, so should contain '{}' as part of the string. Default is 'xyz/{}.xyz'.
         file_n2p2_input : str, optional
-            File name to write the n2p2 data to relative to `self.n2p2_directory`.
+            File name to write the n2p2 data to relative to `self.n2p2_directories`.
             Default is 'input.data'.
         n_config: int, optional
             The number of configuration frames to use. If the number provided
@@ -1267,12 +1272,13 @@ rm -f tmp.pp
             text += "charge {}\n".format(total_charge)
             text += "end\n"
 
-        if isfile(join_paths(self.n2p2_directory, file_n2p2_input)):
-            with open(join_paths(self.n2p2_directory, file_n2p2_input), "a") as f:
-                f.write(text)
-        else:
-            with open(join_paths(self.n2p2_directory, file_n2p2_input), "w") as f:
-                f.write(text)
+        for n2p2_directory in self.n2p2_directories:
+            if isfile(join_paths(n2p2_directory, file_n2p2_input)):
+                with open(join_paths(n2p2_directory, file_n2p2_input), "a") as f:
+                    f.write(text)
+            else:
+                with open(join_paths(n2p2_directory, file_n2p2_input), "w") as f:
+                    f.write(text)
 
     def write_n2p2_nn(
         self,
@@ -1290,7 +1296,7 @@ rm -f tmp.pp
         """
         Based on `file_template`, write the input.nn file for n2p2 with
         symmetry functions generated using the provided arguments. File locations should be
-        relative to `self.n2p2_directory`.
+        relative to `self.n2p2_directories`.
 
         Note that all distances (`r_cutoff`, `r_lower`, `r_upper`) should have
         the same units as the n2p2 `input.data` file (by default, Bohr).
@@ -1369,17 +1375,18 @@ rm -f tmp.pp
             r_upper=r_upper,
         )
 
-        if isfile(join_paths(self.n2p2_directory, file_nn)):
-            with open(join_paths(self.n2p2_directory, file_nn), "a") as f:
-                generator.write_settings_overview(fileobj=f)
-                generator.write_parameter_strings(fileobj=f)
-        else:
-            with open(join_paths(self.n2p2_directory, file_nn_template)) as f:
-                template_text = f.read()
-            with open(join_paths(self.n2p2_directory, file_nn), "w") as f:
-                f.write(template_text)
-                generator.write_settings_overview(fileobj=f)
-                generator.write_parameter_strings(fileobj=f)
+        for n2p2_directory in self.n2p2_directories:
+            if isfile(join_paths(n2p2_directory, file_nn)):
+                with open(join_paths(n2p2_directory, file_nn), "a") as f:
+                    generator.write_settings_overview(fileobj=f)
+                    generator.write_parameter_strings(fileobj=f)
+            else:
+                with open(join_paths(n2p2_directory, file_nn_template)) as f:
+                    template_text = f.read()
+                with open(join_paths(n2p2_directory, file_nn), "w") as f:
+                    f.write(template_text)
+                    generator.write_settings_overview(fileobj=f)
+                    generator.write_parameter_strings(fileobj=f)
 
     def write_n2p2_scripts(
         self,
@@ -1423,9 +1430,17 @@ rm -f tmp.pp
         with open(join_paths(self.scripts_directory, file_batch_template)) as f:
             batch_template_text = f.read()
 
-        format_dict = {"job_name": "n2p2_scale_prune", "nodes": nodes, "job_array": ""}
+        format_dict = {
+            "job_name": "n2p2_scale_prune",
+            "nodes": nodes,
+            "job_array": "#SBATCH --array=1-{}".format(len(self.n2p2_directories)),
+        }
+    
         output_text = batch_template_text.format(**format_dict)
-        output_text += "\ncd {}".format(self.n2p2_directory)
+        output_text += "\nn2p2_directories=( "
+        for n2p2_directory in self.n2p2_directories:
+            output_text += "'{}' ".format(n2p2_directory)
+        output_text += ")\ncd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}"
         if normalise:
             output_text += "\nmpirun -np ${SLURM_NTASKS} " + join_paths(
                 self.n2p2_bin, "nnp-norm"
@@ -1456,7 +1471,10 @@ rm -f tmp.pp
 
         format_dict["job_name"] = "n2p2_train"
         output_text = batch_template_text.format(**format_dict)
-        output_text += "\ncd {}".format(self.n2p2_directory)
+        output_text += "\nn2p2_directories=( "
+        for n2p2_directory in self.n2p2_directories:
+            output_text += "'{}' ".format(n2p2_directory)
+        output_text += ")\ncd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}"
         output_text += "\nmpirun -np ${SLURM_NTASKS} " + join_paths(
             self.n2p2_bin, "nnp-train"
         )
@@ -1799,6 +1817,7 @@ rm -f tmp.pp
 
     def choose_weights(
         self,
+        n2p2_directory_index: int = 0,
         epoch: int = None,
         minimum_criterion: str = None,
         file_out: str = "weights.{0:03d}.data",
@@ -1812,6 +1831,9 @@ rm -f tmp.pp
 
         Parameters
         ----------
+        n2p2_directory_index: str, optional
+            The index of the directory within `self.n2p2_directories` containing the weights
+            files.
         epoch : int, optional
             The epoch to copy weights for. Default is `None`.
         minimum_criterion : str, optional
@@ -1839,7 +1861,9 @@ rm -f tmp.pp
             # We already have the epoch to choose, so don't need to read performance.
             pass
         else:
-            with open(join_paths(self.n2p2_directory, "learning-curve.out")) as f:
+            with open(
+                join_paths(self.n2p2_directories[n2p2_directory_index], "learning-curve.out")
+            ) as f:
                 lines = f.readlines()
             content = []
             for line in lines:
@@ -1869,13 +1893,15 @@ rm -f tmp.pp
 
         for z in self.all_structures.atomic_number_list:
             src = join_paths(
-                self.n2p2_directory, "weights.{0:03d}.{1:06d}.out".format(z, epoch)
+                self.n2p2_directories[n2p2_directory_index],
+                "weights.{0:03d}.{1:06d}.out".format(z, epoch),
             )
-            dst = join_paths(self.n2p2_directory, file_out.format(z))
+            dst = join_paths(self.n2p2_directories[n2p2_directory_index], file_out.format(z))
             copy(src=src, dst=dst)
 
     def write_extrapolations_lammps_script(
         self,
+        n2p2_directory: str = "n2p2",
         ensembles: Tuple[str] = ("nve", "nvt", "npt"),
         temperatures: Tuple[int] = (340,),
         file_batch_template: str = "template.sh",
@@ -1887,6 +1913,8 @@ rm -f tmp.pp
 
         Parameters
         ----------
+        n2p2_directory: str, optional
+            The directory containing the weights files, relative to `self.main_directory`.
         ensembles: tuple of str
             Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
             and "npt". Default is ("nve", "nvt", "npt").
@@ -1913,7 +1941,7 @@ rm -f tmp.pp
 
         # Setup
         output_text += "\nln -s {0} {1}/nnp".format(
-            self.n2p2_directory, self.lammps_directory
+            join_paths(self.main_directory, n2p2_directory), self.lammps_directory
         )
 
         for ensemble in ensembles:
@@ -2047,42 +2075,47 @@ rm -f tmp.pp
             The `Structure` represented in `data_file_in`, with requirements on the minimum
             separation of all constituent species with each other.
         data_file_in: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to read from. Default is "input.data".
         data_file_out: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to write to. Default is "input.data".
         data_file_backup: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            File path of the n2p2 structure file, relative to `self.n2p2_directories`, to copy
             the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
         data_file_unit: str, optional
             Length unit used in the data files, to ensure compatibility with the separation
             specified on `structure`.
         """
-        remove_indices = []
-        data = read_data_file(join_paths(self.n2p2_directory, data_file_in))
-        for i, frame_data in enumerate(data):
-            if not check_structure(
-                lattice=frame_data[0] * self.units[data_file_unit],
-                element=frame_data[1],
-                position=frame_data[2] * self.units[data_file_unit],
-                structure=structure,
-            ):
-                remove_indices.append(i)
+        all_remove_indices = []
+        for n2p2_directory in self.n2p2_directories:
+            remove_indices = []
+            data = read_data_file(
+                join_paths(n2p2_directory, data_file_in)
+            )
+            for i, frame_data in enumerate(data):
+                if not check_structure(
+                    lattice=frame_data[0] * self.units[data_file_unit],
+                    element=frame_data[1],
+                    position=frame_data[2] * self.units[data_file_unit],
+                    structure=structure,
+                ):
+                    remove_indices.append(i)
 
-        print(
-            "Removing {} frames for having atoms within minimum separation."
-            "".format(len(remove_indices))
-        )
+            print(
+                "Removing {} frames for having atoms within minimum separation."
+                "".format(len(remove_indices))
+            )
 
-        remove_data(
-            remove_indices,
-            join_paths(self.n2p2_directory, data_file_in),
-            join_paths(self.n2p2_directory, data_file_out),
-            join_paths(self.n2p2_directory, data_file_backup),
-        )
+            remove_data(
+                remove_indices,
+                join_paths(n2p2_directory, data_file_in),
+                join_paths(n2p2_directory, data_file_out),
+                join_paths(n2p2_directory, data_file_backup),
+            )
+            all_remove_indices.append(remove_indices)
 
-        return remove_indices
+        return all_remove_indices
 
     def rebuild_dataset(
         self,
@@ -2095,6 +2128,7 @@ rm -f tmp.pp
         criteria: Union[Literal["mean"], float] = "mean",
         seed: int = None,
         dtype: str = "float32",
+        n2p2_directory_index: int = 0,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
         data_file_backup: str = "input.data.rebuild_backup",
@@ -2141,26 +2175,29 @@ rm -f tmp.pp
             The seed is used to randomly order the frames for selection. Default is `None`.
         dtype: str, optional
             numpy data type to use. Default is "float32".
+        n2p2_directory_index: str, optional
+            The index of the directory within `self.n2p2_directories` containing the weights
+            files.
         data_file_in: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `n2p2_directory`,
             to read from. Default is "input.data".
         data_file_out: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`,
+            File path of the n2p2 structure file, relative to `n2p2_directory`,
             to write to. Default is "input.data".
         data_file_backup: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directory`, to copy
+            File path of the n2p2 structure file, relative to `n2p2_directory`, to copy
             the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
         """
         np.random.seed(seed)
         t1 = time.time()
         atom_environments = read_atomenv(
-            join_paths(self.n2p2_directory, "atomic-env.G"),
+            join_paths(self.n2p2_directories[n2p2_directory_index], "atomic-env.G"),
             self.elements,
             atoms_per_frame,
             dtype=dtype,
         )
         scaling_settings = read_nn_settings(
-            join_paths(self.n2p2_directory, "input.nn"),
+            join_paths(self.n2p2_directories[n2p2_directory_index], "input.nn"),
             requested_settings=[
                 "scale_symmetry_functions",
                 "scale_symmetry_functions_sigma",
@@ -2170,7 +2207,7 @@ rm -f tmp.pp
             ],
         )
         scaling = read_scaling(
-            join_paths(self.n2p2_directory, "scaling.data"),
+            join_paths(self.n2p2_directories[n2p2_directory_index], "scaling.data"),
             self.elements,
         )
         t2 = time.time()
@@ -2374,9 +2411,9 @@ rm -f tmp.pp
 
         remove_data(
             remove_indices,
-            join_paths(self.n2p2_directory, data_file_in),
-            join_paths(self.n2p2_directory, data_file_out),
-            join_paths(self.n2p2_directory, data_file_backup),
+            join_paths(self.n2p2_directories[n2p2_directory_index], data_file_in),
+            join_paths(self.n2p2_directories[n2p2_directory_index], data_file_out),
+            join_paths(self.n2p2_directories[n2p2_directory_index], data_file_backup),
         )
 
         return selected_indices
@@ -2386,13 +2423,14 @@ rm -f tmp.pp
         Removes files associated with the output of nnp-norm, and reverts "input.nn" to
         "input.nn.bak".
         """
-        move(
-            join_paths(self.n2p2_directory, "input.nn.bak"),
-            join_paths(self.n2p2_directory, "input.nn"),
-        )
-        remove(
-            join_paths(self.n2p2_directory, "output.data"),
-        )
-        remove(
-            join_paths(self.n2p2_directory, "evsv.dat"),
-        )
+        for n2p2_directory in self.n2p2_directories:
+            move(
+                join_paths(n2p2_directory, "input.nn.bak"),
+                join_paths(n2p2_directory, "input.nn"),
+            )
+            remove(
+                join_paths(n2p2_directory, "output.data"),
+            )
+            remove(
+                join_paths(n2p2_directory, "evsv.dat"),
+            )

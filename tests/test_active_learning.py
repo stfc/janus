@@ -96,6 +96,7 @@ def data(all_species: AllSpecies) -> Data:
         active_learning_sub_directory="tests_output",
         n2p2_bin="",
         lammps_executable="",
+        n2p2_sub_directories=["n2p2_copy", "n2p2_copy"],
     )
 
     for file in listdir("tests/data/tests_output"):
@@ -122,7 +123,6 @@ def active_learning(data: Data) -> ActiveLearning:
 
     yield ActiveLearning(
         data_controller=data,
-        n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
     )
 
     rmtree("tests/data/n2p2_copy")
@@ -132,7 +132,7 @@ def active_learning(data: Data) -> ActiveLearning:
 
 
 def prepare_mode1_files(files: List[str] = None):
-    """ """
+    """ Mocks the mode1 files for testing. """
     mkdir("tests/data/tests_output/mode1")
     mkdir("tests/data/tests_output/mode1/test_npt_hdnnp1_t325_p1.0_1")
     for f in listdir("tests/data/active_learning/mode1/test_npt_hdnnp1_t325_p1.0_1"):
@@ -145,7 +145,7 @@ def prepare_mode1_files(files: List[str] = None):
 
 
 def prepare_mode2_files():
-    """ """
+    """ Mocks the mode2 files for testing. """
     copytree("tests/data/active_learning/mode2", "tests/data/tests_output/mode2")
 
     with open("tests/data/tests_output/mode2/HDNNP_1/mode_2.out", "w") as f:
@@ -158,22 +158,21 @@ def prepare_mode2_files():
 
 
 def test_init_len_n2p2_directories(data: Data):
-    """ """
+    """Test that a ValueError is raised for an empty list of `n2p2_directories`."""
+    data.n2p2_directories = []
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=[],
         )
 
-    assert str(e.value) == "`n2p2_directories` must have 2 entries, but had 0"
+    assert str(e.value) == "`data_controller.n2p2_directories` must have 2 entries, but had 0"
 
 
 def test_init_integrators(data: Data):
-    """ """
+    """Test that unrecognised `integrators` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             integrators=["unrecognised"],
         )
 
@@ -181,11 +180,10 @@ def test_init_integrators(data: Data):
 
 
 def test_init_npt_no_pressures(data: Data):
-    """ """
+    """ Test that not providing pressures raises an error for the "npt" integrator. """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             pressures=[],
         )
 
@@ -196,11 +194,10 @@ def test_init_npt_no_pressures(data: Data):
 
 
 def test_init_barostat_option(data: Data):
-    """ """
+    """Test that unrecognised `barostat_option` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             barostat_option="unrecognised",
         )
 
@@ -208,11 +205,10 @@ def test_init_barostat_option(data: Data):
 
 
 def test_init_atom_style(data: Data):
-    """ """
+    """Test that unrecognised `atom_style` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             atom_style="unrecognised",
         )
 
@@ -220,11 +216,12 @@ def test_init_atom_style(data: Data):
 
 
 def test_init_N_steps(data: Data):
-    """ """
+    """
+    Test that a ValueError is raised when `N_steps` is not a multiple of `dump_lammpstrj`.
+    """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             N_steps=200001,
         )
 
@@ -239,7 +236,6 @@ def test_init_dump_lammpstrj(data: Data):
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             dump_lammpstrj=1,
         )
 
@@ -255,7 +251,6 @@ def test_init_max_len_joblist(data: Data):
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             max_len_joblist=-1,
         )
 
@@ -270,7 +265,6 @@ def test_init_comment_name_keyword(data: Data):
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             comment_name_keyword=None,
         )
 
@@ -295,12 +289,12 @@ def test_init_structure_names_none(all_species: AllSpecies):
         active_learning_sub_directory="tests_output",
         n2p2_bin="",
         lammps_executable="",
+        n2p2_sub_directories=["n2p2_copy", "n2p2_copy"],
     )
 
     with pytest.raises(TypeError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
         )
 
     assert str(e.value) == (
@@ -314,7 +308,6 @@ def test_init_initial_tolerance(data: Data):
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             initial_tolerance=1,
         )
 
@@ -326,7 +319,6 @@ def test_init_len_tolerances(data: Data):
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
-            n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
             initial_tolerance=100,
         )
 
@@ -409,7 +401,7 @@ def test_read_input_data(
 ):
     """Test that errors are raised if bad data is provided."""
     active_learning.periodic = periodic
-    active_learning.n2p2_directories = directories
+    active_learning.data_controller.n2p2_directories = directories
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("different file")
 
@@ -464,7 +456,7 @@ def test_read_input_data_errors(
 ):
     """Test that errors are raised if bad data is provided."""
     active_learning.periodic = periodic
-    active_learning.n2p2_directories = directories
+    active_learning.data_controller.n2p2_directories = directories
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("different file")
     with pytest.raises(ValueError) as e:
@@ -1244,10 +1236,10 @@ def test_prepare_data_new_name_none(
         active_learning_sub_directory="tests_output",
         n2p2_bin="",
         lammps_executable="",
+        n2p2_sub_directories=["n2p2_copy", "n2p2_copy"],
     )
     active_learning = ActiveLearning(
         data_controller=data,
-        n2p2_directories=["tests/data/n2p2_copy", "tests/data/n2p2_copy"],
     )
 
     active_learning.prepare_data_new()
@@ -1375,7 +1367,9 @@ def test_prepare_data_add_mixed_normalisation(
     active_learning.names = np.array(["test_s0"])
     active_learning.positions = np.array([[[0, 0, 0]]])
     active_learning.statistics = np.array([["small", "H", "0", "0"]])
-    active_learning.n2p2_directories = ["tests/data/n2p2_copy", "tests/data/n2p2"]
+    active_learning.data_controller.n2p2_directories = [
+        "tests/data/n2p2_copy", "tests/data/n2p2",
+    ]
     copy("tests/data/n2p2_copy/input.nn.norm", "tests/data/n2p2_copy/input.nn")
 
     with pytest.raises(ValueError) as e:

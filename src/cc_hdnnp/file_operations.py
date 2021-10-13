@@ -264,7 +264,8 @@ def read_scaling(
         while line:
             if not line.startswith("#"):
                 data = line.split()
-                element = elements[int(data[0]) - 1]
+                elment_index = int(data[0])
+                element = elements[elment_index - 1]
                 element_ranges[element]["min"].append(float(data[2]))
                 element_ranges[element]["max"].append(float(data[3]))
                 element_ranges[element]["mean"].append(float(data[4]))

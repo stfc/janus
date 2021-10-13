@@ -29,9 +29,6 @@ class ActiveLearning:
     ----------
     data_controller : Data
         Used for locations of relevant directories and storing Structure objects.
-    n2p2_directories : list of str
-        Active learning requires two trained networks, which should be located in each of the
-        directories provided. Locations are taken relative to `data_controller.main_directory`.
     integrators : str or list of str, optional
         Set (an array of) string(s) which defines the usage of the "nve", "nvt", and/or "npt"
         integrators. Default is "npt" as this varies the density/simulation cell as well.
@@ -110,7 +107,6 @@ class ActiveLearning:
     def __init__(
         self,
         data_controller: Data,
-        n2p2_directories: List[str],
         integrators: Union[str, List[str]] = "npt",
         pressures: Union[float, List[float]] = 1.0,
         N_steps: int = 200000,
@@ -153,10 +149,10 @@ class ActiveLearning:
         structures = list(data_controller.all_structures.structure_dict.values())
         self._validate_timesteps(timestep, N_steps, structures)
 
-        if len(n2p2_directories) != 2:
+        if len(data_controller.n2p2_directories) != 2:
             raise ValueError(
-                "`n2p2_directories` must have 2 entries, but had {}"
-                "".format(len(n2p2_directories))
+                "`data_controller.n2p2_directories` must have 2 entries, but had {}"
+                "".format(len(data_controller.n2p2_directories))
             )
 
         for integrator in integrators:
@@ -244,7 +240,6 @@ class ActiveLearning:
 
         self.data_controller = data_controller
         self.active_learning_directory = data_controller.active_learning_directory
-        self.n2p2_directories = n2p2_directories
         self.all_structures = data_controller.all_structures
         self.element_types = self.all_structures.element_list
         self.masses = self.all_structures.mass_list
@@ -328,13 +323,19 @@ class ActiveLearning:
         xyzs = []
         qs = []
 
-        with open(self.n2p2_directories[0] + "/input.data") as f:
-            with open(self.n2p2_directories[1] + "/input.data") as f_2:
+        with open(
+            join(self.data_controller.n2p2_directories[0], "input.data")
+         ) as f:
+            with open(
+                join(
+                    self.data_controller.n2p2_directories[1], "input.data"
+                )
+            ) as f_2:
                 for line in f.readlines():
                     if line != f_2.readline():
                         raise ValueError(
                             "input.data files in {0} and {1} are differnt.".format(
-                                *self.n2p2_directories
+                                *self.data_controller.n2p2_directories
                             )
                         )
                     line = line.strip()
@@ -728,8 +729,8 @@ class ActiveLearning:
             for _ in range(repetitions):
                 for j in (0, 1):
                     HDNNP = str(j + 1)
-                    nn_file = join(self.n2p2_directories[j], "input.nn")
-                    scaling_file = join(self.n2p2_directories[j], "scaling.data")
+                    nn_file = join(self.data_controller.n2p2_directories[j], "input.nn")
+                    scaling_file = join(self.data_controller.n2p2_directories[j], "scaling.data")
                     if not isfile(nn_file):
                         raise IOError("{} not found".format(nn_file))
                     if not isfile(scaling_file):
@@ -830,7 +831,7 @@ class ActiveLearning:
                                     structure.all_species.atomic_number_list
                                 )
                                 src = join(
-                                    self.n2p2_directories[j],
+                                    self.data_controller.n2p2_directories[j],
                                     "weights.{:03d}.data",
                                 )
                                 for z in atomic_numbers:
@@ -840,10 +841,9 @@ class ActiveLearning:
                                             "{} not found, attempting to automatically "
                                             "choose one".format(weights_file)
                                         )
-                                        self.data_controller.n2p2_directory = (
-                                            self.n2p2_directories[j]
+                                        self.data_controller.choose_weights(
+                                            n2p2_directory_index=j
                                         )
-                                        self.data_controller.choose_weights()
                                     copy(
                                         weights_file,
                                         mode1_path
@@ -3044,7 +3044,7 @@ class ActiveLearning:
             mode="w",
         )
         self.data_controller._write_active_learning_nn_script(
-            n2p2_directories=self.n2p2_directories
+            n2p2_directories=self.data_controller.n2p2_directories
         )
 
     def prepare_data_add(self):
@@ -3083,10 +3083,10 @@ class ActiveLearning:
 
         # Read normalisation factors from file
         conv_energy_0, conv_length_0 = read_normalisation(
-            join(self.n2p2_directories[0], "input.nn")
+            join(self.data_controller.n2p2_directories[0], "input.nn")
         )
         conv_energy_1, conv_length_1 = read_normalisation(
-            join(self.n2p2_directories[1], "input.nn")
+            join(self.data_controller.n2p2_directories[1], "input.nn")
         )
         if not np.isclose(conv_energy_0, conv_energy_1) or not np.isclose(
             conv_length_0, conv_length_1
@@ -3096,10 +3096,10 @@ class ActiveLearning:
                 "to conv_energy={3}, conv_length={4} in {5}".format(
                     conv_energy_0,
                     conv_length_0,
-                    self.n2p2_directories[0],
+                    self.data_controller.n2p2_directories[0],
                     conv_energy_1,
                     conv_length_1,
-                    self.n2p2_directories[1],
+                    self.data_controller.n2p2_directories[1],
                 )
             )
 

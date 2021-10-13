@@ -298,7 +298,7 @@ def test_data_write_n2p2_data(data: Data):
     """
     Test that n2p2 data is written to file successfully.
     """
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     data.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
@@ -351,7 +351,7 @@ def test_data_write_n2p2_data_units(data: Data):
     """
     Test that n2p2 data is written to file successfully with units provided.
     """
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     data.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
@@ -369,7 +369,7 @@ def test_data_write_n2p2_data_appended(data: Data):
     """
     Test that n2p2 data is appended to file without overwrite if output file already exists.
     """
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("test text\n")
 
@@ -643,7 +643,7 @@ def test_remove_outliers(
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/output.data", "tests/data/tests_output/output.data")
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     data.remove_outliers(
         energy_threshold=energy_threshold, force_threshold=force_threshold
     )
@@ -707,13 +707,13 @@ def test_analyse_extrapolations(
     [
         (
             0.0,
-            [],
+            [[]],
             "Removing 0 frames for having atoms within minimum separation.\n"
             "No frames to remove\n",
         ),
         (
             np.inf,
-            [0],
+            [[0]],
             "Removing 1 frames for having atoms within minimum separation.\n",
         ),
     ],
@@ -729,7 +729,7 @@ def test_trim_dataset_separation(
     Test that frames are removed (or not) as expected based on the separation value.
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     structure = list(data.all_structures.structure_dict.values())[0]
     for species in structure.all_species.species_list:
         species.min_separation = {"H": separation, "C": separation, "O": separation}
@@ -740,7 +740,7 @@ def test_trim_dataset_separation(
 
     assert remove_indices == expected_indices
     assert capsys.readouterr().out == stdout
-    if len(expected_indices) > 0:
+    if len(expected_indices[0]) > 0:
         assert isfile(
             join("tests/data/tests_output/input.data.minimum_separation_backup")
         )
@@ -872,7 +872,7 @@ def test_rebuild_dataset(
         f.write(settings)
     with open("tests/data/tests_output/scaling.data", "w") as f:
         f.write(scaling)
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = ["H"]
     difference = np.array(
         [
@@ -957,7 +957,7 @@ def test_rebuild_dataset_errors(
         f.write(settings)
     with open("tests/data/tests_output/scaling.data", "w") as f:
         f.write("1 1 0.0 1.0 0.5 1.0\n1 2 0.0 2.0 1.0 2.0\n1 3 0.0 3.0 1.5 3.0\n")
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = ["H"]
 
     with pytest.raises(ValueError) as e:
@@ -1007,7 +1007,7 @@ def test_write_n2p2_data_qe(data: Data):
         "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
     )
     copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -1044,7 +1044,7 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
     copy(
         "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
     )
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -1111,7 +1111,7 @@ def test_remove_n2p2_normalisation(data: Data):
         f.write("Output file.")
     with open("tests/data/tests_output/evsv.dat", "w") as f:
         f.write("EVSV file.")
-    data.n2p2_directory = "tests/data/tests_output"
+    data.n2p2_directories = ["tests/data/tests_output"]
 
     data.remove_n2p2_normalisation()
 
