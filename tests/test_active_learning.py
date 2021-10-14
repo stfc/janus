@@ -132,7 +132,7 @@ def active_learning(data: Data) -> ActiveLearning:
 
 
 def prepare_mode1_files(files: List[str] = None):
-    """ Mocks the mode1 files for testing. """
+    """Mocks the mode1 files for testing."""
     mkdir("tests/data/tests_output/mode1")
     mkdir("tests/data/tests_output/mode1/test_npt_hdnnp1_t325_p1.0_1")
     for f in listdir("tests/data/active_learning/mode1/test_npt_hdnnp1_t325_p1.0_1"):
@@ -145,7 +145,7 @@ def prepare_mode1_files(files: List[str] = None):
 
 
 def prepare_mode2_files():
-    """ Mocks the mode2 files for testing. """
+    """Mocks the mode2 files for testing."""
     copytree("tests/data/active_learning/mode2", "tests/data/tests_output/mode2")
 
     with open("tests/data/tests_output/mode2/HDNNP_1/mode_2.out", "w") as f:
@@ -165,7 +165,10 @@ def test_init_len_n2p2_directories(data: Data):
             data_controller=data,
         )
 
-    assert str(e.value) == "`data_controller.n2p2_directories` must have 2 entries, but had 0"
+    assert (
+        str(e.value)
+        == "`data_controller.n2p2_directories` must have 2 entries, but had 0"
+    )
 
 
 def test_init_integrators(data: Data):
@@ -180,7 +183,7 @@ def test_init_integrators(data: Data):
 
 
 def test_init_npt_no_pressures(data: Data):
-    """ Test that not providing pressures raises an error for the "npt" integrator. """
+    """Test that not providing pressures raises an error for the "npt" integrator."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -232,7 +235,10 @@ def test_init_N_steps(data: Data):
 
 
 def test_init_dump_lammpstrj(data: Data):
-    """ """
+    """
+    Test that when `dump_lammpstrj` is less than the `min_t_separation_interpolation` of a
+    Structure then a ValueError is raised.
+    """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -247,7 +253,7 @@ def test_init_dump_lammpstrj(data: Data):
 
 
 def test_init_max_len_joblist(data: Data):
-    """ """
+    """Test that a negative values for `max_len_joblist` raises a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -261,7 +267,10 @@ def test_init_max_len_joblist(data: Data):
 
 
 def test_init_comment_name_keyword(data: Data):
-    """ """
+    """
+    Test that setting `comment_name_keyword` to `None` raises a ValueError when
+    the `name` of a Structure is not `None`.
+    """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -275,7 +284,9 @@ def test_init_comment_name_keyword(data: Data):
 
 
 def test_init_structure_names_none(all_species: AllSpecies):
-    """ """
+    """
+    Test that using a combination of str and `None` for Structure `name`s raises a TypeError.
+    """
     structure_0 = Structure(
         name="test", all_species=all_species, delta_E=1.0, delta_F=1.0
     )
@@ -298,13 +309,12 @@ def test_init_structure_names_none(all_species: AllSpecies):
         )
 
     assert str(e.value) == (
-        "Individual structure names cannot be set to None. You have to specify"
-        " an array of structure names or use structure_names = None."
+        "Individual structure names cannot be set to None when using multiple Structures."
     )
 
 
 def test_init_initial_tolerance(data: Data):
-    """ """
+    """Test that values of `initial_tolerance` <= 1 rause a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -315,7 +325,8 @@ def test_init_initial_tolerance(data: Data):
 
 
 def test_init_len_tolerances(data: Data):
-    """ """
+    """Test that a value of `initial_tolerance` greater than the length of `tolerances` raises
+    a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
             data_controller=data,
@@ -335,7 +346,7 @@ def test_write_validate_timesteps_warning(
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
-    """ """
+    """Test that a warning is printed for timesteps larger than 0.01 ps."""
     active_learning._validate_timesteps(
         timestep=0.02,
         N_steps=active_learning.N_steps,
@@ -346,7 +357,8 @@ def test_write_validate_timesteps_warning(
 
 
 def test_write_validate_timesteps_N_steps(active_learning: ActiveLearning):
-    """ """
+    """Test that a ValueError is raised if `t_separation_interpolation_checks` is larger than
+    a fifth of the totoal number of steps `N_steps`."""
     with pytest.raises(ValueError) as e:
         active_learning._validate_timesteps(
             timestep=0.02,
@@ -355,7 +367,7 @@ def test_write_validate_timesteps_N_steps(active_learning: ActiveLearning):
         )
 
     assert str(e.value) == (
-        "`t_separation_interpolation_checks=10000` must less than a fifth of "
+        "`t_separation_interpolation_checks=10000` must be less than a fifth of "
         "`N_steps=1` for all structures"
     )
 
@@ -363,7 +375,8 @@ def test_write_validate_timesteps_N_steps(active_learning: ActiveLearning):
 def test_write_validate_timesteps_min_t_separation_interpolation(
     all_species: AllSpecies, active_learning: ActiveLearning
 ):
-    """ """
+    """Test that if `t_separation_interpolation_checks` is less than
+    `min_t_separation_interpolation`, a ValueError is raised."""
     structure = Structure(
         name=None,
         all_species=all_species,
@@ -519,7 +532,7 @@ def test_write_input_lammps_errors(
 ):
     """
     Test the `_input_write_lammps` function is successful for both `atom_style` values and
-    lattice periodicites, leading to differences in the dump command.
+    lattice periodicities, leading to differences in the dump command.
     """
     output_directory = "tests/data/tests_output"
     active_learning.periodic = periodic
@@ -654,7 +667,7 @@ def test_write_lammps_mode1_error(active_learning: ActiveLearning):
 
 @pytest.mark.parametrize("file", ["input.nn", "scaling.data"])
 def test_write_lammps_missing_file_error(active_learning: ActiveLearning, file: str):
-    """ """
+    """Tests that if scaling or input files are missing, then an Error is raised."""
     with open("tests/data/tests_output/simulation.lammps", "w") as f:
         f.write("run 5")
     remove("tests/data/n2p2_copy/" + file)
@@ -795,7 +808,8 @@ def test_read_lammpstrj(active_learning: ActiveLearning):
 
 
 def test_prepare_lammps_trajectory(active_learning: ActiveLearning):
-    """ """
+    """Test that calling `prepare_lammps_trajectory` results in the extrapolation
+    data being written to file."""
     # Generate the mode1 directory
     with open("tests/data/tests_output/simulation.lammps", "w") as f:
         f.write("run 5")
@@ -812,7 +826,10 @@ def test_prepare_lammps_trajectory(active_learning: ActiveLearning):
 
 
 def test_get_paths_os_error(active_learning: ActiveLearning):
-    """ """
+    """
+    Test that an Error is raised when attempting to `_get_paths` for an unknown
+    `structure_name`.
+    """
     structure_name = "missing"
 
     with pytest.raises(Exception) as e:
@@ -822,7 +839,9 @@ def test_get_paths_os_error(active_learning: ActiveLearning):
 
 
 def test_get_paths_value_error(active_learning: ActiveLearning):
-    """ """
+    """
+    Test that an Error is raised if the mode1 subdirectory contains no finished simulations.
+    """
     mkdir("tests/data/tests_output/mode1")
     mkdir("tests/data/tests_output/mode1/nve_hdnnp")
 
@@ -1166,7 +1185,10 @@ def test_get_timesteps(
     expected_smalls: np.ndarray,
     stdout: str,
 ):
-    """ """
+    """
+    Test that `get_timesteps` returns the expected outcome(s) and prints the expected
+    information for a variety of initial conditions.
+    """
     active_learning.initial_tolerance = 2
     active_learning.tolerances = tolerances
     structure = list(active_learning.all_structures.structure_dict.values())[0]
@@ -1207,7 +1229,8 @@ def test_get_timesteps(
 def test_prepare_data_new(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """ """
+    """Test that creating "input.data-new" results in the expected stdout, and that if
+    called again then a warning is printed that the existing file will be re-used."""
     prepare_mode1_files()
 
     active_learning.prepare_data_new()
@@ -1225,7 +1248,8 @@ def test_prepare_data_new(
 def test_prepare_data_new_name_none(
     all_species: AllSpecies, capsys: pytest.CaptureFixture
 ):
-    """ """
+    """Test that `prepare_data_new` does not print the name of the Structure in the case
+    where we only have one without a defined name."""
     prepare_mode1_files()
     copy("tests/data/scripts/template.sh", "tests/data/tests_output/template.sh")
     structure = Structure(name=None, all_species=all_species, delta_E=1.0, delta_F=1.0)
@@ -1250,7 +1274,8 @@ def test_prepare_data_new_name_none(
 def test_prepare_data_add(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """"""
+    """Test that calling `prepare_data_add` gives the expected stdout,
+    including values of timings and numbers of structures."""
     prepare_mode2_files()
 
     active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
@@ -1278,7 +1303,9 @@ def test_prepare_data_add(
 def test_prepare_data_add_call_prepare_data_new(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """"""
+    """Test that in the case that `active_learning.positions` etc. are not set,
+    then `prepare_data_new` is called (evidenced by its stdout). In the case where the
+    variables are not set but the "input.data-new" is present, it should be read instead."""
     prepare_mode1_files()
     prepare_mode2_files()
 
@@ -1326,7 +1353,8 @@ def test_prepare_data_add_call_prepare_data_new(
 def test_prepare_data_add_normalisation(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """"""
+    """Test that if normalisation is present in the N2P2 headers,
+    then this is applied to the energy and force threshold values."""
     prepare_mode2_files()
 
     active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
@@ -1355,10 +1383,9 @@ def test_prepare_data_add_normalisation(
     )
 
 
-def test_prepare_data_add_mixed_normalisation(
-    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
-):
-    """"""
+def test_prepare_data_add_mixed_normalisation(active_learning: ActiveLearning):
+    """Test that a ValueError is raised if the two "input.nn" files
+    have different normalisation headers."""
     prepare_mode2_files()
 
     active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
@@ -1368,7 +1395,8 @@ def test_prepare_data_add_mixed_normalisation(
     active_learning.positions = np.array([[[0, 0, 0]]])
     active_learning.statistics = np.array([["small", "H", "0", "0"]])
     active_learning.data_controller.n2p2_directories = [
-        "tests/data/n2p2_copy", "tests/data/n2p2",
+        "tests/data/n2p2_copy",
+        "tests/data/n2p2",
     ]
     copy("tests/data/n2p2_copy/input.nn.norm", "tests/data/n2p2_copy/input.nn")
 
@@ -1396,7 +1424,8 @@ def test_prepare_data_add_error(active_learning: ActiveLearning):
 def test_print_statistics_no_selection(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """ """
+    """Test that if we do not have any statistics,
+    then no information relating to them is printed."""
     prepare_mode2_files()
     statistics = np.array([[]])
     selection = np.array([0])
@@ -1406,7 +1435,7 @@ def test_print_statistics_no_selection(
         selection=selection, statistics=statistics, names=names
     )
 
-    assert capsys.readouterr().out + "1 missing structures were identified.\n"
+    assert capsys.readouterr().out == "1 missing structures were identified.\n"
 
 
 def test_print_statistics_multiple_names(
@@ -1414,7 +1443,8 @@ def test_print_statistics_multiple_names(
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
-    """ """
+    """Test that if multiple Structures are present then we separate the information
+    with headings when printing."""
     prepare_mode2_files()
 
     structure_0 = Structure(
@@ -1795,7 +1825,7 @@ def test_read_data(active_learning: ActiveLearning):
 def test_get_structure(
     active_learning: ActiveLearning,
 ):
-    """"""
+    """Test that all properties are correctly extracted from the data."""
     data = [
         "ITEM: TIMESTEP",
         "0",
@@ -1826,7 +1856,8 @@ def test_check_structure(
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
-    """"""
+    """Test that `_check_structure` prints a warning
+    when an overly small atomic separation is present."""
     path = "test"
     timestep = 1
     lattice = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
@@ -1866,7 +1897,9 @@ def test_read_structures(
     selected_timestep: List[int],
     expected_index: List[int],
 ):
-    """"""
+    """
+    Test that for a variety of different `selected_timestep`s, the correct index is returned.
+    """
     path = "test_npt_hdnnp1_t325_p1.0_1"
     extrapolation_data = np.array([-1, -1, -1, 521, -1])
     n_small = 2
@@ -1904,7 +1937,9 @@ def test_read_structures(
 def test_write_data_append(
     active_learning: ActiveLearning,
 ):
-    """"""
+    """
+    Test that if appending data to an existing file, a trailing newline is inserted.
+    """
     with open("tests/data/tests_output/test.data", "w") as f:
         f.write("no trailing newline")
 

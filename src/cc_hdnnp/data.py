@@ -91,7 +91,9 @@ class Data:
         self.scripts_directory = join_paths(main_directory, scripts_sub_directory)
         if isinstance(n2p2_sub_directories, str):
             n2p2_sub_directories = [n2p2_sub_directories]
-        self.n2p2_directories = [join_paths(main_directory, s) for s in n2p2_sub_directories]
+        self.n2p2_directories = [
+            join_paths(main_directory, s) for s in n2p2_sub_directories
+        ]
         self.active_learning_directory = join_paths(
             main_directory, active_learning_sub_directory
         )
@@ -214,6 +216,8 @@ class Data:
                 )
                 for atom in atoms:
                     text += "\n" + " ".join(atom)
+                # Depending on what method of training set generation we use, it may be
+                # appropriate to generate a single, or multiple xyz files
                 if single_output:
                     with open(join_paths(self.main_directory, file_xyz), "a") as f:
                         f.write(text + "\n")
@@ -555,7 +559,7 @@ class Data:
                         )
 
                     batch_scripts.append(
-                        join_paths(self.main_directory, file_batch.format(file_id))
+                        join_paths(self.scripts_directory, file_batch.format(file_id))
                     )
 
                     batch_text = batch_text_template.format(
@@ -581,7 +585,7 @@ class Data:
         with open(join_paths(self.scripts_directory, file_bash), "w") as f:
             f.write(bash_text)
 
-        return "bash {}".format(self.scripts_directory + file_bash)
+        return "bash {}".format(file_bash)
 
     def write_qe_input(
         self,
@@ -787,7 +791,6 @@ rm -f tmp.pp
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.
-
         """
         submit_all_text = ""
         for t in temperatures:
@@ -958,6 +961,7 @@ rm -f tmp.pp
         temperatures: List[int],
         pressures: List[int],
         valences: Dict[str, int],
+        selection: Tuple[int, int] = (0, 1),
         qe_directory: str = "qe",
         file_qe_log: str = "T{temperature}-p{pressure}-{index}/{structure_name}.log",
         file_qe_charges: str = "T{temperature}-p{pressure}-{index}/ACF.dat",
@@ -980,6 +984,9 @@ rm -f tmp.pp
         valences: dict of str, int
             The valences of the species comprising `strucuture`. The keys should be the
             chemical symbols, with positive int values.
+        selection: tuple of int
+            Allows for subsampling of the trajectory files. First entry is the index of the
+            first frame to use, second allows for every nth frame to be selected.
         qe_directory: str
             Directory for all Quantum Espresso files and sub directories. Default is "qe".
         file_qe_log: str
@@ -1027,85 +1034,90 @@ rm -f tmp.pp
                     index=":",
                 )
                 for index, frame in enumerate(trajectory):
-                    full_filepath = join_paths(
-                        self.main_directory,
-                        qe_directory,
-                        file_qe_log.format(
-                            structure_name=structure_name,
-                            temperature=temperature,
-                            pressure=pressure,
-                            index=index,
-                        ),
-                    )
-                    charge_filepath = join_paths(
-                        self.main_directory,
-                        qe_directory,
-                        file_qe_charges.format(
-                            temperature=temperature,
-                            pressure=pressure,
-                            index=index,
-                        ),
-                    )
-                    if exists(full_filepath):
-                        if n2p2_units["length"] != "Ang":
-                            frame.set_cell(
-                                frame.get_cell() / self.units[n2p2_units["length"]],
-                                scale_atoms=True,
-                            )
-
-                        if exists(charge_filepath):
-                            charges = self.read_charges_qe(charge_filepath, len(frame))
-                        else:
-                            charges = None
-
-                        with open(full_filepath) as f:
-                            lines = f.readlines()
-                        for i, line in enumerate(lines):
-                            if line.startswith("!    total energy"):
-                                energy = (
-                                    float(line.split()[4])
-                                    * self.units[line.split()[5]]
-                                    / self.units[n2p2_units["energy"]]
-                                )
-                            elif line.startswith("     Forces acting on atoms"):
-                                forces = [
-                                    force_line.split()[-3:]
-                                    for force_line in lines[i + 2 : i + 2 + len(frame)]
-                                ]
-                                forces = np.array(forces).astype(float)
-                                qe_force_unit = line.split()[-1][:-2]
-                                forces *= self.units[qe_force_unit.split("/")[0]]
-                                forces /= self.units[qe_force_unit.split("/")[1]]
-                                forces /= self.units[n2p2_units["energy"]]
-                                forces *= self.units[n2p2_units["length"]]
-
-                        text += "begin\n"
-                        text += "comment frame_index={0} units={1}\n".format(
-                            index, n2p2_units
+                    if index >= selection[0] and index % selection[1] == 0:
+                        full_filepath = join_paths(
+                            self.main_directory,
+                            qe_directory,
+                            file_qe_log.format(
+                                structure_name=structure_name,
+                                temperature=temperature,
+                                pressure=pressure,
+                                index=index,
+                            ),
                         )
-                        text += "comment structure {}\n".format(structure_name)
-                        for vector in frame.get_cell():
-                            text += "lattice {} {} {}\n".format(*vector)
+                        charge_filepath = join_paths(
+                            self.main_directory,
+                            qe_directory,
+                            file_qe_charges.format(
+                                temperature=temperature,
+                                pressure=pressure,
+                                index=index,
+                            ),
+                        )
+                        if exists(full_filepath):
+                            if n2p2_units["length"] != "Ang":
+                                frame.set_cell(
+                                    frame.get_cell() / self.units[n2p2_units["length"]],
+                                    scale_atoms=True,
+                                )
 
-                        symbols = frame.get_chemical_symbols()
-                        positions = frame.get_positions()
-                        for i in range(len(frame)):
-                            if charges is None or len(frame) > len(charges):
-                                charge = 0.0
+                            if exists(charge_filepath):
+                                charges = self.read_charges_qe(
+                                    charge_filepath, len(frame)
+                                )
                             else:
-                                charge = valences[symbols[i]] - charges[i]
-                            text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
-                                *positions[i],
-                                symbols[i],
-                                charge,
-                                *forces[i],
-                            )
+                                charges = None
 
-                        text += "energy {}\n".format(energy)
-                        text += "charge {}\n".format(0.0)
-                        text += "end\n"
-                    else:
-                        print("{} not found, skipping".format(full_filepath))
+                            with open(full_filepath) as f:
+                                lines = f.readlines()
+                            for i, line in enumerate(lines):
+                                if line.startswith("!    total energy"):
+                                    energy = (
+                                        float(line.split()[4])
+                                        * self.units[line.split()[5]]
+                                        / self.units[n2p2_units["energy"]]
+                                    )
+                                elif line.startswith("     Forces acting on atoms"):
+                                    forces = [
+                                        force_line.split()[-3:]
+                                        for force_line in lines[
+                                            i + 2 : i + 2 + len(frame)
+                                        ]
+                                    ]
+                                    forces = np.array(forces).astype(float)
+                                    qe_force_unit = line.split()[-1][:-2]
+                                    forces *= self.units[qe_force_unit.split("/")[0]]
+                                    forces /= self.units[qe_force_unit.split("/")[1]]
+                                    forces /= self.units[n2p2_units["energy"]]
+                                    forces *= self.units[n2p2_units["length"]]
+
+                            text += "begin\n"
+                            text += "comment frame_index={0} units={1}\n".format(
+                                index, n2p2_units
+                            )
+                            text += "comment structure {}\n".format(structure_name)
+                            for vector in frame.get_cell():
+                                text += "lattice {} {} {}\n".format(*vector)
+
+                            symbols = frame.get_chemical_symbols()
+                            positions = frame.get_positions()
+                            for i in range(len(frame)):
+                                if charges is None or len(frame) > len(charges):
+                                    charge = 0.0
+                                else:
+                                    charge = valences[symbols[i]] - charges[i]
+                                text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
+                                    *positions[i],
+                                    symbols[i],
+                                    charge,
+                                    *forces[i],
+                                )
+
+                            text += "energy {}\n".format(energy)
+                            text += "charge {}\n".format(0.0)
+                            text += "end\n"
+                        else:
+                            print("{} not found, skipping".format(full_filepath))
 
         if len(text) == 0:
             raise IOError("No files found.")
@@ -1435,7 +1447,7 @@ rm -f tmp.pp
             "nodes": nodes,
             "job_array": "#SBATCH --array=1-{}".format(len(self.n2p2_directories)),
         }
-    
+
         output_text = batch_template_text.format(**format_dict)
         output_text += "\nn2p2_directories=( "
         for n2p2_directory in self.n2p2_directories:
@@ -1564,12 +1576,12 @@ rm -f tmp.pp
         elements.sort()
         elements_map = '"'
         masses = ""
-        elements = ""
+        elements_text = ""
         for i, element in enumerate(elements):
             elements_map += "{0}:{1},".format(i + 1, element)
             species = structure.all_species.get_species(element)
             masses += "mass {} {}\n".format(i + 1, species.mass)
-            elements += " {}".format(element)
+            elements_text += " {}".format(element)
 
         elements_map = elements_map[:-1] + '"'
 
@@ -1617,26 +1629,17 @@ rm -f tmp.pp
 
         pair_coeff = "pair_coeff * * {}".format(r_cutoff)
 
-        # output_text = template_text.format(
-        #     pair_commands=pair_style + "\n" + pair_coeff,
-        #     lammps_unit_style=lammps_unit_style,
-        #     elements=elements,
-        #     masses=masses,
-        # )
         format_template_file(
             template_file=join_paths(self.main_directory, file_lammps_template),
             formatted_file=join_paths(self.main_directory, file_out),
             format_dict={
                 "pair_commands": pair_style + "\n" + pair_coeff,
                 "lammps_unit_style": lammps_unit_style,
-                "elements": elements,
+                "elements": elements_text,
                 "masses": masses,
                 "n_steps": str(n_steps),
             },
         )
-
-        # with open(join_paths(self.main_directory, file_out), "w") as f:
-        #     f.write(output_text)
 
     def _write_active_learning_lammps_script(
         self,
@@ -1862,7 +1865,9 @@ rm -f tmp.pp
             pass
         else:
             with open(
-                join_paths(self.n2p2_directories[n2p2_directory_index], "learning-curve.out")
+                join_paths(
+                    self.n2p2_directories[n2p2_directory_index], "learning-curve.out"
+                )
             ) as f:
                 lines = f.readlines()
             content = []
@@ -1896,7 +1901,9 @@ rm -f tmp.pp
                 self.n2p2_directories[n2p2_directory_index],
                 "weights.{0:03d}.{1:06d}.out".format(z, epoch),
             )
-            dst = join_paths(self.n2p2_directories[n2p2_directory_index], file_out.format(z))
+            dst = join_paths(
+                self.n2p2_directories[n2p2_directory_index], file_out.format(z)
+            )
             copy(src=src, dst=dst)
 
     def write_extrapolations_lammps_script(
@@ -2090,9 +2097,7 @@ rm -f tmp.pp
         all_remove_indices = []
         for n2p2_directory in self.n2p2_directories:
             remove_indices = []
-            data = read_data_file(
-                join_paths(n2p2_directory, data_file_in)
-            )
+            data = read_data_file(join_paths(n2p2_directory, data_file_in))
             for i, frame_data in enumerate(data):
                 if not check_structure(
                     lattice=frame_data[0] * self.units[data_file_unit],

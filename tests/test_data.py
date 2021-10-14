@@ -58,18 +58,32 @@ def test_data_read_trajectory_bohr(data: Data):
 
 
 @pytest.mark.parametrize(
-    "file_xyz", ["tests_output/{}.xyz", "tests_output/sub_directory/{}.xyz"]
+    "file_xyz, single_output",
+    [
+        ("tests_output/{}.xyz", False),
+        ("tests_output/sub_directory/{}.xyz", False),
+        ("tests_output/file.xyz", True),
+        ("tests_output/sub_directory/file.xyz", True),
+    ],
 )
-def test_data_convert_active_learning_to_xyz(data: Data, file_xyz: str):
+def test_data_convert_active_learning_to_xyz(
+    data: Data, file_xyz: str, single_output: bool
+):
     """
     Test that active learning structures can be written in xyz format, creating a subdirectory
-    if needed.
+    if needed, and a trailing newline if writing multiple frames to one file.
     """
     data.convert_active_learning_to_xyz(
-        file_structure="input.data-add", file_xyz=file_xyz
+        file_structure="input.data-add",
+        file_xyz=file_xyz,
+        single_output=single_output,
     )
 
-    assert isfile("tests/data/" + file_xyz.format(0))
+    file_out = "tests/data/" + file_xyz.format(0)
+    assert isfile(file_out)
+    with open(file_out) as f:
+        text = f.read()
+    assert text.endswith("\n") == single_output
 
 
 def test_data_write_xyz(data: Data):
@@ -487,6 +501,17 @@ def test_data_format_lammps_input(data: Data):
     )
 
     assert isfile("tests/data/tests_output/md.lmp")
+    with open("tests/data/tests_output/md.lmp") as f:
+        lines = f.readlines()
+    assert "units electron\n" == lines[7]
+    assert "mass 1 1.0\n" == lines[11]
+    assert (
+        'pair_style nnp dir n2p2 showew no showewsum 10 resetew no maxew 100 emap "1:H"\n'
+        == lines[19]
+    )
+    assert "pair_coeff * * 6.35\n" == lines[20]
+    assert "dump_modify     cust element  H\n" == lines[27]
+    assert "run 1000\n" == lines[32]
 
 
 @pytest.mark.parametrize(
@@ -519,7 +544,8 @@ def test_data_format_lammps_input_units(
     assert isfile("tests/data/tests_output/md.lmp")
     with open("tests/data/tests_output/md.lmp") as f:
         lines = f.readlines()
-        assert "cflength {0} cfenergy {1}".format(cflength, cfenergy) in lines[20]
+    assert "units {}\n".format(lammps_unit_style) == lines[7]
+    assert "cflength {0} cfenergy {1}".format(cflength, cfenergy) in lines[19]
 
 
 def test_data_format_lammps_input_unknown_units(data: Data):

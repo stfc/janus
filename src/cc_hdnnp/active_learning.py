@@ -225,8 +225,8 @@ class ActiveLearning:
         if len(structures) > 1:
             if any(s.name is None for s in structures):
                 raise TypeError(
-                    "Individual structure names cannot be set to None. You have to specify"
-                    " an array of structure names or use structure_names = None."
+                    "Individual structure names cannot be set to None when using multiple "
+                    "Structures."
                 )
 
         if initial_tolerance <= 1:
@@ -291,7 +291,7 @@ class ActiveLearning:
 
             if s.t_separation_interpolation_checks * 5 >= N_steps:
                 raise ValueError(
-                    "`t_separation_interpolation_checks={0}` must less than a fifth of "
+                    "`t_separation_interpolation_checks={0}` must be less than a fifth of "
                     "`N_steps={1}` for all structures"
                     "".format(s.t_separation_interpolation_checks, N_steps)
                 )
@@ -323,13 +323,9 @@ class ActiveLearning:
         xyzs = []
         qs = []
 
-        with open(
-            join(self.data_controller.n2p2_directories[0], "input.data")
-         ) as f:
+        with open(join(self.data_controller.n2p2_directories[0], "input.data")) as f:
             with open(
-                join(
-                    self.data_controller.n2p2_directories[1], "input.data"
-                )
+                join(self.data_controller.n2p2_directories[1], "input.data")
             ) as f_2:
                 for line in f.readlines():
                     if line != f_2.readline():
@@ -730,7 +726,9 @@ class ActiveLearning:
                 for j in (0, 1):
                     HDNNP = str(j + 1)
                     nn_file = join(self.data_controller.n2p2_directories[j], "input.nn")
-                    scaling_file = join(self.data_controller.n2p2_directories[j], "scaling.data")
+                    scaling_file = join(
+                        self.data_controller.n2p2_directories[j], "scaling.data"
+                    )
                     if not isfile(nn_file):
                         raise IOError("{} not found".format(nn_file))
                     if not isfile(scaling_file):

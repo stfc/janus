@@ -9,9 +9,7 @@ units {lammps_unit_style}
 boundary p p p
 atom_style atomic
 read_data "lammps.data"
-mass 1 12.011
-mass 2 1.00794
-mass 3 15.9994
+{masses}
 timestep 0.0005
 thermo 1
 
@@ -24,9 +22,10 @@ thermo 1
 # INTEGRATOR
 ###############################################################################
 fix INT all nve
-dump 1 all atom 1 traj.dump
+dump            cust all custom 1 "../lammps/custom_nve.dump" element x y z vx vy vz fx fy fz
+dump_modify     cust element {elements}
 
 ###############################################################################
 # SIMULATION
 ###############################################################################
-run 5
+run {n_steps}

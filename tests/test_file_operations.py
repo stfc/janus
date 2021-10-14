@@ -39,7 +39,7 @@ def test_format_template_file(
 
 @pytest.mark.parametrize("extrapolation_free_timesteps_expected", [162, 100])
 def test_read_lammps_log(extrapolation_free_timesteps_expected: int):
-    """ """
+    """Test that for a mocked lammps.log file, we read the expected number of timesteps."""
     if extrapolation_free_timesteps_expected > 161:
         extrapolation_free_lines_expected = -1
     else:
@@ -76,7 +76,7 @@ def test_read_lammps_log(extrapolation_free_timesteps_expected: int):
 
 
 def test_read_lammps_log_errors():
-    """ """
+    """Test that we raise a ValueError for an empty log.lammps file."""
     log_lammps_file = "tests/data/tests_output/log.lammps"
     with open(log_lammps_file, "w"):
         pass
