@@ -6,21 +6,28 @@ Class for containing information about atomic species in the structure of intere
 from typing import Dict, List, Tuple
 
 from ase.atoms import Atoms
+from ase.data import atomic_masses, atomic_numbers, chemical_symbols
 import numpy as np
 
 
 class Species:
     """
-    Holds information about a single atomic species.
+    Holds information about a single atomic species. One of either `symbol` or `atomic_number`
+    must be provided. `mass` will be taken from ASE, unless it is provided in which case that
+    take precedence.
 
     Parameters
     ----------
-    symbol : str
+    symbol : str, optional
         Chemical symbol
-    atomic_number : int
+    atomic_number : int, optional
         Atomic number
-    mass : float
+    mass : float, optional
         Mass of the species in AMU.
+    valence : int, optional
+        The number of valence electrons the species has. This is used when calculating relative
+        charges using Quantum Espresso, and so is not needed if using CP2K or if charges are not
+        required. Default is None.
     min_separation : dict of [str, float], optional
         The minimum allowed distance between atoms of this species and those of other species.
         The keys should be the chemical symbols of atomic species (including this one), with the
@@ -29,18 +36,52 @@ class Species:
 
     def __init__(
         self,
-        symbol: str,
-        atomic_number: int,
-        mass: float,
+        symbol: str = None,
+        atomic_number: int = None,
+        mass: float = None,
+        valence: int = None,
         min_separation: Dict[str, float] = None,
     ):
-        self.symbol = symbol
-        self.atomic_number = atomic_number
-        self.mass = mass
+        if symbol is not None and atomic_number is not None:
+            if symbol != chemical_symbols[atomic_number]:
+                raise ValueError(
+                    "Provided symbol {} does not match provided atomic number {}"
+                    "".format(symbol, atomic_number)
+                )
+            self.symbol = symbol
+            self.atomic_number = atomic_number
+        elif symbol is not None:
+            self.symbol = symbol
+            self.atomic_number = atomic_numbers[symbol]
+        elif atomic_number is not None:
+            self.symbol = chemical_symbols[atomic_number]
+            self.atomic_number = atomic_number
+        else:
+            raise ValueError(
+                "At least one of `symbol` or `atomic_number` must be provided.`"
+            )
+
+        if mass is not None:
+            self.mass = mass
+        else:
+            self.mass = atomic_masses[self.atomic_number]
+
+        if valence is not None:
+            if valence < 0:
+                raise ValueError(
+                    "`valence` must not be negative, but was {}.".format(valence)
+                )
+            elif valence > self.atomic_number:
+                raise ValueError(
+                    "`valence` cannot be greater than the `atomic_number`, but they were "
+                    "{}, {}.".format(valence, self.atomic_number)
+                )
+        self.valence = valence
+
         self.min_separation = min_separation
 
 
-class AllSpecies:
+class AllSpecies(List[Species]):
     """
     Holds information about all atomic species in the structure.
 
@@ -61,9 +102,9 @@ class AllSpecies:
     """
 
     def __init__(self, *species: Species, global_separation: float = 0.5):
-        self.species_list = list(species)
-        self.species_list.sort(key=lambda x: x.atomic_number)
-        for single_species in self.species_list:
+        super().__init__(species)
+        self.sort(key=lambda x: x.atomic_number)
+        for single_species in self:
             if single_species.min_separation is None:
                 # If `min_separation` is not set, use the global value for all species
                 single_species.min_separation = {
@@ -83,7 +124,7 @@ class AllSpecies:
         -------
         list of str
         """
-        return [single_species.symbol for single_species in self.species_list]
+        return [single_species.symbol for single_species in self]
 
     @property
     def atomic_number_list(self) -> List[int]:
@@ -94,7 +135,7 @@ class AllSpecies:
         -------
         list of int
         """
-        return [single_species.atomic_number for single_species in self.species_list]
+        return [single_species.atomic_number for single_species in self]
 
     @property
     def mass_list(self):
@@ -105,7 +146,7 @@ class AllSpecies:
         -------
         list of str
         """
-        return [single_species.mass for single_species in self.species_list]
+        return [single_species.mass for single_species in self]
 
     def get_species(self, symbol: str) -> Species:
         """
@@ -122,7 +163,7 @@ class AllSpecies:
         """
         try:
             i = self.element_list.index(symbol)
-            return self.species_list[i]
+            return self[i]
         except ValueError as e:
             raise ValueError(
                 "No atomic species with symbol `{0}` present in `{1}`."
@@ -270,9 +311,9 @@ class Structure:
         self.exceptions = exceptions
 
 
-class AllStructures:
+class AllStructures(Dict[str, Structure]):
     """
-    Holds information about structures.
+    Dictionary with Structures as values, and their names as keys.
 
     Parameters
     ----------
@@ -286,14 +327,14 @@ class AllStructures:
     def __init__(self, *structures: Structure):
         if len(structures) == 0:
             raise ValueError("At least one `Structure` object must be passed.")
-        self.structure_dict: Dict[str, Structure] = {}
+        super().__init__()
         for structure in structures:
-            if structure.name in self.structure_dict.keys():
+            if structure.name in self.keys():
                 raise ValueError(
                     "Cannot have multiple structures with the name `{}`"
                     "".format(structure.name)
                 )
-            self.structure_dict[structure.name] = structure
+            self[structure.name] = structure
 
             if (
                 structure.all_species.element_list
@@ -317,7 +358,7 @@ class AllStructures:
         self.mass_list = structures[0].all_species.mass_list
 
 
-class Frame:
+class Frame(Atoms):
     """
     Holds information for a single frame of a `Structure`.
 
@@ -346,7 +387,7 @@ class Frame:
         forces: np.ndarray,
         energy: float,
     ):
-        self.atoms = Atoms(symbols=symbols, positions=positions, cell=lattice)
+        super().__init__(symbols=symbols, positions=positions, cell=lattice)
         self.forces = forces
         self.energy = energy
 
@@ -359,32 +400,21 @@ class Frame:
         -------
         ndarray of str
         """
-        return np.array(self.atoms.symbols)
-
-    @property
-    def positions(self) -> np.ndarray:
-        """
-        Get the positions of all constituent atoms, in order.
-
-        Returns
-        -------
-        ndarray of float
-        """
-        return np.array(self.atoms.positions)
+        return np.array(super().symbols)
 
     @property
     def lattice(self) -> np.ndarray:
         """
-        Get the chemical symbols of all constituent atoms, in order.
+        Get the the lattice vectors as a (3, 3) array.
 
         Returns
         -------
         ndarray of float
         """
-        return np.array(self.atoms.cell)
+        return np.array(super().cell)
 
 
-class Dataset:
+class Dataset(List[Frame]):
     """
     Holds a series of `Frame` objects representing a dataset.
 
@@ -398,7 +428,7 @@ class Dataset:
         self,
         data_file: str,
     ):
-        self.frames = self.read_data_file(data_file=data_file)
+        super().__init__(self.read_data_file(data_file=data_file))
 
     def read_data_file(
         self,

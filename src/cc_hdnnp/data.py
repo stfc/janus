@@ -83,7 +83,6 @@ class Data:
         self.units["au"] = self.units["Bohr"]
         self.all_structures = structures
         # TODO convert to getters
-        self.structure_names = structures.structure_dict.keys()
         self.elements = structures.element_list
         self.main_directory = main_directory
         self.lammps_executable = lammps_executable
@@ -245,7 +244,7 @@ class Data:
         Practically, if "input.data" is the `reference_file`, then the `energy_threshold` and
         `force_threshold` should be in the same units as that file, i.e. physical units. If
         "output.data" is used, then normalised thresholds can be given (i.e. setting the
-        theshold in multiples of the datasets standard deviations).
+        threshold in multiples of the datasets standard deviations).
 
         Note that scaling, normalising and pruning should be redone after this.
 
@@ -960,7 +959,6 @@ rm -f tmp.pp
         structure_name: str,
         temperatures: List[int],
         pressures: List[int],
-        valences: Dict[str, int],
         selection: Tuple[int, int] = (0, 1),
         qe_directory: str = "qe",
         file_qe_log: str = "T{temperature}-p{pressure}-{index}/{structure_name}.log",
@@ -981,9 +979,6 @@ rm -f tmp.pp
             All temperatures that Quantum Espresso was run for.
         pressures: list of int
             All pressures that Quantum Espresso was run for.
-        valences: dict of str, int
-            The valences of the species comprising `strucuture`. The keys should be the
-            chemical symbols, with positive int values.
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.
@@ -1010,7 +1005,7 @@ rm -f tmp.pp
             functions can use 'Ang' or 'Bohr' provided both do). Default is `None`, which will
             lead to `{'length': 'Bohr', 'energy': 'Ha', 'force': 'Ha / Bohr'}` being used.
         """
-        if structure_name not in self.structure_names:
+        if structure_name not in self.all_structures.keys():
             raise ValueError(
                 "`structure_name` {} not recognized".format(structure_name)
             )
@@ -1101,11 +1096,17 @@ rm -f tmp.pp
 
                             symbols = frame.get_chemical_symbols()
                             positions = frame.get_positions()
+                            all_species = self.all_structures[structure_name].all_species
                             for i in range(len(frame)):
-                                if charges is None or len(frame) > len(charges):
+                                valence = all_species.get_species(symbols[i]).valence
+                                if (
+                                    charges is None
+                                    or len(frame) != len(charges)
+                                    or valence is None
+                                ):
                                     charge = 0.0
                                 else:
-                                    charge = valences[symbols[i]] - charges[i]
+                                    charge = valence - charges[i]
                                 text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
                                     *positions[i],
                                     symbols[i],
@@ -1205,7 +1206,7 @@ rm -f tmp.pp
             >>>                   file_input='examples_combined/n2p2/input.data',
             >>>                   n_config=101)
         """
-        if structure_name not in self.structure_names:
+        if structure_name not in self.all_structures.keys():
             raise ValueError(
                 "`structure_name` {} not recognized".format(structure_name)
             )

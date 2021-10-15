@@ -493,7 +493,7 @@ def test_data_format_lammps_input(data: Data):
     Test that LAMMPS data is written successfully.
     """
     data.format_lammps_input(
-        structure=data.all_structures.structure_dict["test"],
+        structure=data.all_structures["test"],
         n_steps=1000,
         r_cutoff=6.35,
         file_lammps_template="lammps/template.lmp",
@@ -533,7 +533,7 @@ def test_data_format_lammps_input_units(
     (i.e. not the default "electron").
     """
     data.format_lammps_input(
-        structure=data.all_structures.structure_dict["test"],
+        structure=data.all_structures["test"],
         n_steps=1000,
         r_cutoff=6.35,
         file_lammps_template="lammps/template.lmp",
@@ -555,7 +555,7 @@ def test_data_format_lammps_input_unknown_units(data: Data):
     lammps_unit_style = "bad_units"
     with pytest.raises(ValueError) as e:
         data.format_lammps_input(
-            structure=data.all_structures.structure_dict["test"],
+            structure=data.all_structures["test"],
             n_steps=1000,
             r_cutoff=6.35,
             file_lammps_template="lammps/template.lmp",
@@ -756,8 +756,8 @@ def test_trim_dataset_separation(
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
     data.n2p2_directories = ["tests/data/tests_output"]
-    structure = list(data.all_structures.structure_dict.values())[0]
-    for species in structure.all_species.species_list:
+    structure = list(data.all_structures.values())[0]
+    for species in structure.all_species:
         species.min_separation = {"H": separation, "C": separation, "O": separation}
 
     remove_indices = data.trim_dataset_separation(
@@ -1013,7 +1013,7 @@ def test_prepare_qe(data: Data):
         qe_directory="tests_output",
         temperatures=[300],
         pressures=[1],
-        structure=data.all_structures.structure_dict["test"],
+        structure=data.all_structures["test"],
         pseudos=["H.pseudo"],
     )
     assert isdir("tests/data/tests_output/T300-p1-0")
@@ -1039,7 +1039,6 @@ def test_write_n2p2_data_qe(data: Data):
         structure_name="test",
         temperatures=[300],
         pressures=[1],
-        valences={"H": 1},
         qe_directory="tests_output",
     )
 
@@ -1051,7 +1050,6 @@ def test_write_n2p2_data_qe(data: Data):
         structure_name="test",
         temperatures=[300],
         pressures=[1],
-        valences={"H": 1},
         qe_directory="tests_output",
     )
 
@@ -1072,11 +1070,11 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
     )
     data.n2p2_directories = ["tests/data/tests_output"]
 
+    data.all_structures["test"].all_species.get_species("H").valence = 1
     data.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],
         pressures=[1],
-        valences={"H": 1},
         qe_directory="tests_output",
     )
 
@@ -1091,7 +1089,6 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
         structure_name="test",
         temperatures=[300],
         pressures=[1],
-        valences={"H": 1},
         qe_directory="tests_output",
     )
 
@@ -1118,7 +1115,6 @@ def test_write_n2p2_data_qe_errors(data: Data, structure_name: str, error: str):
             structure_name=structure_name,
             temperatures=[300],
             pressures=[1],
-            valences={"H": 1},
             qe_directory="tests_output",
         )
 

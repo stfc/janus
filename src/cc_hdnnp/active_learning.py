@@ -146,7 +146,7 @@ class ActiveLearning:
         if isinstance(pressures, float):
             pressures = [pressures]
 
-        structures = list(data_controller.all_structures.structure_dict.values())
+        structures = list(data_controller.all_structures.values())
         self._validate_timesteps(timestep, N_steps, structures)
 
         if len(data_controller.n2p2_directories) != 2:
@@ -682,7 +682,7 @@ class ActiveLearning:
         n_previous_simulations = 0
         counter = 0
 
-        for name, structure in self.all_structures.structure_dict.items():
+        for name, structure in self.all_structures.items():
             if name is None:
                 names = names_all
                 lattices = lattices_all
@@ -879,7 +879,7 @@ class ActiveLearning:
                 )
                 n_previous_simulations = n_simulations
 
-        if list(self.all_structures.structure_dict.keys())[0] is None:
+        if list(self.all_structures.keys())[0] is None:
             n_simulations += counter
             print("Input was generated for {0} simulations.".format(n_simulations))
 
@@ -2645,7 +2645,7 @@ class ActiveLearning:
         steps = []
         indices = []
         for i, structure_name in enumerate(ordered_structure_names):
-            structure = self.all_structures.structure_dict[structure_name]
+            structure = self.all_structures[structure_name]
             if list(statistics[i]) and structure.all_extrapolated_structures:
                 # If for a given simulated structure we have statistics and add
                 # `all_extrapolated_structures` for it, append to selection.
@@ -2685,9 +2685,9 @@ class ActiveLearning:
 
         max_extrapolated_structures = [
             s.max_extrapolated_structures
-            for s in self.all_structures.structure_dict.values()
+            for s in self.all_structures.values()
         ]
-        exceptions = [s.exceptions for s in self.all_structures.structure_dict.values()]
+        exceptions = [s.exceptions for s in self.all_structures.values()]
         if any(max_extrapolated_structures) or any(exceptions):
             # Reduce names to the updated selection, and those with "small" extrapolation
             statistics_reduced = statistics[selection]
@@ -2730,7 +2730,7 @@ class ActiveLearning:
                 if any(max_extrapolated_structures):
                     for i in statistics_unique:
                         structure_name_i = i.split(";")[0]
-                        structure_i = self.all_structures.structure_dict[
+                        structure_i = self.all_structures[
                             structure_name_i
                         ]
                         if structure_i.max_extrapolated_structures != 0:
@@ -2758,7 +2758,7 @@ class ActiveLearning:
 
                 if any(exceptions):
                     exceptions_unique = []
-                    for structure in self.all_structures.structure_dict.values():
+                    for structure in self.all_structures.values():
                         if structure.exceptions is not None:
                             for j in range(len(structure.exceptions)):
                                 exceptions_unique.append(
@@ -2830,7 +2830,7 @@ class ActiveLearning:
         names : np.ndarray
             Array of str, the names of the directories that the selected datapoints belong to.
         """
-        structure_names = self.all_structures.structure_dict.keys()
+        structure_names = self.all_structures.keys()
         if structure_names is not None and len(structure_names) > 1:
             for structure_name in structure_names:
                 print("Structure: {0}".format(structure_name))
@@ -2966,7 +2966,7 @@ class ActiveLearning:
         self.statistics = []
         self.names = []
         self.positions = []
-        for name, structure in self.all_structures.structure_dict.items():
+        for name, structure in self.all_structures.items():
             # Acquire the extrapolation information from all simulations
             if name is None:
                 paths = self._get_paths("")
@@ -3109,7 +3109,7 @@ class ActiveLearning:
             # the structure name
             structure_name_i = name.split("_")[0]
             ordered_structure_names.append(structure_name_i)
-            for structure_name, structure in self.all_structures.structure_dict.items():
+            for structure_name, structure in self.all_structures.items():
                 if structure_name == structure_name_i:
                     dE.append(structure.delta_E)
                     for _ in range(3 * len(self.positions[i])):

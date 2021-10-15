@@ -350,7 +350,7 @@ def test_write_validate_timesteps_warning(
     active_learning._validate_timesteps(
         timestep=0.02,
         N_steps=active_learning.N_steps,
-        structures=active_learning.all_structures.structure_dict.values(),
+        structures=active_learning.all_structures.values(),
     )
 
     assert capsys.readouterr().out == "WARNING: Very large timestep of 0.02 ps.\n"
@@ -363,7 +363,7 @@ def test_write_validate_timesteps_N_steps(active_learning: ActiveLearning):
         active_learning._validate_timesteps(
             timestep=0.02,
             N_steps=1,
-            structures=active_learning.all_structures.structure_dict.values(),
+            structures=active_learning.all_structures.values(),
         )
 
     assert str(e.value) == (
@@ -1191,7 +1191,7 @@ def test_get_timesteps(
     """
     active_learning.initial_tolerance = 2
     active_learning.tolerances = tolerances
-    structure = list(active_learning.all_structures.structure_dict.values())[0]
+    structure = list(active_learning.all_structures.values())[0]
 
     (
         selected_timesteps,
@@ -1590,7 +1590,7 @@ def test_improve_selection_reduce_selection(
         ["test0", "test0", "test0", "test1", "test1", "test1", "test1"]
     )
     active_learning.all_structures = all_structures
-    structures = list(all_structures.structure_dict.values())
+    structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
@@ -1626,7 +1626,7 @@ def test_improve_selection_max_extrapolated_structures(
     names = np.array(["test_s0", "test_s0"])
     ordered_structure_names = np.array(["test", "test"])
     active_learning.all_structures = all_structures
-    structures = list(all_structures.structure_dict.values())
+    structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
@@ -1662,7 +1662,7 @@ def test_improve_selection_exceptions(
     names = np.array(["test_s0"])
     ordered_structure_names = np.array(["test"])
     active_learning.all_structures = all_structures
-    structures = list(all_structures.structure_dict.values())
+    structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
@@ -1863,7 +1863,7 @@ def test_check_structure(
     lattice = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     element = np.array(["H", "H"])
     position = np.zeros((2, 3))
-    structure = active_learning.all_structures.structure_dict["test"]
+    structure = active_learning.all_structures["test"]
 
     accepted = active_learning._check_structure(
         lattice=lattice,
@@ -1913,7 +1913,7 @@ def test_read_structures(
         [[1.0, 1, 1]],
     ]
     element2index = {"H": 0, "C": 1, "O": 2}
-    structure = active_learning.all_structures.structure_dict["test"]
+    structure = active_learning.all_structures["test"]
     copytree(
         "tests/data/active_learning/mode1",
         "tests/data/tests_output/mode1",

@@ -51,7 +51,9 @@ def test_all_structures_atomic_number_list():
     numbers raises an error.
     """
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    species_2 = Species(symbol="H", atomic_number=2, mass=4.0)
+    species_2 = Species(symbol="H", atomic_number=1, mass=4.0)
+    # Bypass the validation in Species.__init__
+    species_2.atomic_number = 2
     all_species_1 = AllSpecies(species_1)
     all_species_2 = AllSpecies(species_2)
     structure_1 = Structure(
@@ -229,6 +231,51 @@ def test_structure_max_interpolated_value():
     )
 
 
+@pytest.mark.parametrize(
+    "symbol, atomic_number, valence",
+    [
+        ("H", 1, None),
+        ("H", None, None),
+        (None, 1, None),
+        ("H", 1, 1),
+    ],
+)
+def test_species(symbol: str, atomic_number: int, valence: int):
+    """
+    Test that 1 or both of `symbol` or `atomic_number` leads to both being set, along with
+    mass.
+    """
+    species = Species(symbol=symbol, atomic_number=atomic_number, valence=valence)
+    assert isinstance(species.symbol, str)
+    assert isinstance(species.atomic_number, int)
+    assert isinstance(species.mass, float)
+    assert species.valence == valence
+
+
+@pytest.mark.parametrize(
+    "symbol, atomic_number, valence, error",
+    [
+        ("H", 2, None, "Provided symbol H does not match provided atomic number 2"),
+        (None, None, None, "At least one of `symbol` or `atomic_number` must be provided.`"),
+        ("H", None, -1, "`valence` must not be negative, but was -1."),
+        (
+            "H",
+            None,
+            10,
+            "`valence` cannot be greater than the `atomic_number`, but they were 10, 1."
+        ),
+    ],
+)
+def test_species_error(symbol: str, atomic_number: int, valence: int, error: str):
+    """
+    Test that providing neither `symbol` nor `atomic_number`, or a pair that don't match,
+    leads to a ValueError.
+    """
+    with pytest.raises(ValueError) as e:
+        Species(symbol=symbol, atomic_number=atomic_number, valence=valence)
+    assert str(e.value) == error
+
+
 def test_all_species_get_species_failure():
     """
     Test that `AllSpecies.get_species` raises an error when given a symbol that is not present.
@@ -291,9 +338,9 @@ def test_dataset():
     Test that we can init a Dataset from file and check its properties.
     """
     dataset = Dataset(data_file="tests/data/n2p2/input.data")
-    assert len(dataset.frames) == 1
-    assert dataset.frames[0].lattice.shape == (3, 3)
-    assert dataset.frames[0].positions.shape == (512, 3)
-    assert dataset.frames[0].symbols.shape == (512,)
-    assert dataset.frames[0].forces.shape == (512, 3)
-    assert dataset.frames[0].energy != 0
+    assert len(dataset) == 1
+    assert dataset[0].lattice.shape == (3, 3)
+    assert dataset[0].positions.shape == (512, 3)
+    assert dataset[0].symbols.shape == (512,)
+    assert dataset[0].forces.shape == (512, 3)
+    assert dataset[0].energy != 0
