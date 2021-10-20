@@ -256,13 +256,18 @@ def test_species(symbol: str, atomic_number: int, valence: int):
     "symbol, atomic_number, valence, error",
     [
         ("H", 2, None, "Provided symbol H does not match provided atomic number 2"),
-        (None, None, None, "At least one of `symbol` or `atomic_number` must be provided.`"),
+        (
+            None,
+            None,
+            None,
+            "At least one of `symbol` or `atomic_number` must be provided.`",
+        ),
         ("H", None, -1, "`valence` must not be negative, but was -1."),
         (
             "H",
             None,
             10,
-            "`valence` cannot be greater than the `atomic_number`, but they were 10, 1."
+            "`valence` cannot be greater than the `atomic_number`, but they were 10, 1.",
         ),
     ],
 )

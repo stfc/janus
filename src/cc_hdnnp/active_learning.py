@@ -2684,8 +2684,7 @@ class ActiveLearning:
         selection = np.unique(selection)
 
         max_extrapolated_structures = [
-            s.max_extrapolated_structures
-            for s in self.all_structures.values()
+            s.max_extrapolated_structures for s in self.all_structures.values()
         ]
         exceptions = [s.exceptions for s in self.all_structures.values()]
         if any(max_extrapolated_structures) or any(exceptions):
@@ -2730,9 +2729,7 @@ class ActiveLearning:
                 if any(max_extrapolated_structures):
                     for i in statistics_unique:
                         structure_name_i = i.split(";")[0]
-                        structure_i = self.all_structures[
-                            structure_name_i
-                        ]
+                        structure_i = self.all_structures[structure_name_i]
                         if structure_i.max_extrapolated_structures != 0:
                             if counts[i] > structure_i.max_extrapolated_structures:
                                 exception_list[i] = np.concatenate(

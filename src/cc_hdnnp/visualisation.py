@@ -12,7 +12,9 @@ import numpy as np
 from cc_hdnnp.file_operations import read_data_file, read_normalisation
 
 
-def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
+def plot_learning_curve(
+    n2p2_directory: str, keys: List[str] = None, epoch_range: List[int] = None
+):
     """
     Reads "learning-curve.out" from the specified directory and plots the specified quantities.
 
@@ -36,6 +38,8 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
           - "MAE_Ftest_pu"     MAE of test forces (physical units)
         Default is `None`, in which case "RMSEpa_Etrain_pu" and "RMSEpa_Etest_pu" will be
         plotted.
+    epoch_range: List[int] = None
+        Defines the epochs to plot. Default is None, in which case all epochs will be plotted.
     """
     content = []
     epochs = []
@@ -51,8 +55,10 @@ def plot_learning_curve(n2p2_directory: str, keys: List[str] = None):
             headers = line[1:].split()
         elif not line.startswith("#"):
             # Table content
-            content.append(line.split())
-            epochs.append(int(line.split()[0]))
+            epoch = int(line.split()[0])
+            if epoch_range is None or epoch in epoch_range:
+                content.append(line.split())
+                epochs.append(epoch)
 
     plt.figure(figsize=(12, 6))
     for key in keys:
@@ -83,7 +89,6 @@ def _read_epoch_file(file: str, index: int = 1) -> Tuple[np.ndarray]:
     index : int, optional
         Corresponds to the position of the reference value in `file`. Default is `1`.
 
-    TODO update retrun type
     Returns
     -------
     tuple of ndarray
@@ -599,3 +604,52 @@ def plot_data_histogram(
         plt.yscale(force_scale)
         plt.title("Reference Forces ({})".format(data_file))
         plt.legend(data_files)
+
+
+def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
+    """Plot the results of clustering as vertical bars. Each element in `elements` is shown on
+    a separate subplot. Each bar in the plot represents a line the input file, and if it has
+    multiple labels on the line then the bar's colour is split between these labels.
+
+    Parameters
+    ----------
+    elements: List[str]
+        The elements to plot for, if the data was split by elements. If not, then `["all"]`
+        should be used.
+    file_in: str = "clustered_{}.data"
+        The complete file path to read from. Will be formatted with the entries in `elements`.
+    """
+    ncols = len(elements)
+    plt.figure(figsize=(6 * ncols, 6), constrained_layout=True)
+    for i, element in enumerate(elements):
+        data = []
+        with open(file_in.format(element)) as f:
+            line = f.readline()
+            while line:
+                data.append([float(value) for value in line.split()])
+                line = f.readline()
+        data = np.array(data, dtype=int)
+        labels = np.unique(data)
+        bottom = np.zeros(len(data))
+        plt.subplot(1, ncols, i + 1)
+        for j in labels:
+            label_counts = np.sum(data == j, axis=-1)
+            legend_label = "Noise" if j == -1 else str(j)
+            plt.bar(
+                range(len(data)),
+                label_counts,
+                width=1,
+                bottom=bottom,
+                label=legend_label,
+            )
+            bottom += label_counts
+        plt.tick_params(
+            bottom=False,
+            left=False,
+            labelbottom=False,
+            labelleft=False,
+        )
+        plt.xlabel("Dataset")
+        plt.ylabel("Cluster labels")
+        plt.title(element)
+        plt.legend()

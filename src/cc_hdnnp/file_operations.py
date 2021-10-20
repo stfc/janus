@@ -246,9 +246,10 @@ def read_scaling(
 
     Returns
     -------
-    dict of str and `ndarrays`
-        Each key is the str of chemical species, with the value being a ndarray of float with
-        length equal to the number of symmetry functions for that element.
+    Dict[str, Dict[str, List[float]]]
+        Each key is the str of chemical species, with the value being another dictionary.
+        Here the keys are {"min", "max", "mean", "sigma"}, and the value ndarray of float with
+        length equal to the number of symmetry functions for the element.
     """
     element_ranges = {
         element: {

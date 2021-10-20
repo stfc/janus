@@ -24,6 +24,9 @@ from ase.atoms import Atoms
 from ase.io import read, write
 from ase.units import create_units
 import numpy as np
+from numpy.lib.function_base import iterable
+from sklearn.base import BaseEstimator
+from sklearn.cluster import DBSCAN
 
 from cc_hdnnp.data_operations import check_structure
 from cc_hdnnp.file_operations import (
@@ -1065,6 +1068,8 @@ rm -f tmp.pp
 
                             with open(full_filepath) as f:
                                 lines = f.readlines()
+                            energy = None
+                            forces = None
                             for i, line in enumerate(lines):
                                 if line.startswith("!    total energy"):
                                     energy = (
@@ -1086,6 +1091,21 @@ rm -f tmp.pp
                                     forces /= self.units[n2p2_units["energy"]]
                                     forces *= self.units[n2p2_units["length"]]
 
+                            if energy is None:
+                                print(
+                                    "{} did not complete no energy found, skipping".format(
+                                        full_filepath
+                                    )
+                                )
+                                continue
+                            if forces is None:
+                                print(
+                                    "{} did not complete no forces found, skipping".format(
+                                        full_filepath
+                                    )
+                                )
+                                continue
+
                             text += "begin\n"
                             text += "comment frame_index={0} units={1}\n".format(
                                 index, n2p2_units
@@ -1096,7 +1116,9 @@ rm -f tmp.pp
 
                             symbols = frame.get_chemical_symbols()
                             positions = frame.get_positions()
-                            all_species = self.all_structures[structure_name].all_species
+                            all_species = self.all_structures[
+                                structure_name
+                            ].all_species
                             for i in range(len(frame)):
                                 valence = all_species.get_species(symbols[i]).valence
                                 if (
@@ -1837,7 +1859,7 @@ rm -f tmp.pp
         ----------
         n2p2_directory_index: str, optional
             The index of the directory within `self.n2p2_directories` containing the weights
-            files.
+            files. Default is 0.
         epoch : int, optional
             The epoch to copy weights for. Default is `None`.
         minimum_criterion : str, optional
@@ -2183,7 +2205,7 @@ rm -f tmp.pp
             numpy data type to use. Default is "float32".
         n2p2_directory_index: str, optional
             The index of the directory within `self.n2p2_directories` containing the weights
-            files.
+            files. Default is 0.
         data_file_in: str, optional
             File path of the n2p2 structure file, relative to `n2p2_directory`,
             to read from. Default is "input.data".
@@ -2423,6 +2445,155 @@ rm -f tmp.pp
         )
 
         return selected_indices
+
+    def _cluster_environments(
+        self,
+        file_out: str,
+        cluster_estimator: BaseEstimator,
+        environments: np.ndarray,
+        output_shape: Tuple[
+            int,
+        ] = None,
+    ):
+        """Cluster the `environments`, print the labels and number of samples for each label
+        and write all the labels to `file_out`.
+
+        Parameters
+        ----------
+        file_out: str
+            The complete file_path to write the labels to.
+        cluster_estimator: BaseEstimator
+            The algorithm to use for clustering, with parameters set.
+        environments: np.ndarray
+            Array of float with shape (N, M) where N is the number of samples and M the number
+            of features.
+        output_shape: tuple of int, optional
+            If defined, will reshape the labels before writing them to file. Default is None.
+        """
+        t1 = time.time()
+
+        db = cluster_estimator.fit(environments)
+        labels = db.labels_
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = list(labels).count(-1)
+        print("{} labels assigned".format(n_clusters))
+        print("Noise    : {:6d} {:3.3f}%".format(n_noise, 100 * n_noise / len(labels)))
+        for i in range(n_clusters):
+            print(
+                "Label {:3d}: {:6d} {:3.3f}%".format(
+                    i, np.sum(labels == i), 100 * np.sum(labels == i) / len(labels)
+                )
+            )
+
+        if output_shape:
+            labels = labels.reshape(output_shape)
+
+        with open(file_out, "w") as f:
+            for frame_labels in labels:
+                if iterable(frame_labels):
+                    frame_labels.sort()
+                    [f.write("{:3d}".format(label)) for label in frame_labels]
+                    f.write("\n")
+                else:
+                    f.write("{:3d}\n".format(frame_labels))
+
+        t2 = time.time()
+        print("Clustered in {} s".format(t2 - t1))
+
+    def cluster_dataset(
+        self,
+        atoms_per_frame: int,
+        compare_atomic: bool = True,
+        dtype: str = "float32",
+        n2p2_directory_index: int = 0,
+        file_out: str = "clustered_{}.data",
+        atom_environments: Dict[str, np.ndarray] = None,
+        cluster_estimator: BaseEstimator = None,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Performs clustering based of the atomic environments by comparing their symmetry
+        functions.
+
+        The file "atomic-env.G" needs to be present in the directory indictated by
+        `n2p2_directory_index` in order to perform the clustering.
+
+        Parameters
+        ----------
+        atoms_per_frame: int,
+            The number of atoms to expext in each frame of the data file.
+        compare_atomic: bool = True,
+            If True, then the clustering will be performed on the environments of individual
+            atoms, irrespective of their frame. The results will be written to a separate file
+            for each element, with each line containing the labels assigning to a particular
+            frame. If False, then all atoms present in a single frame are combined into one
+            feature vector, and clustering is performed between whole frames. Default is True.
+        dtype: str = "float32",
+            The data type to use in the numpy arrays. Default is "float32".
+        n2p2_directory_index: int = 0,
+            The index of the directory within `self.n2p2_directories` containing the weights
+            files. Default is 0.
+        file_out: str = "clustered_{}.data",
+            Formatable file name, relative to `self.main_directory`. Will be formatted with
+            either a chemical symbol, or "all" depending on `compare_atomic`.
+        atom_environments: Dict[str, np.ndarray] = None,
+            If provided, this dictionary with chemical symbols for keys and arrays of the
+            symmetry functions for values will be used for the clustering. Otherwise, will
+            attempt to read "atomic-env.G" from file. Providing an argument here can save the
+            time taken to load from file if multiple clustering attempts are being made on the
+            same data. Default is None.
+        cluster_estimator: BaseEstimator = None,
+            The SciKitLearn clustering algorithm to use. Default is None, in which case DBSCAN
+            is used with default parameters.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The atom environments used in the clustering. This can help to prevent repeatedly
+            loading from the same file if multiple clustering attempts are being made on the
+            same data.
+        """
+        if cluster_estimator is None:
+            print("Defaulting to DBSCAN for clustering")
+            cluster_estimator = DBSCAN()
+
+        if atom_environments is None:
+            t1 = time.time()
+            atom_environments = read_atomenv(
+                join_paths(self.n2p2_directories[n2p2_directory_index], "atomic-env.G"),
+                self.elements,
+                atoms_per_frame,
+                dtype=dtype,
+            )
+            t2 = time.time()
+            print("Values read from file in {} s".format(t2 - t1))
+
+        if compare_atomic:
+            for element, environments in atom_environments.items():
+                print("\nElement: {}".format(element))
+                shape = environments.shape
+                environments_r2 = environments.reshape((shape[0] * shape[1], shape[2]))
+                self._cluster_environments(
+                    file_out=join_paths(self.main_directory, file_out.format(element)),
+                    cluster_estimator=cluster_estimator,
+                    environments=environments_r2,
+                    output_shape=(shape[0], shape[1]),
+                )
+        else:
+            all_environments = np.zeros((len(list(atom_environments.values())[0]), 0))
+            for environments in atom_environments.values():
+                shape = environments.shape
+                all_environments = np.append(
+                    all_environments,
+                    environments.reshape((shape[0], shape[1] * shape[2])),
+                    axis=-1,
+                )
+            self._cluster_environments(
+                file_out=join_paths(self.main_directory, file_out.format("all")),
+                cluster_estimator=cluster_estimator,
+                environments=all_environments,
+            )
+
+        return atom_environments
 
     def remove_n2p2_normalisation(self):
         """

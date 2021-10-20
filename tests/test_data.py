@@ -919,7 +919,6 @@ def test_rebuild_dataset(
     )
 
     text = capsys.readouterr().out
-    print(text)
     assert "Values read from file in " in text
     assert (
         "Starting rebuild with the following frames selected:\n{}\n".format(
@@ -999,6 +998,58 @@ def test_rebuild_dataset_errors(
     assert str(e.value) == error
 
 
+# CLUSTERING UNIT TESTS
+
+
+@pytest.mark.parametrize(
+    "element, compare_atomic, labels",
+    [("H", True, " -1 -1\n -1 -1\n -1 -1\n"), ("all", False, " -1\n -1\n -1\n")],
+)
+def test_cluster_dataset(
+    data: Data,
+    capsys: pytest.CaptureFixture,
+    element: str,
+    compare_atomic: bool,
+    labels: str,
+):
+    """
+    Test that clustering results in the correct information being printed and written to file,
+    whatever the value of `compare_atomic`.
+    """
+    copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
+    data.n2p2_directories = ["tests/data/tests_output"]
+    data.elements = ["H"]
+
+    atom_environments = data.cluster_dataset(
+        atoms_per_frame=2,
+        compare_atomic=compare_atomic,
+        file_out="tests_output/clustered_{}.data",
+    )
+
+    assert list(atom_environments.keys()) == ["H"]
+    assert np.all(
+        atom_environments["H"]
+        == np.array(
+            [
+                [[0.0, 0.0, 0.0], [0.1, 0.2, 0.3]],
+                [[0.6, 1.2, 1.8], [0.7, 1.4, 2.1]],
+                [[0.9, 1.8, 2.7], [1.0, 2.0, 3.0]],
+            ],
+            dtype="float32",
+        )
+    )
+    file_out = "tests/data/tests_output/clustered_{}.data".format(element)
+    assert isfile(file_out)
+    with open(file_out) as f:
+        assert f.read() == labels
+    text = capsys.readouterr().out
+    if compare_atomic:
+        assert "Element: {}\n".format(element) in text
+    assert "0 labels assigned\n" in text
+    assert "Noise    :      " in text
+    assert "Clustered in " in text
+
+
 # QUANTUM ESPRESSO UNIT TESTS
 
 
@@ -1034,6 +1085,7 @@ def test_write_n2p2_data_qe(data: Data):
     )
     copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
     data.n2p2_directories = ["tests/data/tests_output"]
+    data.all_structures["test"].all_species.get_species("H").valence = 1
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -1044,7 +1096,10 @@ def test_write_n2p2_data_qe(data: Data):
 
     assert isfile("tests/data/tests_output/input.data")
     with open("tests/data/tests_output/input.data") as f:
-        assert len(f.readlines()) == 112 + 9
+        lines = f.readlines()
+        assert len(lines) == 112 + 9
+        for line in lines[6:-3]:
+            assert line.split()[-5] != "0.0"
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -1055,7 +1110,10 @@ def test_write_n2p2_data_qe(data: Data):
 
     assert isfile("tests/data/tests_output/input.data")
     with open("tests/data/tests_output/input.data") as f:
-        assert len(f.readlines()) == 2 * (112 + 9)
+        lines = f.readlines()
+        assert len(lines) == 2 * (112 + 9)
+        for line in lines[112 + 9 + 6 : -3]:
+            assert line.split()[-5] != "0.0"
 
 
 def test_write_n2p2_data_qe_charge_default(data: Data):
@@ -1083,7 +1141,7 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
         lines = f.readlines()
         assert len(lines) == 112 + 9
         for line in lines[6:-3]:
-            assert line.split()[-4] == "0.0"
+            assert line.split()[-5] == "0.0"
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -1094,7 +1152,60 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
 
     assert isfile("tests/data/tests_output/input.data")
     with open("tests/data/tests_output/input.data") as f:
-        assert len(f.readlines()) == 2 * (112 + 9)
+        lines = f.readlines()
+        assert len(lines) == 2 * (112 + 9)
+        for line in lines[112 + 9 + 6 : -3]:
+            assert line.split()[-5] == "0.0"
+
+
+@pytest.mark.parametrize(
+    "remove_line, warning",
+    [
+        (
+            "!    total energy",
+            (
+                "tests/data/tests_output/T300-p1-0/test.log "
+                "did not complete no energy found, skipping\n"
+            ),
+        ),
+        (
+            "     Forces acting on atoms",
+            (
+                "tests/data/tests_output/T300-p1-0/test.log "
+                "did not complete no forces found, skipping\n"
+            ),
+        ),
+    ],
+)
+def test_write_n2p2_data_qe_warnings(
+    data: Data, remove_line: str, warning: str, capsys: pytest.CaptureFixture
+):
+    """
+    Test warnings are printed if log files are present, but missing energies or forces.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    mkdir("tests/data/tests_output/T300-p1-0")
+    copy(
+        "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
+    )
+    with open("tests/data/tests_output/T300-p1-0/test.log") as f:
+        lines = f.readlines()
+    with open("tests/data/tests_output/T300-p1-0/test.log", "w") as f:
+        for line in lines:
+            if remove_line not in line:
+                f.write(line)
+    data.n2p2_directories = ["tests/data/tests_output"]
+
+    with pytest.raises(Exception) as e:
+        data.write_n2p2_data_qe(
+            structure_name="test",
+            temperatures=[300],
+            pressures=[1],
+            qe_directory="tests_output",
+        )
+
+    assert str(e.value) == "No files found."
+    assert capsys.readouterr().out == warning
 
 
 @pytest.mark.parametrize(
