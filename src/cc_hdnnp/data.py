@@ -27,6 +27,7 @@ import numpy as np
 from numpy.lib.function_base import iterable
 from sklearn.base import BaseEstimator
 from sklearn.cluster import DBSCAN
+from sklearn.decomposition import TruncatedSVD
 
 from cc_hdnnp.data_operations import check_structure
 from cc_hdnnp.file_operations import (
@@ -737,6 +738,7 @@ ATOMIC_POSITIONS {{angstrom}}""",
 #SBATCH -n 128
 #SBATCH --exclusive
 #SBATCH --reservation=scddevel
+#SBATCH --account=scddevel
 #SBATCH -t 2:00:00
 #SBATCH -C amd
 
@@ -2591,6 +2593,327 @@ rm -f tmp.pp
                 file_out=join_paths(self.main_directory, file_out.format("all")),
                 cluster_estimator=cluster_estimator,
                 environments=all_environments,
+            )
+
+        return atom_environments
+
+    def _run_k1_CUR(
+        self,
+        environments_r2: np.ndarray,
+        n_to_select: int,
+    ) -> List[int]:
+        """
+        Runs the k=1 CUR selection on `environments_r2` until `n_to_select` features are
+        chosen.
+
+        Parameters
+        ----------
+        environments_r2: np.ndarray,
+            A rank 2 - with shape (N, M) - array containing N samples of M features.
+        n_to_select: int,
+            The number of features, from a total of M, to select.
+
+        Returns
+        -------
+        List[int]
+            The indices of the features which most represent the deviation across the dataset.
+        """
+        t1 = time.time()
+        tsvd = TruncatedSVD(n_components=1)
+        selected_indices = []
+        while len(selected_indices) < n_to_select:
+            tsvd.fit(environments_r2)
+            right_vector = tsvd.components_[0, :]
+            scores = right_vector ** 2
+            i = np.argmax(scores)
+            selected_indices.append(i)
+            environments_r2 -= environments_r2[:, i : i + 1] * (
+                np.sum(environments_r2 * environments_r2[:, i : i + 1])
+                / np.sum(environments_r2[:, i] ** 2)
+            )
+            environments_r2[:, selected_indices] = 0
+
+        print(
+            "Selected indices in {} s:\n{}".format(time.time() - t1, selected_indices)
+        )
+
+        return selected_indices
+
+    def _validate_n_to_select(
+        self,
+        n_to_select: int,
+        n_total: int,
+        quantitiy: str,
+    ) -> int:
+        """
+        Checks the value of `n_to_select` is valid for `n_total`, and chooses a default value
+        if `n_to_select` is None.
+
+        Parameters
+        ----------
+        n_to_select: int,
+            How many of the features to select. If None it is set to half of `n_total`.
+        n_total: int,
+            The total number of features that can be selected from.
+        quantitiy: str,
+            The feature which is being selected. Only used to display information about the
+            selection when printing.
+
+        Returns
+        -------
+        int
+            `n_to_select` if it was set and valid, or half `n_total` otherwise.
+        """
+        if n_to_select is None:
+            n_to_select = n_total // 2
+            print(
+                "Selecting {} out of {} {}"
+                "".format(n_to_select, n_total, quantitiy)
+            )
+        elif n_to_select >= n_total:
+            raise ValueError(
+                "`n_to_select` must be less than the number of {}, "
+                "but they were {}, {}"
+                "".format(quantitiy, n_to_select, n_total)
+            )
+        if n_to_select < 1:
+            raise ValueError(
+                "`n_to_select` must be at least 1, but was {}".format(n_to_select)
+            )
+
+        return n_to_select
+
+    def decompose_dataset(
+        self,
+        atoms_per_frame: int,
+        selection_mode: str = "symf",
+        n_to_select: int = None,
+        dtype: str = "float32",
+        n2p2_directory_index: int = 0,
+        file_in: str = None,
+        file_out: str = None,
+        file_backup: str = None,
+        atom_environments: Dict[str, np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Performs CUR decomposition on the dataset, and selects symmetry functions or frames
+        from the "input.data" that best represent the data as a whole.
+
+        The file "atomic-env.G" needs to be present in the directory indictated by
+        `n2p2_directory_index` in order to perform the decomposition, unless the atomic
+        environments have already been loaded in which case they can be passed as
+        `atom_environments`.
+
+        Parameters
+        ----------
+        atoms_per_frame: int,
+            The total number of atoms to expext in each frame of the data file.
+        selection_mode: {"symf", "data"} = "symf"
+            Whether to select symmetry functions or frames from the "input.data" file.
+        n_to_select: int = None,
+            How many features to select. Default is None, in which case it will be half of the
+            total number of either symmetry functions or frames from the dataset depending on
+            `selection_mode`.
+        dtype: str = "float32",
+            The data type to use in the numpy arrays. Default is "float32".
+        n2p2_directory_index: int = 0,
+            The index of the directory within `self.n2p2_directories` containing the weights
+            files. Default is 0.
+        file_in: str = None,
+            File path relative to the n2p2 directory specified with `n2p2_directory_index`
+            to use as input. Default is None, in which case either "input.nn" or "input.data"
+            will be chosen depending on the value of `selection_mode`.
+        file_out: str = None,
+            File path relative to the n2p2 directory specified with `n2p2_directory_index`
+            to use as output. Default is None, in which case either "input.nn" or "input.data"
+            will be chosen depending on the value of `selection_mode`.
+        file_backup: str = None,
+            File path relative to the n2p2 directory specified with `n2p2_directory_index`
+            to copy the original data to. Default is None, in which case either
+            "input.nn.CUR_backup" or "input.data.CUR_backup" will be chosen depending on
+            the value of `selection_mode`.
+        atom_environments: Dict[str, np.ndarray] = None,
+            If provided, this dictionary with chemical symbols for keys and arrays of the
+            symmetry functions for values will be used for the clustering. Otherwise, will
+            attempt to read "atomic-env.G" from file. Providing an argument here can save the
+            time taken to load from file if multiple clustering attempts are being made on the
+            same data. Default is None.
+
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            The atom environments used in the clustering. This can help to prevent repeatedly
+            loading from the same file if multiple clustering attempts are being made on the
+            same data.
+        """
+
+        if atom_environments is None:
+            t1 = time.time()
+            atom_environments = read_atomenv(
+                join_paths(self.n2p2_directories[n2p2_directory_index], "atomic-env.G"),
+                self.elements,
+                atoms_per_frame,
+                dtype=dtype,
+            )
+            t2 = time.time()
+            print("Values read from file in {} s".format(t2 - t1))
+
+        if selection_mode == "symf":
+            if file_in is None:
+                file_in = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], "input.nn"
+                )
+            else:
+                file_in = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], file_in
+                )
+
+            if file_backup is None:
+                file_backup = join_paths(
+                    self.n2p2_directories[n2p2_directory_index],
+                    "input.nn.CUR_backup",
+                )
+            else:
+                file_backup = join_paths(
+                    self.n2p2_directories[n2p2_directory_index],
+                    file_backup,
+                )
+
+            if file_out is None:
+                file_out = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], "input.nn"
+                )
+            else:
+                file_out = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], file_out
+                )
+
+            all_selected_indices = {}
+            for element, environments in atom_environments.items():
+                print("\nElement: {}".format(element))
+                n_frames, n_atoms, n_symf = environments.shape
+                n_to_select = self._validate_n_to_select(
+                    n_to_select=n_to_select,
+                    n_total=n_symf,
+                    quantitiy="symmetry functions",
+                )
+                environments_r2 = np.copy(environments.reshape((n_frames * n_atoms, n_symf)))
+                all_selected_indices[element] = self._run_k1_CUR(
+                    environments_r2=environments_r2,
+                    n_to_select=n_to_select,
+                )
+
+            indices = {element: 0 for element in list(atom_environments.keys())}
+            copy(file_in, file_backup)
+            with open(file_in) as f:
+                lines = f.readlines()
+            with open(file_out, "w") as f:
+                for line in lines:
+                    if not line.startswith("symfunction_short"):
+                        f.write(line)
+                    else:
+                        element = line.split()[1]
+                        if indices[element] in all_selected_indices[element]:
+                            f.write(line)
+                        else:
+                            f.write("#" + line)
+                        indices[element] += 1
+
+        elif selection_mode == "data":
+            if file_in is None:
+                file_in = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], "input.data"
+                )
+            else:
+                file_in = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], file_in
+                )
+
+            if file_backup is None:
+                file_backup = join_paths(
+                    self.n2p2_directories[n2p2_directory_index],
+                    "input.data.CUR_backup",
+                )
+            else:
+                file_backup = join_paths(
+                    self.n2p2_directories[n2p2_directory_index],
+                    file_backup,
+                )
+
+            if file_out is None:
+                file_out = join_paths(
+                    self.n2p2_directories[n2p2_directory_index],
+                    "input.data",
+                )
+            else:
+                file_out = join_paths(
+                    self.n2p2_directories[n2p2_directory_index], file_out
+                )
+
+            n_frames = list(atom_environments.values())[0].shape[0]
+            n_atoms_list = [e.shape[1] for e in atom_environments.values()]
+            n_symf_list = [e.shape[2] for e in atom_environments.values()]
+            n_to_select = self._validate_n_to_select(
+                n_to_select=n_to_select,
+                n_total=n_frames,
+                quantitiy="structure frames",
+            )
+
+            global_environments = np.zeros(
+                (
+                    n_frames,
+                    np.sum(n_atoms_list, dtype=int),
+                    np.sum(n_symf_list, dtype=int),
+                ),
+            )
+            for i, environments in enumerate(atom_environments.values()):
+                environments_padded_atoms = np.concatenate(
+                    (np.zeros(
+                        (n_frames, np.sum(n_atoms_list[:i], dtype=int), n_symf_list[i]),
+                    ),
+                    environments,
+                    np.zeros(
+                        (
+                            n_frames,
+                            np.sum(n_atoms_list[i + 1 :], dtype=int),
+                            n_symf_list[i],
+                        ),
+                    )),
+                    axis=1,
+                )
+                global_environments += np.concatenate(
+                    (np.zeros(
+                        (n_frames, atoms_per_frame, np.sum(n_symf_list[:i], dtype=int)),
+                    ),
+                    environments_padded_atoms,
+                    np.zeros(
+                        (
+                            n_frames,
+                            atoms_per_frame,
+                            np.sum(n_symf_list[i + 1 :], dtype=int),
+                        ),
+                    )),
+                    axis=2,
+                )
+
+            environments_r2 = np.mean(global_environments, axis=1)
+            environments_r2 = environments_r2.T
+            selected_indices = self._run_k1_CUR(
+                environments_r2=environments_r2,
+                n_to_select=n_to_select,
+            )
+            remove_indices = set(range(n_frames)) - set(selected_indices)
+
+            remove_data(
+                remove_indices=remove_indices,
+                data_file_in=file_in,
+                data_file_out=file_out,
+                data_file_backup=file_backup,
+            )
+        else:
+            raise ValueError(
+                "`selection_mode` must be one of 'symf', 'data' but was {}"
+                "".format(selection_mode)
             )
 
         return atom_environments
