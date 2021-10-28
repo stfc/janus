@@ -339,6 +339,38 @@ def test_init_len_tolerances(data: Data):
     )
 
 
+@pytest.mark.parametrize("mode1", [True, False])
+@pytest.mark.parametrize("mode2", [True, False])
+@pytest.mark.parametrize("new", [True, False])
+@pytest.mark.parametrize("add", [True, False])
+def test_init_remove_existing_files(
+    data: Data,
+    mode1: bool,
+    mode2: bool,
+    new: bool,
+    add: bool,
+):
+    """Test that old files are removed if `remove_existing_files` is True."""
+    if mode1:
+        mkdir("tests/data/tests_output/mode1")
+    if mode2:
+        mkdir("tests/data/tests_output/mode2")
+    if new:
+        open("tests/data/tests_output/input.data-new", "w")
+    if add:
+        open("tests/data/tests_output/input.data-add", "w")
+
+    ActiveLearning(
+        data_controller=data,
+        remove_existing_files=True,
+    )
+
+    assert not isdir("tests/data/tests_output/mode1")
+    assert not isdir("tests/data/tests_output/mode2")
+    assert not isfile("tests/data/tests_output/input.data-new")
+    assert not isfile("tests/data/tests_output/input.data-add")
+
+
 # TEST VALIDATE TIMESTEPS
 
 

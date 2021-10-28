@@ -1,5 +1,5 @@
 from copy import deepcopy
-from os import listdir, mkdir
+from os import listdir, mkdir, remove, rmdir
 from os.path import isdir, isfile, join
 from shutil import copy
 from typing import Dict, List, Literal, Tuple, Union
@@ -102,6 +102,9 @@ class ActiveLearning:
         initial_tolerance has to be higher than 1. Default is `None`.
     initial_tolerance : int, optional
         Default is `5`.
+    remove_existing_files: bool = False
+        Whether to remove the "mode1", "mode2" directories and the "input.data-new",
+        "input.data-add" files from the active learning directory. Default is False.
     """
 
     def __init__(
@@ -120,6 +123,7 @@ class ActiveLearning:
         periodic: bool = True,
         tolerances: List[float] = None,
         initial_tolerance: int = 5,
+        remove_existing_files: bool = False,
     ):
         if tolerances is None:
             tolerances = [
@@ -256,6 +260,9 @@ class ActiveLearning:
         self.positions = []
         self.selection = None
 
+        if remove_existing_files:
+            self.remove_existing_files()
+
     def _validate_timesteps(
         self, timestep: float, N_steps: int, structures: List[Structure]
     ):
@@ -300,6 +307,25 @@ class ActiveLearning:
                     "`t_separation_interpolation_checks` must be equal to or greater than "
                     "`min_t_separation_interpolation` for all structures"
                 )
+
+    def remove_existing_files(self):
+        """
+        Removes "mode1", "mode2", "input.data-new" and "input.data-add" from
+        `self.active_learning_directory`.
+        """
+        for directory in [
+            join(self.active_learning_directory, "mode1"),
+            join(self.active_learning_directory, "mode2"),
+        ]:
+            if isdir(directory):
+                rmdir(directory)
+
+        for file in [
+            join(self.active_learning_directory, "input.data-new"),
+            join(self.active_learning_directory, "input.data-add"),
+        ]:
+            if isfile(file):
+                remove(file)
 
     def _read_input_data(
         self, comment_name_separator: str = "-", comment_name_index: int = 2
@@ -2941,7 +2967,7 @@ class ActiveLearning:
                     for v in val:
                         f.write("{0} {1}\n".format(s, v))
 
-    def prepare_data_new(self, nn_nodes: int):
+    def prepare_data_new(self, nn_nodes: int = 1):
         """
         For all structures, determines which timesteps from the mode1 simulations should have
         energy calculations performed (based on the extrapolation and interpolation settings)
@@ -2950,8 +2976,8 @@ class ActiveLearning:
 
         Parameters
         ----------
-        nn_nodes: int
-            How many nodes to use for evaluating the neural networks.
+        nn_nodes: int = 1
+            How many nodes to use for evaluating the neural networks. Default is 1.
         """
         # TODO add in an overwrite check?
         if isfile(join(self.active_learning_directory, "input.data-new")):
