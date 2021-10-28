@@ -2941,12 +2941,17 @@ class ActiveLearning:
                     for v in val:
                         f.write("{0} {1}\n".format(s, v))
 
-    def prepare_data_new(self):
+    def prepare_data_new(self, nn_nodes: int):
         """
         For all structures, determines which timesteps from the mode1 simulations should have
         energy calculations performed (based on the extrapolation and interpolation settings)
         and writes them to "input.data-new". If this file already exists, it is used to set
         variables that would otherwise be calculated from scratch.
+
+        Parameters
+        ----------
+        nn_nodes: int
+            How many nodes to use for evaluating the neural networks.
         """
         # TODO add in an overwrite check?
         if isfile(join(self.active_learning_directory, "input.data-new")):
@@ -3039,7 +3044,8 @@ class ActiveLearning:
             mode="w",
         )
         self.data_controller._write_active_learning_nn_script(
-            n2p2_directories=self.data_controller.n2p2_directories
+            n2p2_directories=self.data_controller.n2p2_directories,
+            nodes=nn_nodes,
         )
 
     def prepare_data_add(self):

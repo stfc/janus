@@ -4,7 +4,11 @@ Unit tests for `file_operations.py`
 import numpy as np
 import pytest
 
-from cc_hdnnp.file_operations import format_template_file, read_lammps_log
+from cc_hdnnp.file_operations import (
+    format_template_file,
+    read_lammps_log,
+    read_last_timestep,
+)
 
 
 @pytest.mark.parametrize(
@@ -85,3 +89,17 @@ def test_read_lammps_log_errors():
         read_lammps_log(dump_lammpstrj=1, log_lammps_file=log_lammps_file)
 
     assert str(e.value) == "{} was empty".format(log_lammps_file)
+
+
+def test_read_last_timestep():
+    """Test that we raise a ValueError if a timestep cannot be found."""
+    log_lammps_file = "tests/data/tests_output/log.lammps"
+    with open(log_lammps_file, "w") as f:
+        f.write("\ntext\n")
+
+    with pytest.raises(ValueError) as e:
+        read_last_timestep(file_lammps=log_lammps_file)
+
+    assert str(e.value) == "Could not extract final timestep from {}".format(
+        log_lammps_file
+    )

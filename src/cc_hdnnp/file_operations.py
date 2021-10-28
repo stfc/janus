@@ -437,3 +437,37 @@ def remove_data(
 
             if line.strip() == "end":
                 i += 1
+
+
+def read_last_timestep(file_lammps: str) -> int:
+    """
+    Attempts to read the last timestep which was written to `file_lammps`. Note that this
+    may give an incorrect value if used on a file with a different format, as it assumes
+    the timestep is the first integer on a given line.
+
+    Parameters
+    ----------
+    file_lammps: str
+        The complete file path of the LAMMPS log file to be read from.
+
+    Returns
+    -------
+    int
+        The last timestep which was written to `file_lammps`.
+    """
+    with open(file_lammps) as f:
+        lines = f.readlines()
+    # Start from the end of the file
+    lines_reversed = reversed(lines)
+    for line in lines_reversed:
+        try:
+            return int(line.split()[0])
+        except IndexError:
+            # If the line is blank, it does not correspond to a timestep
+            pass
+        except ValueError:
+            # If the first word in the line cannot be cast to int,
+            # it does not correspond to a timestep
+            pass
+
+    raise ValueError("Could not extract final timestep from {}".format(file_lammps))

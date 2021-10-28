@@ -1,7 +1,7 @@
 begin
-lattice 0.0 0.0 0.0
-lattice 0.0 0.0 0.0
-lattice 0.0 0.0 0.0
+lattice 1.0 0.0 0.0
+lattice 0.0 1.0 0.0
+lattice 0.0 0.0 1.0
 atom    0.0 0.0 0.0 H 0.0 0.0 0.0 0.0 0.0
 atom    0.0 0.0 0.0 H 0.0 0.0 0.0 0.0 0.0
 energy  0.0
@@ -17,9 +17,9 @@ energy  1.0
 charge  1.0
 end
 begin
-lattice 2.0 0.0 0.0
-lattice 0.0 2.0 0.0
-lattice 0.0 0.0 2.0
+lattice 1.0 0.0 0.0
+lattice 0.0 1.0 0.0
+lattice 0.0 0.0 1.0
 atom    2.0 0.0 0.0 H 0.0 0.0 0.0 0.0 0.0
 atom    2.0 0.0 0.0 H 0.0 0.0 0.0 0.0 0.0
 energy  2.0
