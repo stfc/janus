@@ -12,14 +12,14 @@ import numpy as np
 from sklearn.decomposition import TruncatedSVD
 
 
-from cc_hdnnp.data import Data
-from cc_hdnnp.file_operations import read_atomenv, remove_data
+from cc_hdnnp.file_operations import remove_data
 from cc_hdnnp.structure import Dataset
+from .dataselector import DataSelector
 
 
-class Decomposer:
+class Decomposer(DataSelector):
     """
-    Performs k=1 CUR decomposition in the manner described by
+    Performs k=1 CUR decomposition in the manner described by Imbalzano
     TODO: proper citations and references
 
     Parameters
@@ -39,83 +39,6 @@ class Decomposer:
     dtype: str = "float32",
         Data type to use in the numpy arrays. Default is "float32".
     """
-
-    def __init__(
-        self,
-        atoms_per_frame: int,
-        data_controller: Data,
-        n2p2_directory_index: int = 0,
-        verbosity: int = 1,
-        dtype: str = "float32",
-    ):
-        self.verbosity = verbosity
-        self.elements = data_controller.elements
-        self.n2p2_directory = data_controller.n2p2_directories[n2p2_directory_index]
-        t1 = time.time()
-        self._atom_environments = read_atomenv(
-            join(self.n2p2_directory, "atomic-env.G"),
-            data_controller.elements,
-            atoms_per_frame,
-            dtype=dtype,
-        )
-        t2 = time.time()
-        if verbosity >= 1:
-            print("Values read from file in {} s".format(t2 - t1))
-
-    @property
-    def n_frames(self) -> int:
-        """
-        Returns
-        -------
-        int
-            The number of frames present in the environments for the elements.
-            If they have a different number, a ValueError is raised.
-        """
-        n = None
-        for environment in self._atom_environments.values():
-            if n is None:
-                n = environment.shape[0]
-            elif n != environment.shape[0]:
-                raise ValueError(
-                    "Not all elements have the same number of frames ({}, {})"
-                    "".format(n, environment.shape[0])
-                )
-        return n
-
-    @property
-    def n_atoms_list(self) -> List[int]:
-        """
-        Returns
-        -------
-        List[int]
-            The number of atoms for each element, in the same order as `self.elements`.
-        """
-        return [e.shape[1] for e in self._atom_environments.values()]
-
-    @property
-    def n_symf_list(self) -> List[int]:
-        """
-        Returns
-        -------
-        List[int]
-            The number of symmetry functions for each element,
-            in the same order as `self.elements`.
-        """
-        return [e.shape[2] for e in self._atom_environments.values()]
-
-    def get_environments(self, element: str) -> np.ndarray:
-        """
-        Parameters
-        ----------
-        element: str
-            The chemical symbol of the element to return environments for.
-        Returns
-        -------
-        np.ndarray
-            An array of float with shape (N, M, L) where N is the number of frames,
-            M is the number of atoms and L is the number of symmetry functions.
-        """
-        return np.copy(self._atom_environments[element])
 
     def _validate_n_to_select(
         self,

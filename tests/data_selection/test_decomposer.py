@@ -1,5 +1,5 @@
 """
-Unit tests for `data.py`
+Unit tests for `decomposer.py`
 """
 
 from os import listdir, remove
@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.decomposer import Decomposer
+from cc_hdnnp.data_selection import Decomposer
 from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
 
 
