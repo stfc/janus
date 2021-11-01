@@ -68,9 +68,7 @@ def test_decompose_dataset_symf(
     data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = ["H"]
 
-    decomposer = Decomposer(
-        atoms_per_frame=2, data_controller=data, verbosity=verbosity
-    )
+    decomposer = Decomposer(data_controller=data, verbosity=verbosity)
     decomposer.run_CUR_symf(weight=weight, n_to_select_list=n_to_select_list)
 
     assert list(decomposer._atom_environments.keys()) == ["H"]
@@ -136,7 +134,7 @@ def test_decompose_dataset_data(
     data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = ["H"]
 
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     decomposer.run_CUR_data()
 
     assert list(decomposer._atom_environments.keys()) == ["H"]
@@ -194,7 +192,7 @@ def test_validate_n_to_select(
     """
     Test ValueErrors are raised if `n_to_select_list` is greater than `n_total` or less than 0.
     """
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     with pytest.raises(ValueError) as e:
         decomposer._validate_n_to_select(
             n_to_select_list=n_to_select_list,
@@ -223,7 +221,7 @@ def test_calculate_symf_weights_unrecognised(
     with open("tests/data/tests_output/input.nn", "a") as f:
         f.write("symfunction_short H 0 H 1.0 1.0 1.0\n")
 
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     with pytest.raises(ValueError) as e:
         decomposer._calculate_symf_weights(
             file_data=file_data,
@@ -274,7 +272,7 @@ def test_calculate_symf_weights_errors(
     with open("tests/data/tests_output/input.nn", "a") as f:
         f.write(text)
 
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     with pytest.raises(ValueError) as e:
         decomposer._calculate_symf_weights(
             file_data=file_data,
@@ -295,7 +293,7 @@ def test_n_frames_error(
 
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     decomposer._atom_environments = {"H": np.zeros(1), "He": np.zeros(0)}
     with pytest.raises(ValueError) as e:
         decomposer.n_frames
@@ -313,7 +311,7 @@ def test_run_k1_CUR_error(
 
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
-    decomposer = Decomposer(atoms_per_frame=2, data_controller=data)
+    decomposer = Decomposer(data_controller=data)
     with pytest.raises(ValueError) as e:
         decomposer._run_k1_CUR(
             environments_r2=np.array(np.inf), n_to_select=1, weights=None

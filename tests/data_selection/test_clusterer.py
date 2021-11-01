@@ -50,11 +50,12 @@ def test_run_atom_clustering(
     element = "H"
     labels = " -1 -1\n -1 -1\n -1 -1\n"
 
+    copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
     data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = [element]
 
-    clusterer = Clusterer(atoms_per_frame=2, data_controller=data, verbosity=verbosity)
+    clusterer = Clusterer(data_controller=data, verbosity=verbosity)
 
     clusterer.run_atom_clustering()
 
@@ -99,11 +100,12 @@ def test_run_frame_clustering(
     element = "H"
     labels = " -1\n -1\n -1\n"
 
+    copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
     data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = [element]
 
-    clusterer = Clusterer(atoms_per_frame=2, data_controller=data, verbosity=verbosity)
+    clusterer = Clusterer(data_controller=data, verbosity=verbosity)
 
     clusterer.run_frame_clustering()
 

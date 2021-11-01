@@ -7,6 +7,7 @@ from os.path import isfile, join
 from shutil import copy, rmtree
 from typing import List
 
+from ase.atoms import Atoms
 from genericpath import isdir
 import numpy as np
 import pytest
@@ -787,13 +788,76 @@ def test_prepare_qe(data: Data):
         temperatures=[300],
         pressures=[1],
         structure=data.all_structures["test"],
-        pseudos=["H.pseudo"],
+        pseudos={"H": "H.pseudo"},
     )
     assert isdir("tests/data/tests_output/T300-p1-0")
     assert isfile("tests/data/tests_output/T300-p1-0/test.in")
     assert isfile("tests/data/tests_output/T300-p1-0/pp.in")
     assert isfile("tests/data/tests_output/T300-p1-0/qe.slurm")
     assert isfile("tests/data/tests_output/qe_all.sh")
+
+
+@pytest.mark.parametrize("mixing_beta", [0.25, 0.5, 0.75])
+def test_write_qe_input(data: Data, mixing_beta: float):
+    """
+    Test that providing kwargs results in the correct value in file.
+    """
+    data.write_qe_input(
+        atoms=Atoms(),
+        frame_directory="tests/data/tests_output",
+        structure=data.all_structures["test"],
+        pseudos={"H": "H.pseudo"},
+        mixing_beta=mixing_beta,
+    )
+    assert isfile("tests/data/tests_output/test.in")
+    with open("tests/data/tests_output/test.in") as f:
+        text = f.read()
+        assert "mixing_beta      = {}".format(mixing_beta) in text
+
+
+def test_write_qe_input_error(data: Data):
+    """
+    Test that an error is raised when an unrecognised kwarg is given.
+    """
+    with pytest.raises(ValueError) as e:
+        data.write_qe_input(
+            atoms=Atoms(),
+            frame_directory="tests/data/tests_output",
+            structure=data.all_structures["test"],
+            pseudos={"H": "H.pseudo"},
+            unrecognised="unrecognised",
+        )
+
+    assert str(e.value) == (
+        "Key value pair {}: {} passed as **kwarg not one of the recognised options: {}"
+        "".format(
+            "unrecognised",
+            "unrecognised",
+            [
+                "ibrav",
+                "calculation",
+                "conv_thr",
+                "diago_david_ndim",
+                "mixing_beta",
+                "startingwfc",
+                "startingpot",
+                "nbnd",
+                "ecutwfc",
+                "ecutrho",
+                "input_dft",
+                "occupations",
+                "degauss",
+                "smearing",
+                "tstress",
+                "tprnfor",
+                "verbosity",
+                "outdir",
+                "pseudo_dir",
+                "disk_io",
+                "restart_mode",
+            ],
+        )
+    )
 
 
 def test_write_n2p2_data_qe(data: Data):

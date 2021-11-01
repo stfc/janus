@@ -11,6 +11,7 @@ import numpy as np
 
 from cc_hdnnp.data import Data
 from cc_hdnnp.file_operations import read_atomenv
+from cc_hdnnp.structure import Dataset
 
 
 class DataSelector:
@@ -19,9 +20,6 @@ class DataSelector:
 
     Parameters
     ----------
-    atoms_per_frame: int,
-        The number of atoms present in each frame, needed to read the atomic environment data
-        from file.
     data_controller: Data,
         Controller object used to get the n2p2 directory to work from, and elements present.
     n2p2_directory_index: int = 0,
@@ -37,7 +35,6 @@ class DataSelector:
 
     def __init__(
         self,
-        atoms_per_frame: int,
         data_controller: Data,
         n2p2_directory_index: int = 0,
         verbosity: int = 1,
@@ -48,10 +45,20 @@ class DataSelector:
         self.elements = data_controller.elements
         self.n2p2_directory = data_controller.n2p2_directories[n2p2_directory_index]
         t1 = time.time()
+        dataset = Dataset(join(self.n2p2_directory, "input.data"))
+        if len(np.unique(dataset.n_atoms_per_frame)) > 1:
+            raise ValueError(
+                "Datasets containing a varying number of atoms per frame are not supported, "
+                "datset contained {} atoms in different frames."
+                "".format(np.unique(dataset.n_atoms_per_frame))
+            )
+        if len(np.unique(dataset.n_atoms_per_frame)) == 0:
+            raise ValueError("Dataset contains no frames.")
+
         self._atom_environments = read_atomenv(
             join(self.n2p2_directory, "atomic-env.G"),
             data_controller.elements,
-            atoms_per_frame,
+            atoms_per_frame=dataset.n_atoms_per_frame[0],
             dtype=dtype,
         )
         t2 = time.time()

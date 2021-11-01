@@ -160,7 +160,7 @@ def test_run_separation_selection(
     for a given input.
     """
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
-    copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
+    copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     with open("tests/data/tests_output/input.nn", "w") as f:
         f.write(settings)
     with open("tests/data/tests_output/scaling.data", "w") as f:
@@ -174,7 +174,7 @@ def test_run_separation_selection(
         ]
     )
 
-    separator = Separator(atoms_per_frame=2, data_controller=data, verbosity=verbosity)
+    separator = Separator(data_controller=data, verbosity=verbosity)
 
     selected_indices = separator.run_separation_selection(
         n_frames_to_select=1,
@@ -278,7 +278,7 @@ def test_run_separation_selection_errors(
     data.n2p2_directories = ["tests/data/tests_output"]
     data.elements = ["H"]
 
-    separator = Separator(atoms_per_frame=2, data_controller=data)
+    separator = Separator(data_controller=data)
 
     with pytest.raises(ValueError) as e:
         separator.run_separation_selection(

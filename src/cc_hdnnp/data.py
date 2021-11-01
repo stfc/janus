@@ -17,7 +17,7 @@ from os import mkdir, remove
 from os.path import exists, isdir, isfile, join as join_paths
 import re
 from shutil import copy, move
-from typing import List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 from ase.atoms import Atoms
 from ase.io import read, write
@@ -588,9 +588,8 @@ class Data:
         atoms: Atoms,
         frame_directory: str,
         structure: Structure,
-        pseudos: List[str],
-        mixing_beta: float = 0.25,
-        k_points: str = "gamma",
+        pseudos: Dict[str, str],
+        **kwargs
     ):
         """
         Writes the input file for Quantum Esspresso to `frame_directory` for the `atoms`
@@ -605,86 +604,73 @@ class Data:
         structure: Stucture
             The `Structure` being simulated. Will be used to determine the file name and
             get relevant elements.
-        pseudos: list of str
-            File names of the pseudo potentials to use, found within `pseudos` directory and
-            ordered by atomic number.
-        TODO
+        pseudos: Dict[str, str]
+            Keys are chemical symbol of the element, values are the files within the pseudos
+            directory to use.
+        **kwargs: Any
+            Additional keyword arguments can be used to change the QE settings from their
+            default values. Possible settings and their default values are:
+                'ibrav'             : 14,
+                'calculation'       :'scf',
+                'conv_thr'          : 1.0e-8,
+                'diago_david_ndim'  : 4,
+                'mixing_beta'       : 0.25,
+                'startingwfc'       : 'atomic+random',
+                'startingpot'       : 'atomic',
+                'nbnd'              : 400,
+                'ecutwfc'           : 80,
+                'ecutrho'           : 480,
+                'input_dft'         : 'VDW-DF2-B86R',
+                'occupations'       : 'fixed',
+                'degauss'           : 0.08,
+                'smearing'          : 'm-p',
+                'tstress'           : False,
+                'tprnfor'           : True,
+                'verbosity'         : "high",
+                'outdir'            : './{}'.format(structure.name),
+                'pseudo_dir'        : "../pseudos/",
+                'disk_io'           : "none",
+                'restart_mode'      : 'restart',
         """
-        cell = atoms.get_cell()
-        symbols = structure.all_species.element_list
-        masses = structure.all_species.mass_list
-        with open(
-            join_paths(frame_directory, "{}.in".format(structure.name)), "w"
-        ) as f:
-            print(
-                """&control
-  calculation = 'scf'
-  tstress=.true
-  tprnfor = .true.
-  verbosity="high"
-  pseudo_dir="../pseudos/"
-  disk_io="low"
-  outdir = './{}'
-/
+        options = {
+            "ibrav": 14,
+            "calculation": "scf",
+            "conv_thr": 1.0e-8,
+            "diago_david_ndim": 4,
+            "mixing_beta": 0.25,
+            "startingwfc": "atomic+random",
+            "startingpot": "atomic",
+            "nbnd": 400,
+            "ecutwfc": 80,
+            "ecutrho": 480,
+            "input_dft": "VDW-DF2-B86R",
+            "occupations": "fixed",
+            "degauss": 0.08,
+            "smearing": "m-p",
+            "tstress": False,
+            "tprnfor": True,
+            "verbosity": "high",
+            "outdir": "./{}".format(structure.name),
+            "pseudo_dir": "../pseudos/",
+            "disk_io": "none",
+            "restart_mode": "restart",
+        }
 
-&system
-  ibrav=0,
-  nat={},
-  ntyp=4
-  ecutwfc=60
-  ecutrho=400
-  input_dft='pbe'
-  occupations='fixed'
-/
-
-&electrons
-  diagonalization='david'
-  conv_thr=1.0e-8
-  mixing_beta={}
-/
-
-&ions
-  bfgs_ndim=3
-/
-
-CELL_PARAMETERS {{ angstrom }}
-{:17.10f} {:17.10f} {:17.10f}
-{:17.10f} {:17.10f} {:17.10f}
-{:17.10f} {:17.10f} {:17.10f}
-
-K_POINTS {}
-
-ATOMIC_SPECIES""".format(
-                    structure.name,
-                    len(atoms),
-                    mixing_beta,
-                    *cell[0],
-                    *cell[1],
-                    *cell[2],
-                    "{" + k_points + "}",
-                ),
-                file=f,
-            )
-
-            for i in range(len(symbols)):
-                print(
-                    "{:2s} {:17.10f} {}".format(symbols[i], masses[i], pseudos[i]),
-                    file=f,
+        for key, value in kwargs.items():
+            if key not in options:
+                raise ValueError(
+                    "Key value pair {}: {} passed as **kwarg not one of the recognised "
+                    "options: {}".format(key, value, list(options))
                 )
+            options[key] = value
 
-            print(
-                """
-ATOMIC_POSITIONS {{angstrom}}""",
-                file=f,
-            )
-
-            for atom in atoms:
-                print(
-                    "{:2s} {:17.10f} {:17.10f} {:17.10f}".format(
-                        atom.symbol, *atom.position
-                    ),
-                    file=f,
-                )
+        write(
+            filename=join_paths(frame_directory, "{}.in".format(structure.name)),
+            images=atoms,
+            input_data=options,
+            pseudopotentials=pseudos,
+            format="espresso-in",
+        )
 
     def write_qe_pp(self, frame_directory: str, structure: Structure):
         """
@@ -769,7 +755,7 @@ rm -f tmp.pp
         temperatures: List[int],
         pressures: List[int],
         structure: Structure,
-        pseudos: List[str],
+        pseudos: Dict[str, str],
         qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
     ):
@@ -788,9 +774,9 @@ rm -f tmp.pp
             All pressures to run Quantum Espresso for.
         structure: Structure
             The Structure which is being simulated.
-        pseudos: list of str
+        pseudos: Dict[str]
             File names of the pseudo potentials to use, found within `pseudos` directory and
-            ordered by atomic number.
+            keyed by atomic number.
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.

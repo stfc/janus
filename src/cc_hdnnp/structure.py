@@ -430,6 +430,17 @@ class Dataset(List[Frame]):
     ):
         super().__init__(self.read_data_file(data_file=data_file))
 
+    @property
+    def n_atoms_per_frame(self) -> np.ndarray:
+        """
+        Get the number of atoms in each frame.
+
+        Returns
+        -------
+        ndarray of int
+        """
+        return np.array([len(frame) for frame in self])
+
     def read_data_file(
         self,
         data_file: str,
