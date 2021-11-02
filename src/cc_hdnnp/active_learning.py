@@ -1468,10 +1468,8 @@ class ActiveLearning:
 
         # Consider "small" extrapolation including the first `structure_extrapolation`
         # timesteps
-        extrapoltation_occured = [extrapolation_timesteps[:, small] >= 0]
-        extrapolated_timesteps = extrapolation_timesteps[:, small][
-            extrapoltation_occured
-        ]
+        extrapoltation_occured = extrapolation_timesteps[:, small] >= 0
+        extrapolated_timesteps = extrapolation_timesteps[extrapoltation_occured, small]
         if not extrapolated_timesteps.any():
             # Set tolerance indices to a dummy value for each structure
             print("There are no small extrapolations.")

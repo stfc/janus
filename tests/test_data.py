@@ -803,7 +803,7 @@ def test_write_qe_input(data: Data, mixing_beta: float):
     Test that providing kwargs results in the correct value in file.
     """
     data.write_qe_input(
-        atoms=Atoms(),
+        atoms=Atoms("H", cell=[1, 1, 1]),
         frame_directory="tests/data/tests_output",
         structure=data.all_structures["test"],
         pseudos={"H": "H.pseudo"},

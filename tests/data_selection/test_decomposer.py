@@ -307,14 +307,16 @@ def test_run_k1_CUR_error(
     """
     Test ValueError raised if there's a non-finite entry in `environments_r2`.
     """
-    error = "Non-finite entries {} in array at position {}".format([np.inf], [[0]])
+    error = "Non-finite entries {} in array at position {}".format(
+        [np.inf], np.array([[0], [0]])
+    )
 
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
     decomposer = Decomposer(data_controller=data)
     with pytest.raises(ValueError) as e:
         decomposer._run_k1_CUR(
-            environments_r2=np.array(np.inf), n_to_select=1, weights=None
+            environments_r2=np.array([[np.inf]]), n_to_select=1, weights=None
         )
 
     assert str(e.value) == error
