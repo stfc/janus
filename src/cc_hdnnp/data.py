@@ -24,15 +24,13 @@ from ase.io import read, write
 from ase.units import create_units
 import numpy as np
 
-from cc_hdnnp.data_operations import check_structure
 from cc_hdnnp.file_operations import (
     format_template_file,
-    read_data_file,
     read_last_timestep,
     remove_data,
 )
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
-from cc_hdnnp.structure import AllStructures, Structure
+from cc_hdnnp.structure import AllStructures, Dataset, Structure
 
 
 class Data:
@@ -1103,11 +1101,9 @@ rm -f tmp.pp
 
                             symbols = frame.get_chemical_symbols()
                             positions = frame.get_positions()
-                            all_species = self.all_structures[
-                                structure_name
-                            ].all_species
+                            structure = self.all_structures[structure_name]
                             for i in range(len(frame)):
-                                valence = all_species.get_species(symbols[i]).valence
+                                valence = structure.get_species(symbols[i]).valence
                                 if (
                                     charges is None
                                     or len(frame) != len(charges)
@@ -1589,7 +1585,7 @@ rm -f tmp.pp
         elements_text = ""
         for i, element in enumerate(elements):
             elements_map += "{0}:{1},".format(i + 1, element)
-            species = structure.all_species.get_species(element)
+            species = structure.get_species(element)
             masses += "mass {} {}\n".format(i + 1, species.mass)
             elements_text += " {}".format(element)
 
@@ -2058,11 +2054,10 @@ rm -f tmp.pp
 
     def trim_dataset_separation(
         self,
-        structure: Structure,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
         data_file_backup: str = "input.data.minimum_separation_backup",
-        data_file_unit: str = "Bohr",
+        # data_file_unit: str = "Bohr",
     ):
         """
         Removes individual frames from `data_file_in` that do not meet the criteria on
@@ -2072,9 +2067,6 @@ rm -f tmp.pp
 
         Parameters
         ----------
-        structure: Structure
-            The `Structure` represented in `data_file_in`, with requirements on the minimum
-            separation of all constituent species with each other.
         data_file_in: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to read from. Default is "input.data".
@@ -2084,21 +2076,19 @@ rm -f tmp.pp
         data_file_backup: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directories`, to copy
             the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
-        data_file_unit: str, optional
-            Length unit used in the data files, to ensure compatibility with the separation
-            specified on `structure`.
+        # data_file_unit: str, optional
+        #     Length unit used in the data files, to ensure compatibility with the separation
+        #     specified on `structure`.
         """
         all_remove_indices = []
         for n2p2_directory in self.n2p2_directories:
             remove_indices = []
-            data = read_data_file(join_paths(n2p2_directory, data_file_in))
-            for i, frame_data in enumerate(data):
-                if not check_structure(
-                    lattice=frame_data[0] * self.units[data_file_unit],
-                    element=frame_data[1],
-                    position=frame_data[2] * self.units[data_file_unit],
-                    structure=structure,
-                ):
+            # TODO units
+            dataset = Dataset(
+                join_paths(n2p2_directory, data_file_in), self.all_structures
+            )
+            for i, accepted in enumerate(dataset.check_min_separation_all()):
+                if not accepted:
                     remove_indices.append(i)
 
             print(

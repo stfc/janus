@@ -12,16 +12,13 @@ import pytest
 
 from cc_hdnnp.data import Data
 from cc_hdnnp.data_selection import Separator
-from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
+from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
 def data():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species = AllSpecies(species)
-    structure = Structure(
-        name="test", all_species=all_species, delta_E=1.0, delta_F=1.0
-    )
+    structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
     yield Data(
         structures=AllStructures(structure),

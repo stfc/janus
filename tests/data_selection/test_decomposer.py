@@ -13,16 +13,13 @@ import pytest
 
 from cc_hdnnp.data import Data
 from cc_hdnnp.data_selection import Decomposer
-from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
+from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
 def data():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species = AllSpecies(species)
-    structure = Structure(
-        name="test", all_species=all_species, delta_E=1.0, delta_F=1.0
-    )
+    structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
     yield Data(
         structures=AllStructures(structure),
@@ -160,12 +157,12 @@ def test_decompose_dataset_data(
     assert isfile(file + ".CUR_backup")
     with open(file + ".CUR_backup") as f:
         lines = f.readlines()
-        assert len(lines) == 27
+        assert len(lines) == 30
 
     assert isfile(file)
     with open(file) as f:
         lines = f.readlines()
-        assert len(lines) == 9
+        assert len(lines) == 10
         assert lines[-2] == "charge  2.0\n"
 
 

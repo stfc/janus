@@ -12,7 +12,7 @@ import pytest
 
 from cc_hdnnp.active_learning import ActiveLearning
 from cc_hdnnp.data import Data
-from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
+from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 # The headers used in N2P2 energy and force files
@@ -69,18 +69,18 @@ PREPARE_DATA_NEW_STDOUT = (
 
 
 @pytest.fixture
-def all_species() -> AllSpecies:
+def all_species() -> List[Species]:
     """
-    Fixture to create a AllSpecies object for testing.
+    Fixture to create a Structure object for testing.
     """
     species_H = Species(symbol="H", atomic_number=1, mass=1.0)
     species_C = Species(symbol="C", atomic_number=6, mass=12.0)
     species_O = Species(symbol="O", atomic_number=8, mass=16.0)
-    return AllSpecies(species_H, species_C, species_O)
+    return [species_H, species_C, species_O]
 
 
 @pytest.fixture
-def data(all_species: AllSpecies) -> Data:
+def data(all_species: List[Species]) -> Data:
     """
     Fixture to create a Data object for testing,
     including removal of files in the test output folder.
@@ -283,7 +283,7 @@ def test_init_comment_name_keyword(data: Data):
     )
 
 
-def test_init_structure_names_none(all_species: AllSpecies):
+def test_init_structure_names_none(all_species: List[Species]):
     """
     Test that using a combination of str and `None` for Structure `name`s raises a TypeError.
     """
@@ -405,7 +405,7 @@ def test_write_validate_timesteps_N_steps(active_learning: ActiveLearning):
 
 
 def test_write_validate_timesteps_min_t_separation_interpolation(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """Test that if `t_separation_interpolation_checks` is less than
     `min_t_separation_interpolation`, a ValueError is raised."""
@@ -729,7 +729,7 @@ def test_write_lammps_nonzero_joblist(active_learning: ActiveLearning):
 
 
 def test_write_lammps_name_is_none(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test the `write_lammps` function is successful when the name of one of the structures is
@@ -752,7 +752,7 @@ def test_write_lammps_name_is_none(
 
 
 def test_write_lammps_selection(
-    all_species: AllSpecies,
+    all_species: List[Species],
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
@@ -794,7 +794,7 @@ def test_write_lammps_selection(
 
 
 def test_write_lammps_comment_name_keyword_none(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test the `write_lammps` function is successful, and file paths do not include names if
@@ -1278,7 +1278,7 @@ def test_prepare_data_new(
 
 
 def test_prepare_data_new_name_none(
-    all_species: AllSpecies, capsys: pytest.CaptureFixture
+    all_species: List[Species], capsys: pytest.CaptureFixture
 ):
     """Test that `prepare_data_new` does not print the name of the Structure in the case
     where we only have one without a defined name."""
@@ -1471,7 +1471,7 @@ def test_print_statistics_no_selection(
 
 
 def test_print_statistics_multiple_names(
-    all_species: AllSpecies,
+    all_species: List[Species],
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
@@ -1520,7 +1520,7 @@ def test_analyse_extrapolation_statistics_multiple_elements(
 
 
 def test_improve_selection_all_extrapolated_structures_false(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test that `_improve_selection` returns a selection when `all_extrapolated_structures` is
@@ -1551,7 +1551,7 @@ def test_improve_selection_all_extrapolated_structures_false(
 
 
 def test_improve_selection_all_empty_statistics(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test that `_improve_selection` returns a selection when `statistics` is empty.
@@ -1581,7 +1581,7 @@ def test_improve_selection_all_empty_statistics(
 
 
 def test_improve_selection_reduce_selection(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test that `_improve_selection` reduces the selection (calls `_reduce_selection`) when steps
@@ -1638,7 +1638,7 @@ def test_improve_selection_reduce_selection(
 
 
 def test_improve_selection_max_extrapolated_structures(
-    all_species: AllSpecies,
+    all_species: List[Species],
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
 ):
@@ -1675,7 +1675,7 @@ def test_improve_selection_max_extrapolated_structures(
 
 
 def test_improve_selection_exceptions(
-    all_species: AllSpecies, active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning
 ):
     """
     Test that `_improve_selection` handles cases where `exceptions` is set.
@@ -1871,45 +1871,16 @@ def test_get_structure(
         "1 O 12.3466 3.95684 5.12344 0.000",
     ]
 
-    lattice, element, position, charge = active_learning._get_structure(
+    frame = active_learning._get_structure(
         data=data,
     )
 
-    assert lattice == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-    assert element == np.array("O")
-    assert np.allclose(position, np.array([[12.3466, 3.95684, 5.12344]]))
-    assert charge == np.array([0.0])
-
-
-# TEST CHECK STRUCTURES
-
-
-def test_check_structure(
-    active_learning: ActiveLearning,
-    capsys: pytest.CaptureFixture,
-):
-    """Test that `_check_structure` prints a warning
-    when an overly small atomic separation is present."""
-    path = "test"
-    timestep = 1
-    lattice = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-    element = np.array(["H", "H"])
-    position = np.zeros((2, 3))
-    structure = active_learning.all_structures["test"]
-
-    accepted = active_learning._check_structure(
-        lattice=lattice,
-        element=element,
-        position=position,
-        path=path,
-        timestep=timestep,
-        structure=structure,
+    assert np.allclose(
+        frame.lattice, np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     )
-
-    assert not accepted
-    assert capsys.readouterr().out == (
-        "Too small interatomic distance in test_s1: H-H: 0.0 Ang\n"
-    )
+    assert frame.symbols == np.array("O")
+    assert np.allclose(frame.positions, np.array([[12.3466, 3.95684, 5.12344]]))
+    assert frame.charges == np.array([0.0])
 
 
 # TEST READ STRUCTURES

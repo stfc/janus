@@ -13,16 +13,13 @@ import numpy as np
 import pytest
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.structure import AllSpecies, AllStructures, Species, Structure
+from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
 def data():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species = AllSpecies(species)
-    structure = Structure(
-        name="test", all_species=all_species, delta_E=1.0, delta_F=1.0
-    )
+    structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
     yield Data(
         structures=AllStructures(structure),
@@ -741,6 +738,7 @@ def test_analyse_extrapolations(
         (
             np.inf,
             [[0]],
+            "Too small interatomic distance between H-H: 4.613538961536592 Ang\n"
             "Removing 1 frames for having atoms within minimum separation.\n",
         ),
     ],
@@ -761,9 +759,7 @@ def test_trim_dataset_separation(
     for species in structure.all_species:
         species.min_separation = {"H": separation, "C": separation, "O": separation}
 
-    remove_indices = data.trim_dataset_separation(
-        structure,
-    )
+    remove_indices = data.trim_dataset_separation()
 
     assert remove_indices == expected_indices
     assert capsys.readouterr().out == stdout
@@ -871,7 +867,7 @@ def test_write_n2p2_data_qe(data: Data):
     )
     copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
     data.n2p2_directories = ["tests/data/tests_output"]
-    data.all_structures["test"].all_species.get_species("H").valence = 1
+    data.all_structures["test"].get_species("H").valence = 1
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -914,7 +910,7 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
     )
     data.n2p2_directories = ["tests/data/tests_output"]
 
-    data.all_structures["test"].all_species.get_species("H").valence = 1
+    data.all_structures["test"].get_species("H").valence = 1
     data.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],

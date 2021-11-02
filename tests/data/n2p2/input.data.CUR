@@ -1,4 +1,5 @@
 begin
+comment structure test0
 lattice 1.0 0.0 0.0
 lattice 0.0 1.0 0.0
 lattice 0.0 0.0 1.0
@@ -8,6 +9,7 @@ energy  0.0
 charge  0.0
 end
 begin
+comment structure test1
 lattice 1.0 0.0 0.0
 lattice 0.0 1.0 0.0
 lattice 0.0 0.0 1.0
@@ -17,6 +19,7 @@ energy  1.0
 charge  1.0
 end
 begin
+comment structure test2
 lattice 1.0 0.0 0.0
 lattice 0.0 1.0 0.0
 lattice 0.0 0.0 1.0

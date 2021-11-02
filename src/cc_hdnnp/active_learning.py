@@ -8,9 +8,8 @@ import warnings
 import numpy as np
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.data_operations import check_nearest_neighbours
 from cc_hdnnp.file_operations import read_lammps_log, read_normalisation
-from cc_hdnnp.structure import Structure
+from cc_hdnnp.structure import Frame, Structure
 
 # TODO combine all unit conversions
 # Set a float to define the conversion factor from Bohr radius to Angstrom.
@@ -851,9 +850,7 @@ class ActiveLearning:
                                     scaling_file,
                                     mode1_path + "/RuNNer/scaling.data",
                                 )
-                                atomic_numbers = (
-                                    structure.all_species.atomic_number_list
-                                )
+                                atomic_numbers = structure.atomic_number_list
                                 src = join(
                                     self.data_controller.n2p2_directories[j],
                                     "weights.{:03d}.data",
@@ -1752,11 +1749,9 @@ class ActiveLearning:
 
         return selected_timesteps, tolerance_indices, smalls, n_small
 
-    def _get_structure(
-        self, data: List[str]
-    ) -> Tuple[List[List[float]], np.ndarray, np.ndarray, np.ndarray]:
+    def _get_structure(self, data: List[str]) -> Frame:
         """
-        Extracts relevant properties from the lines of `data` and returns them as arrays.
+        Extracts relevant properties from the lines of `data` and returns them as a Frame.
 
         Parameters
         ----------
@@ -1765,16 +1760,8 @@ class ActiveLearning:
 
         Returns
         -------
-        list of list of float, np.ndarray, np.ndarray, np.ndarray
-            First object is a list with three entries, each another three entry list
-            representing a lattice vector of the structure.
-            Second object is an array of strings representing the chemical symbol for each
-            atom in the structure.
-            Third is an array where the first dimension indexes the atoms in the structure, and
-            the second is length 3 representing the position of that atom in the cartesian
-            co-ordinates.
-            Fourth element is an array of the charge of each atom in the structure, provided
-            the data has atom style "full". Otherwise, zeros are returned.
+        Frame
+            Frame with `charges` set, but `forces` `energy` and `name` unset.
         """
         lat = np.array([data[5].split(), data[6].split(), data[7].split()]).astype(
             float
@@ -1816,68 +1803,9 @@ class ActiveLearning:
         else:
             charge = np.zeros(len(element))
 
-        return lattice, element, position, charge
-
-    def _check_structure(
-        self,
-        lattice: List[List[float]],
-        element: np.ndarray,
-        position: np.ndarray,
-        path: str,
-        timestep: int,
-        structure: Structure,
-    ) -> bool:
-        """
-        Checks the interatomic distances for each element present in the structure to ensure
-        that none are within the minimum requried seperation.
-
-        Parameters
-        ----------
-        lattice : list of list of float
-            A list with three entries, each another three entry list representing a lattice
-            vector of the structure.
-        element : np.ndarray
-            Array of strings representing the chemical symbol for each atom in the structure.
-        position : np.ndarray
-            Array where the first dimension indexes the atoms in the structure, and
-            the second is length 3 representing the position of that atom in the cartesian
-            co-ordinates.
-        path : str
-            The path of the directory containing the simulation in question.
-        timestep : int
-            The timestep of the simulation that the `data` corresponds to.
-        structure : Structure
-            The `Structure` present in `data`
-
-        Returns
-        -------
-        bool
-            Whether the arguments were accepted as a valid structure.
-        """
-        for i, element_i in enumerate(self.element_types):
-            for element_j in self.element_types[i:]:
-                accepted, d = check_nearest_neighbours(
-                    lattice,
-                    position[element == element_i],
-                    position[element == element_j],
-                    element_i == element_j,
-                    structure.all_species.get_species(element_i).min_separation[
-                        element_j
-                    ],
-                )
-                if not accepted:
-                    print(
-                        "Too small interatomic distance in {0}_s{1}: {2}-{3}: {4} Ang".format(
-                            path,
-                            timestep,
-                            element_i,
-                            element_j,
-                            d,
-                        )
-                    )
-                    return False
-
-        return True
+        return Frame(
+            lattice=lattice, symbols=element, positions=position, charges=charge
+        )
 
     def _read_structure(
         self, data: List[str], path: str, timestep: int, structure: Structure
@@ -1908,16 +1836,14 @@ class ActiveLearning:
         bool
             Whether the `data` was accepted as a valid structure.
         """
-        lattice, element, position, charge = self._get_structure(data)
-        accepted = self._check_structure(
-            lattice, element, position, path, timestep, structure
-        )
+        frame = self._get_structure(data)
+        accepted = frame.check_min_separation(structure=structure)
         if accepted:
             self.names.append(path + "_s" + str(timestep))
-            self.lattices.append(lattice)
-            self.elements.append(element)
-            self.positions.append(position)
-            self.charges.append(charge)
+            self.lattices.append(frame.lattice)
+            self.elements.append(frame.symbols)
+            self.positions.append(frame.positions)
+            self.charges.append(frame.charges)
 
         return accepted
 

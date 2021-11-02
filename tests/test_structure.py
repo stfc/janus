@@ -2,9 +2,12 @@
 Unit tests for `structure.py`
 """
 
+from typing import List
+
+import numpy as np
 import pytest
 
-from cc_hdnnp.structure import AllSpecies, AllStructures, Dataset, Species, Structure
+from cc_hdnnp.structure import AllStructures, Dataset, Frame, Species, Structure
 
 
 def test_all_structures_same_name():
@@ -14,10 +17,7 @@ def test_all_structures_same_name():
     """
     name = "test"
     species = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species = AllSpecies(species)
-    structure = Structure(
-        name=name, all_species=all_species, delta_E=None, delta_F=None
-    )
+    structure = Structure(name=name, all_species=[species], delta_E=None, delta_F=None)
     with pytest.raises(ValueError) as e:
         AllStructures(structure, structure)
     assert str(e.value) == "Cannot have multiple structures with the name `{}`".format(
@@ -32,13 +32,11 @@ def test_all_structures_element_list():
     """
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     species_2 = Species(symbol="He", atomic_number=2, mass=4.0)
-    all_species_1 = AllSpecies(species_1)
-    all_species_2 = AllSpecies(species_2)
     structure_1 = Structure(
-        name="test_1", all_species=all_species_1, delta_E=None, delta_F=None
+        name="test_1", all_species=[species_1], delta_E=None, delta_F=None
     )
     structure_2 = Structure(
-        name="test_2", all_species=all_species_2, delta_E=None, delta_F=None
+        name="test_2", all_species=[species_2], delta_E=None, delta_F=None
     )
     with pytest.raises(ValueError) as e:
         AllStructures(structure_1, structure_2)
@@ -54,13 +52,11 @@ def test_all_structures_atomic_number_list():
     species_2 = Species(symbol="H", atomic_number=1, mass=4.0)
     # Bypass the validation in Species.__init__
     species_2.atomic_number = 2
-    all_species_1 = AllSpecies(species_1)
-    all_species_2 = AllSpecies(species_2)
     structure_1 = Structure(
-        name="test_1", all_species=all_species_1, delta_E=None, delta_F=None
+        name="test_1", all_species=[species_1], delta_E=None, delta_F=None
     )
     structure_2 = Structure(
-        name="test_2", all_species=all_species_2, delta_E=None, delta_F=None
+        name="test_2", all_species=[species_2], delta_E=None, delta_F=None
     )
     with pytest.raises(ValueError) as e:
         AllStructures(structure_1, structure_2)
@@ -74,13 +70,11 @@ def test_all_structures_mass_list():
     """
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     species_2 = Species(symbol="H", atomic_number=1, mass=4.0)
-    all_species_1 = AllSpecies(species_1)
-    all_species_2 = AllSpecies(species_2)
     structure_1 = Structure(
-        name="test_1", all_species=all_species_1, delta_E=None, delta_F=None
+        name="test_1", all_species=[species_1], delta_E=None, delta_F=None
     )
     structure_2 = Structure(
-        name="test_2", all_species=all_species_2, delta_E=None, delta_F=None
+        name="test_2", all_species=[species_2], delta_E=None, delta_F=None
     )
     with pytest.raises(ValueError) as e:
         AllStructures(structure_1, structure_2)
@@ -93,13 +87,11 @@ def test_all_structures_success():
     """
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     species_2 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
-    all_species_2 = AllSpecies(species_2)
     structure_1 = Structure(
-        name="test_1", all_species=all_species_1, delta_E=None, delta_F=None
+        name="test_1", all_species=[species_1], delta_E=None, delta_F=None
     )
     structure_2 = Structure(
-        name="test_2", all_species=all_species_2, delta_E=None, delta_F=None
+        name="test_2", all_species=[species_2], delta_E=None, delta_F=None
     )
     all_structures = AllStructures(structure_1, structure_2)
     assert all_structures.element_list == ["H"]
@@ -112,11 +104,10 @@ def test_structure_selection_length():
     """
     selection = [0, 1, 2]
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     with pytest.raises(ValueError) as e:
         Structure(
             name="test_1",
-            all_species=all_species_1,
+            all_species=[species_1],
             delta_E=None,
             delta_F=None,
             selection=selection,
@@ -132,11 +123,10 @@ def test_structure_selection_type():
     """
     selection = ["0", 1.0]
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     with pytest.raises(TypeError) as e:
         Structure(
             name="test_1",
-            all_species=all_species_1,
+            all_species=[species_1],
             delta_E=None,
             delta_F=None,
             selection=selection,
@@ -158,11 +148,10 @@ def test_structure_selection_value():
         "{0} and {1}"
     )
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     with pytest.raises(ValueError) as e:
         Structure(
             name="test_1",
-            all_species=all_species_1,
+            all_species=[species_1],
             delta_E=None,
             delta_F=None,
             selection=selection,
@@ -176,10 +165,9 @@ def test_structure_selection_success():
     """
     selection = [1, 10]
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     structure = Structure(
         name="test_1",
-        all_species=all_species_1,
+        all_species=[species_1],
         delta_E=None,
         delta_F=None,
         selection=selection,
@@ -194,11 +182,10 @@ def test_structure_max_interpolated_type():
     """
     max_interpolated_structures_per_s = "-1"
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     with pytest.raises(TypeError) as e:
         Structure(
             name="test_1",
-            all_species=all_species_1,
+            all_species=[species_1],
             delta_E=None,
             delta_F=None,
             max_interpolated_structures_per_simulation=max_interpolated_structures_per_s,
@@ -216,11 +203,10 @@ def test_structure_max_interpolated_value():
     """
     max_interpolated_structures_per_s = -1
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
-    all_species_1 = AllSpecies(species_1)
     with pytest.raises(ValueError) as e:
         Structure(
             name="test_1",
-            all_species=all_species_1,
+            all_species=[species_1],
             delta_E=None,
             delta_F=None,
             max_interpolated_structures_per_simulation=max_interpolated_structures_per_s,
@@ -281,38 +267,42 @@ def test_species_error(symbol: str, atomic_number: int, valence: int, error: str
     assert str(e.value) == error
 
 
-def test_all_species_get_species_failure():
+def test_structure_get_species_failure():
     """
-    Test that `AllSpecies.get_species` raises an error when given a symbol that is not present.
+    Test that `Structure.get_species` raises an error when given a symbol that is not present.
     """
     symbol = "Li"
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     species_2 = Species(symbol="He", atomic_number=2, mass=4.0)
-    all_species = AllSpecies(species_1, species_2)
+    structure = Structure(
+        name="test", all_species=[species_1, species_2], delta_E=0.0, delta_F=0.0
+    )
     with pytest.raises(ValueError) as e:
-        all_species.get_species(symbol)
+        structure.get_species(symbol)
     assert str(
         e.value
     ) == "No atomic species with symbol `{0}` present in `{1}`." "".format(
-        symbol, all_species.element_list
+        symbol, structure.element_list
     )
 
 
-def test_all_species_get_species_success():
+def test_structure_get_species_success():
     """
-    Test that `AllSpecies.get_species` succeeds.
+    Test that `Structure.get_species` succeeds.
     """
     symbol = "H"
     species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
     species_2 = Species(symbol="He", atomic_number=2, mass=4.0)
-    all_species = AllSpecies(species_1, species_2)
-    test_species = all_species.get_species(symbol)
+    structure = Structure(
+        name="test", all_species=[species_1, species_2], delta_E=0.0, delta_F=0.0
+    )
+    test_species = structure.get_species(symbol)
     assert test_species == species_1
 
 
-def test_all_species_min_separation_default():
+def test_structure_min_separation_default():
     """
-    Test that `AllSpecies` sets the default values for `min_separation` correctly.
+    Test that `Structure` sets the default values for `min_separation` correctly.
     """
     species_1 = Species(
         symbol="H", atomic_number=1, mass=1.0, min_separation={"H": 1.0}
@@ -320,7 +310,13 @@ def test_all_species_min_separation_default():
     species_2 = Species(
         symbol="He", atomic_number=2, mass=4.0, min_separation={"H": 2.0}
     )
-    all_species = AllSpecies(species_1, species_2, global_separation=3.0)
+    all_species = Structure(
+        name="test",
+        all_species=[species_1, species_2],
+        global_separation=3.0,
+        delta_E=0.0,
+        delta_F=0.0,
+    )
     test_species_1 = all_species.get_species("H")
     test_species_2 = all_species.get_species("He")
     assert test_species_1.min_separation["H"] == 1.0
@@ -349,3 +345,71 @@ def test_dataset():
     assert dataset[0].symbols.shape == (512,)
     assert dataset[0].forces.shape == (512, 3)
     assert dataset[0].energy != 0
+    assert dataset[0].name is None
+
+
+def test_dataset_naming():
+    """
+    Test that a loaded Dataset has the names set for Frames based on file comments.
+    """
+    species_1 = Species(symbol="H", atomic_number=1, mass=1.0)
+    structure_0 = Structure(
+        name="test0", all_species=[species_1], delta_E=None, delta_F=None
+    )
+    structure_1 = Structure(
+        name="test1", all_species=[species_1], delta_E=None, delta_F=None
+    )
+    structure_2 = Structure(
+        name="test2", all_species=[species_1], delta_E=None, delta_F=None
+    )
+    all_structures = AllStructures(structure_0, structure_1, structure_2)
+
+    dataset = Dataset(
+        data_file="tests/data/n2p2/input.data.CUR", all_structures=all_structures
+    )
+
+    assert len(dataset) == 3
+    for i, frame in enumerate(dataset):
+        assert frame.name == "test{}".format(i)
+
+
+def test_dataset_check_min_separation_all_error():
+    """
+    Test that a ValueError is raised when calling `check_min_separation`
+    without `all_structures` being set.
+    """
+    dataset = Dataset(data_file="tests/data/n2p2/input.data")
+
+    with pytest.raises(ValueError) as e:
+        next(dataset.check_min_separation_all())
+
+    assert str(e.value) == "Cannot check separation if `all_structures` is not set."
+
+
+@pytest.mark.parametrize(
+    "symbols",
+    [
+        ["H", "He"],
+        ["Li", "Be"],
+    ],
+)
+def test_check_nearest_neighbours(
+    symbols: List[str],
+):
+    """
+    Test that we accept the neighbours in the cases
+    where they are empty or only have 1 dimension.
+    """
+    frame = Frame(
+        lattice=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        symbols=symbols,
+        positions=np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]]),
+    )
+    accepted, d = frame.check_nearest_neighbours(
+        element_i="H",
+        element_j="He",
+        d_min=0.1,
+    )
+
+    assert accepted
+    assert d == -1

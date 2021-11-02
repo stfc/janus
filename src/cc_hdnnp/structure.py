@@ -3,7 +3,8 @@ Class for containing information about atomic species in the structure of intere
 """
 
 
-from typing import Dict, List, Tuple
+from copy import deepcopy
+from typing import Dict, Iterator, List, Tuple
 
 from ase.atoms import Atoms
 from ase.data import atomic_masses, atomic_numbers, chemical_symbols
@@ -81,96 +82,6 @@ class Species:
         self.min_separation = min_separation
 
 
-class AllSpecies(List[Species]):
-    """
-    Holds information about all atomic species in the structure.
-
-    Parameters
-    ----------
-    species_list : list of Species
-        All the species that make up the structure.
-    global_separation : float, optional
-        If the `min_separation` is not set for all pairs of `Species`, then `global_separation`
-        will be used as a default. Units are Ang. Default is `0.5`.
-
-    Attributes
-    ----------
-    element_list : list of str
-        The chemical symbols of all structures that make up the structure.
-    mass_list : list of float
-        The masses of all structures that make up the structure in AMU.
-    """
-
-    def __init__(self, *species: Species, global_separation: float = 0.5):
-        super().__init__(species)
-        self.sort(key=lambda x: x.atomic_number)
-        for single_species in self:
-            if single_species.min_separation is None:
-                # If `min_separation` is not set, use the global value for all species
-                single_species.min_separation = {
-                    symbol: global_separation for symbol in self.element_list
-                }
-            else:
-                for symbol in self.element_list:
-                    if symbol not in single_species.min_separation.keys():
-                        single_species.min_separation[symbol] = global_separation
-
-    @property
-    def element_list(self):
-        """
-        Get the symbols of all species, sorted by atomic number.
-
-        Returns
-        -------
-        list of str
-        """
-        return [single_species.symbol for single_species in self]
-
-    @property
-    def atomic_number_list(self) -> List[int]:
-        """
-        Get the atomic numbers of all species, in order.
-
-        Returns
-        -------
-        list of int
-        """
-        return [single_species.atomic_number for single_species in self]
-
-    @property
-    def mass_list(self):
-        """
-        Get the masses of all species, sorted by atomic number.
-
-        Returns
-        -------
-        list of str
-        """
-        return [single_species.mass for single_species in self]
-
-    def get_species(self, symbol: str) -> Species:
-        """
-        Gets the `Species` object for a given chemical symbol.
-
-        Returns
-        -------
-        Species
-
-        Raises
-        ------
-        ValueError
-            If `symbol` does not match any known `Species`.
-        """
-        try:
-            i = self.element_list.index(symbol)
-            return self[i]
-        except ValueError as e:
-            raise ValueError(
-                "No atomic species with symbol `{0}` present in `{1}`."
-                "".format(symbol, self.element_list)
-            ) from e
-
-
 class Structure:
     """
     Holds information about a given structure in the reference data, primarily for when active
@@ -180,8 +91,8 @@ class Structure:
     ----------
     name : str
         Arbitrary name given to the `Structure`, used to identify it in relevant filenames.
-    all_species : AllSpecies
-        Holds information on all atomic species comprising the structure.
+    all_species : List[Species]
+        The Species that constitute this Structure.
     delta_E : float
         The tolerance for discrepancies in energy when active learning.
         If two networks have an energy difference larger than this for a given structure,
@@ -195,6 +106,9 @@ class Structure:
         training set. Units are Hartree/Bohr. Recommended value is either 100 times `delta_E`,
         the highest force error of the training data set (excluding outliers) or five times the
         force RMSE of the training data set for the given structures.
+    global_separation : float, optional
+        If the `min_separation` is not set for all pairs of Species in `all_species`,
+        then `global_separation` will be used as a default. Units are Ang. Default is 0.8.
     selection : list of int, optional
         A list where the first entry is the how many structures of this type to skip, and the
         second entry is a sampling rate. For example, [10, 5] would sample every fifth
@@ -253,9 +167,10 @@ class Structure:
     def __init__(
         self,
         name: str,
-        all_species: AllSpecies,
+        all_species: List[Species],
         delta_E: float,
         delta_F: float,
+        global_separation: float = 0.8,
         selection: List[int] = None,
         min_t_separation_extrapolation: int = None,
         min_t_separation_interpolation: int = None,
@@ -267,6 +182,8 @@ class Structure:
     ):
         self.name = name
         self.all_species = all_species
+        self.all_species.sort(key=lambda x: x.atomic_number)
+        self._validate_min_separation(global_separation=global_separation)
         self.delta_E = delta_E
         self.delta_F = delta_F
 
@@ -310,6 +227,83 @@ class Structure:
         )
         self.exceptions = exceptions
 
+    @property
+    def element_list(self):
+        """
+        Get the symbols of all species, sorted by atomic number.
+
+        Returns
+        -------
+        list of str
+        """
+        return [single_species.symbol for single_species in self.all_species]
+
+    @property
+    def atomic_number_list(self) -> List[int]:
+        """
+        Get the atomic numbers of all species, in order.
+
+        Returns
+        -------
+        list of int
+        """
+        return [single_species.atomic_number for single_species in self.all_species]
+
+    @property
+    def mass_list(self):
+        """
+        Get the masses of all species, sorted by atomic number.
+
+        Returns
+        -------
+        list of str
+        """
+        return [single_species.mass for single_species in self.all_species]
+
+    def _validate_min_separation(self, global_separation: float):
+        """
+        Ensures that the `min_separation` is set for all possible combinations of Species.
+        Values already set are preserved, and `global_separation` is used otherwise.
+
+        Parameters
+        ----------
+        global_separation: float
+            If the `min_separation` is not set for all pairs of Species in `all_species`,
+            then `global_separation` will be used as a default. Units are Ang.
+        """
+        for single_species in self.all_species:
+            if single_species.min_separation is None:
+                # If `min_separation` is not set, use the global value for all species
+                single_species.min_separation = {
+                    symbol: global_separation for symbol in self.element_list
+                }
+            else:
+                for symbol in self.element_list:
+                    if symbol not in single_species.min_separation.keys():
+                        single_species.min_separation[symbol] = global_separation
+
+    def get_species(self, symbol: str) -> Species:
+        """
+        Gets the `Species` object for a given chemical symbol.
+
+        Returns
+        -------
+        Species
+
+        Raises
+        ------
+        ValueError
+            If `symbol` does not match any known `Species`.
+        """
+        try:
+            i = self.element_list.index(symbol)
+            return self.all_species[i]
+        except ValueError as e:
+            raise ValueError(
+                "No atomic species with symbol `{0}` present in `{1}`."
+                "".format(symbol, self.element_list)
+            ) from e
+
 
 class AllStructures(Dict[str, Structure]):
     """
@@ -321,7 +315,7 @@ class AllStructures(Dict[str, Structure]):
         A number of Structure objects that make up the entirety of the reference data set.
         These should all have the same elements and masses, but may have differences in how the
         active learning is handled, for example different energy and force tolerances can be set
-        for each.
+        for each. They must have distinct names.
     """
 
     def __init__(self, *structures: Structure):
@@ -336,26 +330,20 @@ class AllStructures(Dict[str, Structure]):
                 )
             self[structure.name] = structure
 
-            if (
-                structure.all_species.element_list
-                != structures[0].all_species.element_list
-            ):
+            if structure.element_list != structures[0].element_list:
                 raise ValueError("All structures must have the same `element_list`")
 
-            if (
-                structure.all_species.atomic_number_list
-                != structures[0].all_species.atomic_number_list
-            ):
+            if structure.atomic_number_list != structures[0].atomic_number_list:
                 raise ValueError(
                     "All structures must have the same `atomic_number_list`"
                 )
 
-            if structure.all_species.mass_list != structures[0].all_species.mass_list:
+            if structure.mass_list != structures[0].mass_list:
                 raise ValueError("All structures must have the same `mass_list`")
 
-        self.element_list = structures[0].all_species.element_list
-        self.atomic_number_list = structures[0].all_species.atomic_number_list
-        self.mass_list = structures[0].all_species.mass_list
+        self.element_list = structures[0].element_list
+        self.atomic_number_list = structures[0].atomic_number_list
+        self.mass_list = structures[0].mass_list
 
 
 class Frame(Atoms):
@@ -372,11 +360,16 @@ class Frame(Atoms):
     positions: np.ndarray
         Array of float with shape (N, 3), where N is the number of atoms in the frame,
         representing the positions of each atom.
-    forces: np.ndarray
+    charges: np.ndarray = None
+        Array of float with shape (N), where N is the number of atoms in the frame,
+        representing the charge of each atom. Optional, default is None.
+    forces: np.ndarray = None
         Array of float with shape (N, 3), where N is the number of atoms in the frame,
-        representing the forces of each atom.
-    energy: float
-        float with shape representing the total energy of the frame.
+        representing the forces of each atom. Optional, default is None.
+    energy: float = None
+        float with shape representing the total energy of the frame. Optional, default is None.
+    name: str = None
+        The name of the Structure represented by this Frame. Optional, default is None.
     """
 
     def __init__(
@@ -384,12 +377,17 @@ class Frame(Atoms):
         lattice: np.ndarray,
         symbols: np.ndarray,
         positions: np.ndarray,
-        forces: np.ndarray,
-        energy: float,
+        charges: np.ndarray = None,
+        forces: np.ndarray = None,
+        energy: float = None,
+        name: str = None,
     ):
-        super().__init__(symbols=symbols, positions=positions, cell=lattice)
+        super().__init__(
+            symbols=symbols, positions=positions, cell=lattice, charges=charges
+        )
         self.forces = forces
         self.energy = energy
+        self.name = name
 
     @property
     def symbols(self) -> np.ndarray:
@@ -413,21 +411,310 @@ class Frame(Atoms):
         """
         return np.array(super().cell)
 
+    @property
+    def charges(self) -> np.ndarray:
+        """
+        Get the charges of all constituent atoms, in order.
+
+        Returns
+        -------
+        ndarray of float
+        """
+        return np.array(super().get_initial_charges())
+
+    def check_nearest_neighbours(
+        self,
+        element_i: str,
+        element_j: str,
+        d_min: float,
+    ) -> Tuple[bool, float]:
+        """
+        Checks all positions of `element_i` against those of `element_j` for whether they
+        satisfy the nearest neighbour constraint `d_min`.
+
+        Parameters
+        ----------
+        element_i : str
+            Chemical symbol of the first element to consider.
+        element_j : str
+            Chemical symbol of the second element to consider.
+        d_min : float
+            The minimum seperatation allowed for the positions of elements i and j.
+
+        Returns
+        -------
+        bool, float
+            First element is whether the positions satisfy the minimum seperation criteria.
+            Second element is the seperation that caused rejection, or -1 in the case of
+            acceptance.
+        """
+        lat = self.lattice
+        pos_i = self.positions[self.symbols == element_i]
+        pos_j = self.positions[self.symbols == element_j]
+        if len(pos_i) == 0 or len(pos_j) == 0:
+            return True, -1
+
+        pos = np.array(deepcopy(pos_j))
+        pos = np.concatenate(
+            (
+                pos,
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] - lat[1][0] - lat[2][0],
+                        pos[:, 1] - lat[0][1] - lat[1][1] - lat[2][1],
+                        pos[:, 2] - lat[0][2] - lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] - lat[1][0],
+                        pos[:, 1] - lat[0][1] - lat[1][1],
+                        pos[:, 2] - lat[0][2] - lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] - lat[1][0] + lat[2][0],
+                        pos[:, 1] - lat[0][1] - lat[1][1] + lat[2][1],
+                        pos[:, 2] - lat[0][2] - lat[1][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] - lat[2][0],
+                        pos[:, 1] - lat[0][1] - lat[2][1],
+                        pos[:, 2] - lat[0][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0],
+                        pos[:, 1] - lat[0][1],
+                        pos[:, 2] - lat[0][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] + lat[2][0],
+                        pos[:, 1] - lat[0][1] + lat[2][1],
+                        pos[:, 2] - lat[0][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] + lat[1][0] - lat[2][0],
+                        pos[:, 1] - lat[0][1] + lat[1][1] - lat[2][1],
+                        pos[:, 2] - lat[0][2] + lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] + lat[1][0],
+                        pos[:, 1] - lat[0][1] + lat[1][1],
+                        pos[:, 2] - lat[0][2] + lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[0][0] + lat[1][0] + lat[2][0],
+                        pos[:, 1] - lat[0][1] + lat[1][1] + lat[2][1],
+                        pos[:, 2] - lat[0][2] + lat[1][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[1][0] - lat[2][0],
+                        pos[:, 1] - lat[1][1] - lat[2][1],
+                        pos[:, 2] - lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[1][0],
+                        pos[:, 1] - lat[1][1],
+                        pos[:, 2] - lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[1][0] + lat[2][0],
+                        pos[:, 1] - lat[1][1] + lat[2][1],
+                        pos[:, 2] - lat[1][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] - lat[2][0],
+                        pos[:, 1] - lat[2][1],
+                        pos[:, 2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[2][0],
+                        pos[:, 1] + lat[2][1],
+                        pos[:, 2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[1][0] - lat[2][0],
+                        pos[:, 1] + lat[1][1] - lat[2][1],
+                        pos[:, 2] + lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[1][0],
+                        pos[:, 1] + lat[1][1],
+                        pos[:, 2] + lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[1][0] + lat[2][0],
+                        pos[:, 1] + lat[1][1] + lat[2][1],
+                        pos[:, 2] + lat[1][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] - lat[1][0] - lat[2][0],
+                        pos[:, 1] + lat[0][1] - lat[1][1] - lat[2][1],
+                        pos[:, 2] + lat[0][2] - lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] - lat[1][0],
+                        pos[:, 1] + lat[0][1] - lat[1][1],
+                        pos[:, 2] + lat[0][2] - lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] - lat[1][0] + lat[2][0],
+                        pos[:, 1] + lat[0][1] - lat[1][1] + lat[2][1],
+                        pos[:, 2] + lat[0][2] - lat[1][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] - lat[2][0],
+                        pos[:, 1] + lat[0][1] - lat[2][1],
+                        pos[:, 2] + lat[0][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0],
+                        pos[:, 1] + lat[0][1],
+                        pos[:, 2] + lat[0][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] + lat[2][0],
+                        pos[:, 1] + lat[0][1] + lat[2][1],
+                        pos[:, 2] + lat[0][2] + lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] + lat[1][0] - lat[2][0],
+                        pos[:, 1] + lat[0][1] + lat[1][1] - lat[2][1],
+                        pos[:, 2] + lat[0][2] + lat[1][2] - lat[2][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] + lat[1][0],
+                        pos[:, 1] + lat[0][1] + lat[1][1],
+                        pos[:, 2] + lat[0][2] + lat[1][2],
+                    )
+                )[0],
+                np.dstack(
+                    (
+                        pos[:, 0] + lat[0][0] + lat[1][0] + lat[2][0],
+                        pos[:, 1] + lat[0][1] + lat[1][1] + lat[2][1],
+                        pos[:, 2] + lat[0][2] + lat[1][2] + lat[2][2],
+                    )
+                )[0],
+            ),
+            axis=0,
+        )
+
+        # If elements are the same, then the shortest distance will be 0.0 (as the "central"
+        # included in the array), so select index 1 instead.
+        if element_i == element_j:
+            select = 1
+        else:
+            select = 0
+
+        for p in pos_i:
+            d = np.dstack((pos[:, 0] - p[0], pos[:, 1] - p[1], pos[:, 2] - p[2]))[0]
+            d = np.sqrt(d[:, 0] ** 2 + d[:, 1] ** 2 + d[:, 2] ** 2)
+            d = d[d.argsort()[select]]
+            if d < d_min:
+                return False, d
+
+        return True, -1
+
+    def check_min_separation(self, structure: Structure) -> bool:
+        """
+        Checks the interatomic distances for atom in the structure to ensure
+        that none are within the minimum requried seperation of `structure`.
+
+        Parameters
+        ----------
+        structure : Structure
+            The Structure that this Frame corresponds to.
+
+        Returns
+        -------
+        bool
+            Whether the arguments were accepted as a valid structure.
+        """
+        for i, element_i in enumerate(structure.element_list):
+            for element_j in structure.element_list[i:]:
+                accepted, d = self.check_nearest_neighbours(
+                    element_i,
+                    element_j,
+                    structure.get_species(element_i).min_separation[element_j],
+                )
+                if not accepted:
+                    print(
+                        "Too small interatomic distance between {}-{}: {} Ang".format(
+                            element_i, element_j, d
+                        )
+                    )
+                    return False
+
+        return True
+
 
 class Dataset(List[Frame]):
     """
-    Holds a series of `Frame` objects representing a dataset.
+    Holds a series of `Frame` objects representing a dataset. If `all_structures` is provided
+    then will attempt to associate each Frame with a Structure name based on the comments in
+    the data file, or if there is only one Structure in `all_structures` then all frames will
+    be associated with that Structure. This is needed in order to run minimum separation
+    checks.
 
     Parameters
     ----------
     data_file: str
         Complete file path of the n2p2 data file to read.
+    all_structures: AllStructures = None
+        Representations of all Structures in the Dataset. Optional, default is None.
     """
 
     def __init__(
         self,
         data_file: str,
+        all_structures: AllStructures = None,
     ):
+        self.all_structures = all_structures
         super().__init__(self.read_data_file(data_file=data_file))
 
     @property
@@ -477,32 +764,44 @@ class Dataset(List[Frame]):
         forces = []
         energy = None
         for line in lines:
+            words = line.split()
             if line.strip() == "begin":
                 lattice = []
                 elements = []
                 positions = []
                 forces = []
                 energy = None
-            elif line.split()[0] == "lattice":
-                lattice.append(np.array([float(line.split()[j]) for j in (1, 2, 3)]))
-            elif line.split()[0] == "atom":
-                elements.append(line.split()[4])
+                if self.all_structures is not None and len(self.all_structures) == 1:
+                    name = list(self.all_structures)[0]
+                else:
+                    name = None
+            elif words[0] == "comment":
+                if (
+                    (words[1] == "structure")
+                    and (self.all_structures is not None)
+                    and (words[2] in self.all_structures)
+                ):
+                    name = words[2]
+            elif words[0] == "lattice":
+                lattice.append(np.array([float(words[j]) for j in (1, 2, 3)]))
+            elif words[0] == "atom":
+                elements.append(words[4])
                 positions.append(
                     [
-                        float(line.split()[1]),
-                        float(line.split()[2]),
-                        float(line.split()[3]),
+                        float(words[1]),
+                        float(words[2]),
+                        float(words[3]),
                     ]
                 )
                 forces.append(
                     [
-                        float(line.split()[-3]),
-                        float(line.split()[-2]),
-                        float(line.split()[-1]),
+                        float(words[-3]),
+                        float(words[-2]),
+                        float(words[-1]),
                     ]
                 )
-            elif line.split()[0] == "energy":
-                energy = float(line.split()[1])
+            elif words[0] == "energy":
+                energy = float(words[1])
             elif line.strip() == "end":
                 frames.append(
                     Frame(
@@ -511,7 +810,26 @@ class Dataset(List[Frame]):
                         positions=np.array(positions),
                         forces=np.array(forces),
                         energy=energy,
+                        name=name,
                     )
                 )
 
         return frames
+
+    def check_min_separation_all(self) -> Iterator[bool]:
+        """
+        Checks all Frames in the Dataset to ensure they satisfy the minimum separation of
+        `self.all_structures`. Will raise a ValueError if `self.all_structures` was not set.
+
+        Yields
+        ------
+        Iterator[bool]
+            Whether each frame satisfies the separation for the particular Structure it
+            represents.
+        """
+        if self.all_structures is None:
+            raise ValueError("Cannot check separation if `all_structures` is not set.")
+
+        for frame in self:
+            structure = self.all_structures[frame.name]
+            yield frame.check_min_separation(structure=structure)
