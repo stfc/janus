@@ -651,28 +651,45 @@ def test_choose_weights_epoch(data: Data):
 
 
 @pytest.mark.parametrize(
-    "energy_threshold, force_threshold, stdout",
-    [(np.inf, np.inf, "0 outliers found: []\n"), (0.0, 0.0, "1 outliers found: [0]\n")],
+    "energy_threshold, force_threshold, expected_removed_indicies, stdout",
+    [
+        (
+            np.inf,
+            np.inf,
+            [[]],
+            "Removing outliers in tests/data/tests_output\n"
+            "Removing 0 frames for having atoms outside of threshold.\n",
+        ),
+        (
+            0.0,
+            0.0,
+            [[0]],
+            "Removing outliers in tests/data/tests_output\n"
+            "Removing 1 frames for having atoms outside of threshold.\n",
+        ),
+    ],
 )
-def test_remove_outliers(
+def test_reduce_dataset_outliers(
     data: Data,
     energy_threshold: float,
     force_threshold: float,
+    expected_removed_indicies: List[int],
     stdout: str,
     capsys: pytest.CaptureFixture,
 ):
     """
-    Test that `remove_outliers` gives the exptected outcome when removing outliers, and when
-    not.
+    Test that `reduce_dataset_outliers` gives the exptected outcome when removing outliers,
+    and when not.
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/output.data", "tests/data/tests_output/output.data")
     data.n2p2_directories = ["tests/data/tests_output"]
-    data.remove_outliers(
+    removed_indices = data.reduce_dataset_outliers(
         energy_threshold=energy_threshold, force_threshold=force_threshold
     )
 
-    assert stdout in capsys.readouterr().out
+    assert removed_indices == expected_removed_indicies
+    assert stdout == capsys.readouterr().out
 
 
 def test_write_extrapolations_lammps_script(
@@ -729,12 +746,7 @@ def test_analyse_extrapolations(
 @pytest.mark.parametrize(
     "separation, expected_indices, stdout",
     [
-        (
-            0.0,
-            [[]],
-            "Removing 0 frames for having atoms within minimum separation.\n"
-            "No frames to remove\n",
-        ),
+        (0.0, [[]], "Removing 0 frames for having atoms within minimum separation.\n"),
         (
             np.inf,
             [[0]],
@@ -743,7 +755,7 @@ def test_analyse_extrapolations(
         ),
     ],
 )
-def test_trim_dataset_separation(
+def test_reduce_dataset_min_separation(
     data: Data,
     separation: float,
     expected_indices: List[int],
@@ -759,7 +771,7 @@ def test_trim_dataset_separation(
     for species in structure.all_species:
         species.min_separation = {"H": separation, "C": separation, "O": separation}
 
-    remove_indices = data.trim_dataset_separation()
+    remove_indices = data.reduce_dataset_min_separation()
 
     assert remove_indices == expected_indices
     assert capsys.readouterr().out == stdout

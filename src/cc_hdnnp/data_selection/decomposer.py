@@ -12,8 +12,7 @@ import numpy as np
 from sklearn.decomposition import TruncatedSVD
 
 
-from cc_hdnnp.file_operations import remove_data
-from cc_hdnnp.structure import Dataset
+from cc_hdnnp.dataset import Dataset
 from .dataselector import DataSelector
 
 
@@ -201,7 +200,7 @@ class Decomposer(DataSelector):
             Each key corresponds to an element, with a value of an array containing the weight
             for each symmetry function.
         """
-        dataset = Dataset(file_data)
+        dataset = Dataset(data_file=file_data)
         volume = np.mean([frame.get_volume() for frame in dataset])
 
         weights = {element: [] for element in self.elements}
@@ -356,6 +355,8 @@ class Decomposer(DataSelector):
         file_in: str = "input.nn",
         file_out_list: List[str] = ("input.nn",),
         file_backup: str = "input.nn.CUR_backup",
+        file_2d_atom: str = "CUR_2d_atom_{}.out",
+        file_2d_frame: str = "CUR_2d_frame_{}.out",
     ):
         """
         Performs CUR decomposition selecting symmetry functions that when evaluated on the
@@ -376,14 +377,22 @@ class Decomposer(DataSelector):
             lie within r_cutoff. This effectively preferentially selects functions what will
             rarely be evaluated due to reduced computational cost.
         file_in: str = None,
-            File path relative to `self.n2p2 directory` to use as input.
+            Filepath relative to `self.n2p2 directory` to use as input.
             Default is "input.nn".
         file_out_list: str = None,
-            List of file paths relative to `self.n2p2 directory` to use as output for each of
+            List of filepaths relative to `self.n2p2 directory` to use as output for each of
             the values in `n_to_select_list`. Default is "input.nn".
         file_backup: str = None,
-            File path relative to `self.n2p2 directory` to use as a backup for the original
+            Filepath relative to `self.n2p2 directory` to use as a backup for the original
             data. Default is "input.nn.CUR_backup".
+        file_2d_atom: str = "CUR_2d_atom_{}.out"
+            Filepath relative to `self.n2p2 directory` to write the environments for each atom
+            in terms of their best two symmetry functions. Formatted with the chemical symbol
+            for each element (as they all use distinct symmetry functions).
+        file_2d_frame: str = "CUR_2d_frame_{}.out"
+            Filepath relative to `self.n2p2 directory` to write the environments for each frame
+            in terms of their best two symmetry functions. Formatted with the chemical symbol
+            for each element (as they all use distinct symmetry functions).
         """
         if weight:
             weights = self._calculate_symf_weights(
@@ -414,6 +423,43 @@ class Decomposer(DataSelector):
                 n_to_select=max(n_to_select_list),
                 weights=weights[element],
             )
+
+            # Write the environments to file expressed in terms of
+            # their primary symmetry functions
+            if len(all_selected_indices[element]) >= 2:
+                index_0 = all_selected_indices[element][0]
+                index_1 = all_selected_indices[element][1]
+                file_atom_formatted = join(
+                    self.n2p2_directory, file_2d_atom.format(element)
+                )
+                file_frame_formatted = join(
+                    self.n2p2_directory, file_2d_frame.format(element)
+                )
+                with open(file_atom_formatted, "w") as f:
+                    [
+                        f.write("   {:3.9f}".format(v))
+                        for v in environments_r2[:, index_0]
+                    ]
+                    f.write("\n")
+                    [
+                        f.write("   {:3.9f}".format(v))
+                        for v in environments_r2[:, index_1]
+                    ]
+                with open(file_frame_formatted, "w") as f:
+                    [
+                        f.write("   {:3.9f}".format(v))
+                        for v in np.mean(environments[:, :, index_0], axis=1)
+                    ]
+                    f.write("\n")
+                    [
+                        f.write("   {:3.9f}".format(v))
+                        for v in np.mean(environments[:, :, index_1], axis=1)
+                    ]
+            elif self.verbosity >= 1:
+                print(
+                    "At least 2 symmetry functions must be selected "
+                    "to write a 2D representation to file."
+                )
 
         for i, n in enumerate(n_to_select_list):
             indices = {element: 0 for element in self.elements}
@@ -477,12 +523,12 @@ class Decomposer(DataSelector):
             n_to_select=max(n_to_select_list),
             weights=None,
         )
+        dataset = Dataset(
+            data_file=join(self.n2p2_directory, file_in),
+        )
+        dataset.write_data_file(file_out=join(self.n2p2_directory, file_backup))
         for i, n in enumerate(n_to_select_list):
-            remove_indices = set(range(self.n_frames)) - set(selected_indices[:n])
-
-            remove_data(
-                remove_indices=remove_indices,
-                data_file_in=join(self.n2p2_directory, file_in),
-                data_file_out=join(self.n2p2_directory, file_out_list[i]),
-                data_file_backup=join(self.n2p2_directory, file_backup),
+            dataset.write_data_file(
+                file_out=join(self.n2p2_directory, file_out_list[i]),
+                conditions=(i in selected_indices[:n] for i in range(self.n_frames)),
             )

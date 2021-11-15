@@ -157,13 +157,13 @@ def test_decompose_dataset_data(
     assert isfile(file + ".CUR_backup")
     with open(file + ".CUR_backup") as f:
         lines = f.readlines()
-        assert len(lines) == 30
+        assert len(lines) == 33
 
     assert isfile(file)
     with open(file) as f:
         lines = f.readlines()
-        assert len(lines) == 10
-        assert lines[-2] == "charge  2.0\n"
+        assert len(lines) == 11
+        assert lines[-3] == "energy       2.00000000\n"
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,6 @@ workflows.
 """
 
 import re
-from shutil import copy
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -127,6 +126,10 @@ def read_lammps_log(
         )
     )
 
+    if len(timesteps) == 0:
+        print("No timesteps completed for {}".format(log_lammps_file))
+        timesteps = np.array([0])
+
     return timesteps, extrapolation_free_lines, extrapolation_free_timesteps
 
 
@@ -237,43 +240,6 @@ def read_nn_settings(
     return returned_settings
 
 
-# def read_atomenv_segments(
-#     atomenv_name: str,
-#     elements: List[str],
-#     atoms_per_frame: int,
-#     frame_segments: List[List[int]] = None,
-# ):
-#     """
-#     TODO
-#     """
-#     element_environments = [{element: [] for element in elements} for _ in frame_segments]
-#     with open(atomenv_name) as f:
-#         atom_index = 0
-#         frame_index = 0
-#         line = f.readline()
-#         while line:
-#             for i, segment in enumerate(frame_segments):
-#                 if frame_index in segment:
-#                     segment_index = i
-
-#             if atom_index == 0:
-#                 for element in elements:
-#                     element_environments[segment_index][element].append([])
-
-#             data = line.split()
-#             element_environments[segment_index][data[0]][-1].append(data[1:])
-
-#             atom_index += 1
-#             line = f.readline()
-
-#             if atom_index == atoms_per_frame:
-#                 atom_index = 0
-#                 frame_index += 1
-
-#     return [{key: np.array(value).astype(float) for key, value in segment.items()}
-# for segment in element_environments]
-
-
 def read_atomenv(
     atomenv_name: str, elements: List[str], atoms_per_frame: int, dtype: str = "float32"
 ) -> Dict[str, np.ndarray]:
@@ -323,45 +289,6 @@ def read_atomenv(
         key: np.array(value).astype(dtype)
         for key, value in element_environments.items()
     }
-
-
-def remove_data(
-    remove_indices: List[int],
-    data_file_in: str,
-    data_file_out: str,
-    data_file_backup: str,
-):
-    """
-    Reads the content of `data_file_in`, removes the frames specified by `remove_indices`,
-    then writes the remaining frames to `data_file_out`. If specified, a copy of the original
-    data is made at `data_backup`.
-
-    Parameters
-    ----------
-    data_file_in: str
-        File path of the n2p2 structure file to read from.
-    data_file_out: str
-        File path of the n2p2 structure file to write to.
-    data_file_backup: str
-        File path of the n2p2 structure file to copy the original `data_file_in` to.
-    """
-    if len(remove_indices) == 0:
-        print("No frames to remove")
-        return
-
-    if data_file_backup and data_file_in != data_file_backup:
-        copy(data_file_in, data_file_backup)
-
-    with open(data_file_in, "r") as f:
-        lines = f.readlines()
-    with open(data_file_out, "w") as f:
-        i = 0
-        for line in lines:
-            if i not in remove_indices:
-                f.write(line)
-
-            if line.strip() == "end":
-                i += 1
 
 
 def read_last_timestep(file_lammps: str) -> int:

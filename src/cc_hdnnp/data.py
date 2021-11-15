@@ -27,10 +27,10 @@ import numpy as np
 from cc_hdnnp.file_operations import (
     format_template_file,
     read_last_timestep,
-    remove_data,
 )
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
-from cc_hdnnp.structure import AllStructures, Dataset, Structure
+from cc_hdnnp.structure import AllStructures, Structure
+from .dataset import Dataset
 
 
 class Data:
@@ -222,24 +222,18 @@ class Data:
                         f.write(text)
                 i += 1
 
-    def remove_outliers(
+    def reduce_dataset_outliers(
         self,
         energy_threshold: Union[float, Tuple[float, float]],
         force_threshold: float,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
         data_file_backup: str = "input.data.outliers_backup",
-        reference_file: str = "output.data",
-    ):
+    ) -> List[int]:
         """
-        Read `reference_file` for energy and force values, and in these and in `target_file`
-        comment out the structures which have an energy or force above the specified
-        threshold values.
-
-        Practically, if "input.data" is the `reference_file`, then the `energy_threshold` and
-        `force_threshold` should be in the same units as that file, i.e. physical units. If
-        "output.data" is used, then normalised thresholds can be given (i.e. setting the
-        threshold in multiples of the datasets standard deviations).
+        Read `data_file_in` for energy and force values, and write only those Frames within
+        the specified thresholds to `data_file_out`. `energy_threshold` and
+        `force_threshold` should be in the same units as `data_file_in`.
 
         Note that scaling, normalising and pruning should be redone after this.
 
@@ -247,10 +241,12 @@ class Data:
         ----------
         energy_threshold : float or tuple of float
             Structures which lie outside the range of `energy_threshold` will be removed from
-            the dataset. The units depend on `reference_file`.
+            the dataset. The units depend on `data_file_in`. If a single value is given, the
+            range taken is +- that value. Otherwise, the first and second entries are taken
+            as the lower/upper bounds on energy.
         force_threshold : float
             Structures with a force component more than `force_threshold` will be removed from
-            the dataset. The units depend on `reference_file`.
+            the dataset. The units depend on `data_file_in`.
         data_file_in: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directories`,
             to read from. Default is "input.data".
@@ -260,64 +256,40 @@ class Data:
         data_file_backup: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directories`, to copy
             the original `data_file_in` to. Default is "input.data.outliers_backup".
-        reference_file: str, optional
-            File path of the n2p2 structure file, relative to `self.n2p2_directories`,
-            to read the energy and force values from. Default is "input.data".
+
+        Returns
+        -------
+        List[int]
+            The list of frame indices that have been removed from the Dataset.
         """
+        all_remove_indices = []
         if isinstance(energy_threshold, float):
             energy_threshold = (-energy_threshold, energy_threshold)
 
         for n2p2_directory in self.n2p2_directories:
             print("Removing outliers in {}".format(n2p2_directory))
-            with open(join_paths(n2p2_directory, reference_file)) as f:
-                lines = f.readlines()
-
-            remove_indices = []
-            remove = False
-            atom_count = 0
-            i = 0
-            for line in lines:
-                line_split = line.split()
-                if line_split[0] == "atom":
-                    atom_count += 1
-                    force = np.array(
-                        [
-                            float(line_split[-3]),
-                            float(line_split[-2]),
-                            float(line_split[-1]),
-                        ]
-                    )
-                    if any(abs(force) > force_threshold):
-                        print(
-                            "Structure {0} above threshold with a force of {1}".format(
-                                i, force
-                            )
-                        )
-                        remove = True
-                elif line_split[0] == "energy":
-                    energy = float(line_split[-1]) / atom_count
-                    if energy < energy_threshold[0] or energy > energy_threshold[1]:
-                        print(
-                            "Structure {0} outside threshold with an energy of {1}".format(
-                                i, energy
-                            )
-                        )
-                        remove = True
-                elif line_split[0] == "end":
-                    if remove:
-                        remove_indices.append(i)
-                    remove = False
-                    atom_count = 0
-                    i += 1
-
-            print("{0} outliers found: {1}".format(len(remove_indices), remove_indices))
-
-            remove_data(
-                remove_indices,
-                join_paths(n2p2_directory, data_file_in),
-                join_paths(n2p2_directory, data_file_out),
-                join_paths(n2p2_directory, data_file_backup),
+            dataset = Dataset(
+                data_file=join_paths(n2p2_directory, data_file_in),
+                all_structures=self.all_structures,
             )
+            conditions = dataset.check_threshold_all(
+                energy_threshold=energy_threshold, force_threshold=force_threshold
+            )
+
+            dataset.write_data_file(
+                file_out=join_paths(n2p2_directory, data_file_backup)
+            )
+            _, removed_indices = dataset.write_data_file(
+                file_out=join_paths(n2p2_directory, data_file_out),
+                conditions=conditions,
+            )
+            print(
+                "Removing {} frames for having atoms outside of threshold."
+                "".format(len(removed_indices))
+            )
+            all_remove_indices.append(removed_indices)
+
+        return all_remove_indices
 
     def write_xyz(self, file_xyz: str = "xyz/{}.xyz", unit_out: str = "Ang"):
         """
@@ -717,14 +689,14 @@ class Data:
                 """#!/usr/bin/env bash
 
 ##SBATCH -n 128
-#SBATCH -N 4
+#SBATCH -N 2
 #SBATCH --ntasks-per-node=24
 #SBATCH --cpus-per-task=1
 #SBATCH --exclusive
 ##SBATCH --reservation=scddevel
 ##SBATCH --account=scddevel
-#SBATCH -t 2:00:00
-#SBATCH -C scarf18
+#SBATCH -t 0:30:00
+#SBATCH -C [scarf18|scarf17]
 
 module purge
 module use /work3/cse/dlp/eb-ml/modules/all
@@ -1739,6 +1711,28 @@ rm -f tmp.pp
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
         """
+        mode2 = "{}/mode2".format(self.active_learning_directory)
+        HDNNP_1 = "{}/mode2/HDNNP_1".format(self.active_learning_directory)
+        HDNNP_2 = "{}/mode2/HDNNP_2".format(self.active_learning_directory)
+        for dir in (mode2, HDNNP_1, HDNNP_2):
+            if not isdir(dir):
+                mkdir(dir)
+
+        dataset = Dataset(
+            data_file="{}/input.data-new".format(self.active_learning_directory),
+            all_structures=self.all_structures,
+        )
+        dataset.write_data_file(
+            file_out="{}/mode2/HDNNP_1/input.data".format(
+                self.active_learning_directory
+            )
+        )
+        dataset.write_data_file(
+            file_out="{}/mode2/HDNNP_2/input.data".format(
+                self.active_learning_directory
+            )
+        )
+
         with open(join_paths(self.scripts_directory, file_batch_template)) as f:
             batch_template_text = f.read()
 
@@ -1752,11 +1746,6 @@ rm -f tmp.pp
 
         # Setup
         output_text += "\nn2p2_directories=({} {})".format(*n2p2_directories)
-        output_text += "\nmkdir {}/mode2".format(self.active_learning_directory)
-        output_text += (
-            "\nmkdir {}/mode2".format(self.active_learning_directory)
-            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
-        )
         output_text += (
             "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/input.nn "
             + "{}/mode2".format(self.active_learning_directory)
@@ -1810,7 +1799,6 @@ rm -f tmp.pp
             "\ncd {}/mode2".format(self.active_learning_directory)
             + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
         )
-        output_text += "\nln -s ../../input.data-new input.data"
         output_text += (
             "\nmpirun -np ${SLURM_NTASKS} "
             + "{}/nnp-train > mode_2.out".format(self.n2p2_bin)
@@ -2052,12 +2040,11 @@ rm -f tmp.pp
 
         return timestep_data
 
-    def trim_dataset_separation(
+    def reduce_dataset_min_separation(
         self,
         data_file_in: str = "input.data",
         data_file_out: str = "input.data",
         data_file_backup: str = "input.data.minimum_separation_backup",
-        # data_file_unit: str = "Bohr",
     ):
         """
         Removes individual frames from `data_file_in` that do not meet the criteria on
@@ -2076,33 +2063,31 @@ rm -f tmp.pp
         data_file_backup: str, optional
             File path of the n2p2 structure file, relative to `self.n2p2_directories`, to copy
             the original `data_file_in` to. Default is "input.data.minimum_separation_backup".
-        # data_file_unit: str, optional
-        #     Length unit used in the data files, to ensure compatibility with the separation
-        #     specified on `structure`.
+
+        Returns
+        -------
+        List[int]
+            The list of frame indices that have been removed from the Dataset.
         """
         all_remove_indices = []
         for n2p2_directory in self.n2p2_directories:
-            remove_indices = []
-            # TODO units
             dataset = Dataset(
-                join_paths(n2p2_directory, data_file_in), self.all_structures
+                data_file=join_paths(n2p2_directory, data_file_in),
+                all_structures=self.all_structures,
             )
-            for i, accepted in enumerate(dataset.check_min_separation_all()):
-                if not accepted:
-                    remove_indices.append(i)
 
+            dataset.write_data_file(
+                file_out=join_paths(n2p2_directory, data_file_backup)
+            )
+            _, removed_indices = dataset.write_data_file(
+                file_out=join_paths(n2p2_directory, data_file_out),
+                conditions=dataset.check_min_separation_all(),
+            )
             print(
                 "Removing {} frames for having atoms within minimum separation."
-                "".format(len(remove_indices))
+                "".format(len(removed_indices))
             )
-
-            remove_data(
-                remove_indices,
-                join_paths(n2p2_directory, data_file_in),
-                join_paths(n2p2_directory, data_file_out),
-                join_paths(n2p2_directory, data_file_backup),
-            )
-            all_remove_indices.append(remove_indices)
+            all_remove_indices.append(removed_indices)
 
         return all_remove_indices
 

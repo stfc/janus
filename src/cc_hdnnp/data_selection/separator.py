@@ -8,7 +8,8 @@ from typing import Callable, Dict, List, Literal, Union
 
 import numpy as np
 
-from cc_hdnnp.file_operations import read_nn_settings, read_scaling, remove_data
+from cc_hdnnp.dataset import Dataset
+from cc_hdnnp.file_operations import read_nn_settings, read_scaling
 from .dataselector import DataSelector
 
 
@@ -418,11 +419,13 @@ class Separator(DataSelector):
                 print("Selected indices:\n{}\n".format(max_separation_indicies))
                 print("Time taken: {}\n".format(time.time() - t1))
 
-        remove_data(
-            remove_indices,
-            join(self.n2p2_directory, file_in),
-            join(self.n2p2_directory, file_out),
-            join(self.n2p2_directory, file_backup),
+        dataset = Dataset(
+            data_file=join(self.n2p2_directory, file_in),
+        )
+        dataset.write_data_file(file_out=join(self.n2p2_directory, file_backup))
+        dataset.write_data_file(
+            file_out=join(self.n2p2_directory, file_out),
+            conditions=(i in selected_indices for i in range(self.n_frames)),
         )
 
         return selected_indices

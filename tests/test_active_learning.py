@@ -12,6 +12,7 @@ import pytest
 
 from cc_hdnnp.active_learning import ActiveLearning
 from cc_hdnnp.data import Data
+from cc_hdnnp.dataset import Dataset, Frame
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
@@ -129,6 +130,23 @@ def active_learning(data: Data) -> ActiveLearning:
     remove("tests/data/n2p2/weights.001.data")
     remove("tests/data/n2p2/weights.006.data")
     remove("tests/data/n2p2/weights.008.data")
+
+
+@pytest.fixture
+def basic_dataset(active_learning: ActiveLearning) -> Dataset:
+    """
+    Fixture to create a basic Dataset object from a single Frame containing
+    only H atoms.
+    """
+    frame = Frame(
+        name="test",
+        lattice=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        symbols=np.array(["H" for _ in range(512)]),
+        charges=np.array([0.0 for _ in range(512)]),
+        positions=np.array([[0.0, 0.0, 0.0] for _ in range(512)]),
+        statistics=np.array(["small", "H", "0", "0"]),
+    )
+    return Dataset(frames=[frame], all_structures=active_learning.all_structures)
 
 
 def prepare_mode1_files(files: List[str] = None):
@@ -444,22 +462,26 @@ def test_write_validate_timesteps_min_t_separation_interpolation(
 def test_read_input_data(
     active_learning: ActiveLearning, periodic: bool, directories: List[str]
 ):
-    """Test that errors are raised if bad data is provided."""
+    """
+    Test that the Dataset returned by `_read_input_data` has the expected
+    values, notably that the lattice is correctly created for a non-periodic structure.
+    """
     active_learning.periodic = periodic
     active_learning.data_controller.n2p2_directories = directories
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("different file")
 
-    names, lattices, elements, xyzs, qs = active_learning._read_input_data()
+    dataset = active_learning._read_input_data()
 
-    assert names == np.array(["test"])
-    assert lattices.shape == (1, 3, 3)
+    assert dataset.all_names == np.array(["test"])
+    assert dataset.all_lattices.shape == (1, 3, 3)
     np.testing.assert_allclose(
-        lattices, np.array([[[30.280816, 0, 0], [0, 30.304311, 0], [0, 0, 30.289951]]])
+        dataset.all_lattices,
+        np.array([[[30.280816, 0, 0], [0, 30.304311, 0], [0, 0, 30.289951]]]),
     )
-    assert elements.shape == (1, 512)
-    assert xyzs.shape == (1, 512, 3)
-    assert qs.shape == (1, 512)
+    assert dataset.all_symbols.shape == (1, 512)
+    assert dataset.all_positions.shape == (1, 512, 3)
+    assert dataset.all_charges.shape == (1, 512)
 
 
 @pytest.mark.parametrize(
@@ -588,12 +610,12 @@ def test_write_input_lammps_errors(
 
 
 @pytest.mark.parametrize(
-    "atom_style, charge_str", [("atomic", ""), ("full", "1  0.000 ")]
+    "atom_style, output", [("atomic", [1, 1, 0, 0, 0]), ("full", [1, 0, 1, 0, 0, 0, 0])]
 )
 def test_write_structure_lammps(
     active_learning: ActiveLearning,
     atom_style: str,
-    charge_str: str,
+    output: List[int],
 ):
     """
     Test the `_write_structure_lammps` function is successful for both `atom_style` values
@@ -604,18 +626,24 @@ def test_write_structure_lammps(
     with open(output_directory + "/simulation.lammps", "w") as f:
         f.write("run 5")
 
+    frame = Frame(
+        lattice=np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+        symbols=np.array(["H"]),
+        charges=np.array([0]),
+        positions=np.array([[0, 0, 0]]),
+    )
+    dataset = Dataset(frames=[frame], all_structures=active_learning.all_structures)
+
     active_learning._write_structure_lammps(
         path=output_directory,
-        lattice=np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
-        element=np.array(["H"]),
-        xyz=np.array([[0, 0, 0]]),
-        q=np.array([0]),
+        dataset=dataset,
+        selection=0,
     )
 
     assert isfile(output_directory + "/structure.lammps")
     with open(output_directory + "/structure.lammps") as f:
         lines = f.readlines()
-    assert lines[-1] == "   1 1 {}  0.00000   0.00000   0.00000\n".format(charge_str)
+    assert np.all(np.array(lines[-1].split(), dtype=float) == np.array(output))
 
 
 # TEST WRITE LAMMPS
@@ -1261,8 +1289,11 @@ def test_get_timesteps(
 def test_prepare_data_new(
     active_learning: ActiveLearning, capsys: pytest.CaptureFixture
 ):
-    """Test that creating "input.data-new" results in the expected stdout, and that if
-    called again then a warning is printed that the existing file will be re-used."""
+    """
+    Test that creating "input.data-new" results in the expected stdout, and that if
+    called again then a warning is printed that the file is in memory or that the
+    existing file will be re-used.
+    """
     prepare_mode1_files()
 
     active_learning.prepare_data_new()
@@ -1272,28 +1303,29 @@ def test_prepare_data_new(
     active_learning.prepare_data_new()
 
     assert capsys.readouterr().out == (
+        "`self.dataset_new` or `self.names` is already set. "
+        "To regenerate the new dataset, set them to None.\n"
+    )
+
+    active_learning.dataset_new = Dataset()
+    active_learning.names = []
+    active_learning.prepare_data_new()
+
+    assert capsys.readouterr().out == (
         "input.data-new is already present and data will be read from there.\n"
         "To regenerate input.data-new, delete existing file.\n"
     )
 
 
 def test_prepare_data_new_name_none(
-    all_species: List[Species], capsys: pytest.CaptureFixture
+    data: Data, all_species: List[Species], capsys: pytest.CaptureFixture
 ):
     """Test that `prepare_data_new` does not print the name of the Structure in the case
     where we only have one without a defined name."""
     prepare_mode1_files()
     copy("tests/data/scripts/template.sh", "tests/data/tests_output/template.sh")
     structure = Structure(name=None, all_species=all_species, delta_E=1.0, delta_F=1.0)
-    data = Data(
-        structures=AllStructures(structure),
-        main_directory="tests/data",
-        scripts_sub_directory="tests_output",
-        active_learning_sub_directory="tests_output",
-        n2p2_bin="",
-        lammps_executable="",
-        n2p2_sub_directories=["n2p2_copy", "n2p2_copy"],
-    )
+    data.all_structures = AllStructures(structure)
     active_learning = ActiveLearning(
         data_controller=data,
     )
@@ -1304,18 +1336,16 @@ def test_prepare_data_new_name_none(
 
 
 def test_prepare_data_add(
-    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
+    active_learning: ActiveLearning,
+    capsys: pytest.CaptureFixture,
+    basic_dataset: Dataset,
 ):
     """Test that calling `prepare_data_add` gives the expected stdout,
     including values of timings and numbers of structures."""
     prepare_mode2_files()
 
-    active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
-    active_learning.elements = np.array([["H" for _ in range(512)]])
-    active_learning.charges = np.array([[0 for _ in range(512)]])
     active_learning.names = np.array(["test_s0"])
-    active_learning.positions = np.array([[[0, 0, 0] for _ in range(512)]])
-    active_learning.statistics = np.array([["small", "H", "0", "0"]])
+    active_learning.dataset_new = basic_dataset
     active_learning.prepare_data_add()
 
     assert (
@@ -1343,6 +1373,8 @@ def test_prepare_data_add_call_prepare_data_new(
 
     active_learning.prepare_data_add()
 
+    assert active_learning.selection == [0]
+    assert active_learning.names == np.array(["test_npt_hdnnp1_t325_p1.0_1_s23"])
     assert (
         capsys.readouterr().out
         == "No data loaded, calling `prepare_data_new`\n"
@@ -1358,18 +1390,18 @@ def test_prepare_data_add_call_prepare_data_new(
         + "1 missing structures originate from large extrapolations.\n"
     )
 
-    active_learning.lattices = []
-    active_learning.elements = []
-    active_learning.charges = []
     active_learning.names = []
-    active_learning.positions = []
-    active_learning.statistics = []
+    active_learning.dataset_new = Dataset(all_structures=active_learning.all_structures)
 
     active_learning.prepare_data_add()
 
+    assert active_learning.selection == [0]
+    assert active_learning.names == np.array(["test_npt_hdnnp1_t325_p1.0_1_s23"])
     assert (
         capsys.readouterr().out
-        == "Reading from input.data-new\n"
+        == "No data loaded, calling `prepare_data_new`\n"
+        + "input.data-new is already present and data will be read from there.\n"
+        + "To regenerate input.data-new, delete existing file.\n"
         + "\nTime to calculate 1 structures using RuNNer: "
         + "HDNNP_1: 1.02 h, HDNNP_2: 1.02 min.\n\n"
         + "0 structures identified over energy threshold `dE=[1.]`:\n"
@@ -1383,18 +1415,16 @@ def test_prepare_data_add_call_prepare_data_new(
 
 
 def test_prepare_data_add_normalisation(
-    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
+    active_learning: ActiveLearning,
+    capsys: pytest.CaptureFixture,
+    basic_dataset: Dataset,
 ):
     """Test that if normalisation is present in the N2P2 headers,
     then this is applied to the energy and force threshold values."""
     prepare_mode2_files()
 
-    active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
-    active_learning.elements = np.array([["H" for _ in range(512)]])
-    active_learning.charges = np.array([[0 for _ in range(512)]])
     active_learning.names = np.array(["test_s0"])
-    active_learning.positions = np.array([[[0, 0, 0] for _ in range(512)]])
-    active_learning.statistics = np.array([["small", "H", "0", "0"]])
+    active_learning.dataset_new = basic_dataset
     copy("tests/data/n2p2_copy/input.nn.norm", "tests/data/n2p2_copy/input.nn")
 
     active_learning.prepare_data_add()
@@ -1415,21 +1445,19 @@ def test_prepare_data_add_normalisation(
     )
 
 
-def test_prepare_data_add_mixed_normalisation(active_learning: ActiveLearning):
+def test_prepare_data_add_mixed_normalisation(
+    active_learning: ActiveLearning, basic_dataset: Dataset
+):
     """Test that a ValueError is raised if the two "input.nn" files
     have different normalisation headers."""
     prepare_mode2_files()
 
-    active_learning.lattices = np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]])
-    active_learning.elements = np.array([["H"]])
-    active_learning.charges = np.array([[0]])
     active_learning.names = np.array(["test_s0"])
-    active_learning.positions = np.array([[[0, 0, 0]]])
-    active_learning.statistics = np.array([["small", "H", "0", "0"]])
     active_learning.data_controller.n2p2_directories = [
         "tests/data/n2p2_copy",
         "tests/data/n2p2",
     ]
+    active_learning.dataset_new = basic_dataset
     copy("tests/data/n2p2_copy/input.nn.norm", "tests/data/n2p2_copy/input.nn")
 
     with pytest.raises(ValueError) as e:
@@ -1454,18 +1482,19 @@ def test_prepare_data_add_error(active_learning: ActiveLearning):
 
 
 def test_print_statistics_no_selection(
-    active_learning: ActiveLearning, capsys: pytest.CaptureFixture
+    active_learning: ActiveLearning,
+    capsys: pytest.CaptureFixture,
+    basic_dataset: Dataset,
 ):
     """Test that if we do not have any statistics,
     then no information relating to them is printed."""
     prepare_mode2_files()
-    statistics = np.array([[]])
     selection = np.array([0])
     names = np.array(["test_s0"])
 
-    active_learning._print_statistics(
-        selection=selection, statistics=statistics, names=names
-    )
+    basic_dataset[0].statistics = []
+    active_learning.dataset_new = basic_dataset
+    active_learning._print_statistics(selection=selection, names=names)
 
     assert capsys.readouterr().out == "1 missing structures were identified.\n"
 
@@ -1474,6 +1503,7 @@ def test_print_statistics_multiple_names(
     all_species: List[Species],
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
+    basic_dataset: Dataset,
 ):
     """Test that if multiple Structures are present then we separate the information
     with headings when printing."""
@@ -1486,13 +1516,14 @@ def test_print_statistics_multiple_names(
         name="test1", all_species=all_species, delta_E=1.0, delta_F=1.0
     )
     active_learning.all_structures = AllStructures(structure_0, structure_1)
-    statistics = np.array([["small", "H", "0", "0"]])
     selection = np.array([0])
     names = np.array(["test0_s0", "test1_s0"])
 
-    active_learning._print_statistics(
-        selection=selection, statistics=statistics, names=names
-    )
+    basic_dataset.append(basic_dataset[0])
+    basic_dataset[0].name = "test0"
+    basic_dataset[1].name = "test1"
+    active_learning.dataset_new = basic_dataset
+    active_learning._print_statistics(selection=selection, names=names)
 
     assert (
         capsys.readouterr().out
@@ -1520,7 +1551,7 @@ def test_analyse_extrapolation_statistics_multiple_elements(
 
 
 def test_improve_selection_all_extrapolated_structures_false(
-    all_species: List[Species], active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning, basic_dataset: Dataset
 ):
     """
     Test that `_improve_selection` returns a selection when `all_extrapolated_structures` is
@@ -1534,24 +1565,21 @@ def test_improve_selection_all_extrapolated_structures_false(
         all_extrapolated_structures=False,
     )
     all_structures = AllStructures(structure)
-    statistics = np.array([["small", "H", "0", "0"]])
     selection = np.array([0])
     names = np.array(["test_s0"])
-    ordered_structure_names = np.array(["test"])
     active_learning.all_structures = all_structures
 
+    active_learning.dataset_new = basic_dataset
     selection = active_learning._improve_selection(
         selection=selection,
-        statistics=statistics,
         names=names,
-        ordered_structure_names=ordered_structure_names,
     )
 
     assert selection == np.array([0])
 
 
 def test_improve_selection_all_empty_statistics(
-    all_species: List[Species], active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning, basic_dataset: Dataset
 ):
     """
     Test that `_improve_selection` returns a selection when `statistics` is empty.
@@ -1564,24 +1592,23 @@ def test_improve_selection_all_empty_statistics(
         all_extrapolated_structures=False,
     )
     all_structures = AllStructures(structure)
-    statistics = np.array([[], []])
     selection = np.array([0, 1])
     names = np.array(["test_s0", "test_s1"])
-    ordered_structure_names = np.array(["test", "test"])
     active_learning.all_structures = all_structures
 
+    basic_dataset[0].statistics = []
+    basic_dataset.append(basic_dataset[0])
+    active_learning.dataset_new = basic_dataset
     selection = active_learning._improve_selection(
         selection=selection,
-        statistics=statistics,
         names=names,
-        ordered_structure_names=ordered_structure_names,
     )
 
     assert all(selection == np.array([0, 1]))
 
 
 def test_improve_selection_reduce_selection(
-    all_species: List[Species], active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning, basic_dataset: Dataset
 ):
     """
     Test that `_improve_selection` reduces the selection (calls `_reduce_selection`) when steps
@@ -1605,7 +1632,6 @@ def test_improve_selection_reduce_selection(
         all_extrapolated_structures=False,
     )
     all_structures = AllStructures(structure_0, structure_1)
-    statistics = np.array([[], [], [], [], [], [], []])
     selection = np.array([0, 1, 2, 3, 4, 5])
     names = np.array(
         [
@@ -1618,20 +1644,30 @@ def test_improve_selection_reduce_selection(
             "test1_s6",
         ]
     )
-    ordered_structure_names = np.array(
-        ["test0", "test0", "test0", "test1", "test1", "test1", "test1"]
-    )
+    ordered_structure_names = [
+        "test0",
+        "test0",
+        "test0",
+        "test1",
+        "test1",
+        "test1",
+        "test1",
+    ]
     active_learning.all_structures = all_structures
     structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
 
+    basic_dataset[0].name = ordered_structure_names[0]
+    for name in ordered_structure_names[1:]:
+        basic_dataset.append(basic_dataset[0])
+        basic_dataset[-1].name = name
+
+    active_learning.dataset_new = basic_dataset
     selection = active_learning._improve_selection(
         selection=selection,
-        statistics=statistics,
         names=names,
-        ordered_structure_names=ordered_structure_names,
     )
 
     assert all(selection == np.array([0, 2, 3, 5]))
@@ -1641,6 +1677,7 @@ def test_improve_selection_max_extrapolated_structures(
     all_species: List[Species],
     active_learning: ActiveLearning,
     capsys: pytest.CaptureFixture,
+    basic_dataset: Dataset,
 ):
     """
     Test that `_improve_selection` handles cases where we exceed max_extrapolated_structures.
@@ -1653,21 +1690,19 @@ def test_improve_selection_max_extrapolated_structures(
         max_extrapolated_structures=1,
     )
     all_structures = AllStructures(structure)
-    statistics = np.array([["small", "H", "0", "0"], ["small", "H", "0", "0"]])
     selection = np.array([0])
     names = np.array(["test_s0", "test_s0"])
-    ordered_structure_names = np.array(["test", "test"])
     active_learning.all_structures = all_structures
     structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
 
+    basic_dataset.append(basic_dataset[0])
+    active_learning.dataset_new = basic_dataset
     selection = active_learning._improve_selection(
         selection=selection,
-        statistics=statistics,
         names=names,
-        ordered_structure_names=ordered_structure_names,
     )
 
     assert selection == np.array([0]) or selection == np.array([1])
@@ -1675,7 +1710,7 @@ def test_improve_selection_max_extrapolated_structures(
 
 
 def test_improve_selection_exceptions(
-    all_species: List[Species], active_learning: ActiveLearning
+    all_species: List[Species], active_learning: ActiveLearning, basic_dataset: Dataset
 ):
     """
     Test that `_improve_selection` handles cases where `exceptions` is set.
@@ -1689,21 +1724,19 @@ def test_improve_selection_exceptions(
         exceptions=[["H", "0", 0]],
     )
     all_structures = AllStructures(structure)
-    statistics = np.array([["small", "H", "0", "0"]])
     selection = np.array([0])
     names = np.array(["test_s0"])
-    ordered_structure_names = np.array(["test"])
     active_learning.all_structures = all_structures
     structures = list(all_structures.values())
     active_learning._validate_timesteps(
         active_learning.timestep, active_learning.N_steps, structures
     )
 
+    basic_dataset.append(basic_dataset[0])
+    active_learning.dataset_new = basic_dataset
     selection = active_learning._improve_selection(
         selection=selection,
-        statistics=statistics,
         names=names,
-        ordered_structure_names=ordered_structure_names,
     )
 
     assert len(selection) == 0
@@ -1825,32 +1858,6 @@ def test_read_energy_unknown_format(active_learning: ActiveLearning):
     assert str(e.value) == "Unknown RuNNer format"
 
 
-def test_read_data(active_learning: ActiveLearning):
-    """
-    Test that `_read_data` extracts all information correctly.
-    """
-
-    active_learning._read_data("tests/data/n2p2/input.data")
-
-    assert active_learning.names == np.array(["test_s0"])
-    np.testing.assert_allclose(
-        active_learning.lattices,
-        np.array(
-            [
-                [
-                    [17.71284412, 0.0, 0.0],
-                    [0.0, 17.71284412, 0.0],
-                    [0.0, 0.0, 17.71284412],
-                ]
-            ]
-        ),
-    )
-    assert active_learning.elements.shape == (1, 512)
-    assert active_learning.positions.shape == (1, 512, 3)
-    assert active_learning.charges.shape == (1, 512)
-    assert active_learning.statistics == np.array(["stats"])
-
-
 # TEST GET STRUCTURE
 
 
@@ -1935,31 +1942,6 @@ def test_read_structures(
     )
 
     assert returned_index == expected_index
-
-
-def test_write_data_append(
-    active_learning: ActiveLearning,
-):
-    """
-    Test that if appending data to an existing file, a trailing newline is inserted.
-    """
-    with open("tests/data/tests_output/test.data", "w") as f:
-        f.write("no trailing newline")
-
-    active_learning._write_data(
-        lattices=np.array([[[1, 0, 0], [0, 1, 0], [0, 0, 1]]]),
-        elements=np.array([["H" for _ in range(512)]]),
-        charges=np.array([[0 for _ in range(512)]]),
-        names=np.array(["test_s0"]),
-        positions=np.array([[[0, 0, 0] for _ in range(512)]]),
-        file_name="tests/data/tests_output/test.data",
-        mode="a+",
-    )
-
-    assert isfile("tests/data/tests_output/test.data")
-    with open("tests/data/tests_output/test.data") as f:
-        lines = f.readlines()
-    assert lines[0] == "no trailing newline\n"
 
 
 @pytest.mark.parametrize(

@@ -28,7 +28,8 @@ def tests(session):
     #     session, "coverage[toml]", "pytest", "pytest-cov"
     # )
     args += [
-        "--ignore=tests/data/ --ignore=tests/__pycache__/ --ignore=tests/__init__.py"
+        "--ignore=tests/data/ --ignore=tests/__pycache__/ --ignore=tests/__init__.py "
+        + "--ignore=tests/test_visualisation.py"
     ]
     session.run("pytest", *args)
 

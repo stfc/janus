@@ -1,7 +1,7 @@
 from copy import deepcopy
-from os import listdir, mkdir, remove, rmdir
+from os import listdir, mkdir, remove
 from os.path import isdir, isfile, join
-from shutil import copy
+from shutil import copy, rmtree
 from typing import Dict, List, Literal, Tuple, Union
 import warnings
 
@@ -9,7 +9,8 @@ import numpy as np
 
 from cc_hdnnp.data import Data
 from cc_hdnnp.file_operations import read_lammps_log, read_normalisation
-from cc_hdnnp.structure import Frame, Structure
+from cc_hdnnp.structure import Structure
+from .dataset import Dataset, Frame
 
 # TODO combine all unit conversions
 # Set a float to define the conversion factor from Bohr radius to Angstrom.
@@ -67,10 +68,7 @@ class ActiveLearning:
         include the name of the structure. This enables to apply different settings for
         different groups of structures, for example, if their training progress is at different
         levels. Furthermore, the name might be required for the assignment of settings in the
-        later electronic structure calculations. Avoid '_' in this structure name as this sign
-        is used in the following as separator. If a structure name is not required, None has to
-        be assigned. If None is assigned, comment_name_index and comment_name_separator will
-        not be used. Default is "comment structure".
+        later electronic structure calculations. Default is "comment structure".
     runner_cutoff : float, optional
         Set an integer/float to define the RuNNer cutoff radius in Bohr radii.
         Default is `12.0`.
@@ -251,12 +249,8 @@ class ActiveLearning:
         self.tolerances = tolerances
         self.initial_tolerance = initial_tolerance
 
-        self.lattices = []
-        self.elements = []
-        self.charges = []
-        self.statistics = []
         self.names = []
-        self.positions = []
+        self.dataset_new = Dataset(all_structures=self.all_structures)
         self.selection = None
 
         if remove_existing_files:
@@ -317,7 +311,7 @@ class ActiveLearning:
             join(self.active_learning_directory, "mode2"),
         ]:
             if isdir(directory):
-                rmdir(directory)
+                rmtree(directory)
 
         for file in [
             join(self.active_learning_directory, "input.data-new"),
@@ -326,119 +320,83 @@ class ActiveLearning:
             if isfile(file):
                 remove(file)
 
-    def _read_input_data(
-        self, comment_name_separator: str = "-", comment_name_index: int = 2
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _read_input_data(self) -> Dataset:
         """
-        Reads from the n2p2 "input.data" file to determine the names of structures, lattices,
-        elements, positions and charges.
+        Reads from the n2p2 "input.data" and checks consistency in both directories,
+        periodicity, and converts units to Ang and eV.
 
-        Parameters
-        ----------
-        comment_name_separator : str, optional
-            Can be used to seperate the comment name, which is split by
-            `comment_name_seperator`, and the first element taken as the name. Default is "-".
-        comment_name_index : int, optional
-            Sets the index of the comment name within the line, prior to being split by
-            `comment_name_separator`. Default is `2`.
+        Returns
+        -------
+        Dataset
+            The converted Dataset.
         """
-        names = []
-        lattices = []
-        elements = []
-        xyzs = []
-        qs = []
 
-        with open(join(self.data_controller.n2p2_directories[0], "input.data")) as f:
-            with open(
-                join(self.data_controller.n2p2_directories[1], "input.data")
-            ) as f_2:
-                for line in f.readlines():
-                    if line != f_2.readline():
-                        raise ValueError(
-                            "input.data files in {0} and {1} are differnt.".format(
-                                *self.data_controller.n2p2_directories
-                            )
+        data_file_0 = join(self.data_controller.n2p2_directories[0], "input.data")
+        data_file_1 = join(self.data_controller.n2p2_directories[1], "input.data")
+        with open(data_file_0) as f_0:
+            with open(data_file_1) as f_1:
+                if f_0.read() != f_1.read():
+                    raise ValueError(
+                        "input.data files in {0} and {1} are differnt.".format(
+                            *self.data_controller.n2p2_directories
                         )
-                    line = line.strip()
-                    if line.startswith("atom"):
-                        line = line.split()
-                        elements[-1].append(line[4])
-                        xyzs[-1].append([line[1], line[2], line[3]])
-                        qs[-1].append(line[5])
-                    elif line.startswith("lattice"):
-                        lattices[-1].append(line.split()[1:4])
-                    elif line.startswith("begin"):
-                        lattices.append([])
-                        elements.append([])
-                        xyzs.append([])
-                        qs.append([])
-                    elif line.startswith("end"):
-                        if not elements[-1]:
-                            raise ValueError(
-                                "For some of the structures the definition of the atoms is "
-                                "incomplete or missing."
-                            )
-                        xyzs[-1] = np.array(xyzs[-1]).astype(float) * Bohr2Ang
-                        qs[-1] = np.array(qs[-1]).astype(float)
-                        if self.periodic:
-                            if len(lattices[-1]) == 3:
-                                lattices[-1] = (
-                                    np.array(lattices[-1]).astype(float) * Bohr2Ang
-                                )
-                            else:
-                                raise ValueError(
-                                    "The periodic keyword is set to True but for some of the "
-                                    "structures the definition of the lattice is incomplete or "
-                                    "missing."
-                                )
-                        else:
-                            if lattices[-1]:
-                                raise ValueError(
-                                    "The periodic keyword is set to False but for some of the "
-                                    "structures a definition of a lattice exists."
-                                )
-                            else:
-                                lattices[-1] = np.array(
-                                    [
-                                        [
-                                            xyzs[-1][:, 0].max()
-                                            - xyzs[-1][:, 0].min()
-                                            + 2 * self.runner_cutoff * Bohr2Ang,
-                                            0.0,
-                                            0.0,
-                                        ],
-                                        [
-                                            0.0,
-                                            xyzs[-1][:, 1].max()
-                                            - xyzs[-1][:, 1].min()
-                                            + 2 * self.runner_cutoff * Bohr2Ang,
-                                            0.0,
-                                        ],
-                                        [
-                                            0.0,
-                                            0.0,
-                                            xyzs[-1][:, 2].max()
-                                            - xyzs[-1][:, 2].min()
-                                            + 2 * self.runner_cutoff * Bohr2Ang,
-                                        ],
-                                    ]
-                                )
-                    else:
-                        if self.comment_name_keyword is not None:
-                            if line.startswith(self.comment_name_keyword):
-                                names.append(
-                                    line.split()[comment_name_index].split(
-                                        comment_name_separator
-                                    )[0]
-                                )
+                    )
+        dataset = Dataset(data_file=data_file_0, all_structures=self.all_structures)
 
-        names = np.array(names)
-        lattices = np.array(lattices)
-        elements = np.array(elements)
-        xyzs = np.array(xyzs)
-        qs = np.array(qs)
+        if np.any(dataset.n_atoms_per_frame == 0):
+            raise ValueError(
+                "For some of the structures the definition of the atoms is "
+                "incomplete or missing."
+            )
 
-        return names, lattices, elements, xyzs, qs
+        if self.periodic:
+            if dataset.all_lattices.shape != (len(dataset), 3, 3) or np.all(
+                dataset.all_lattices == 0
+            ):
+                raise ValueError(
+                    "The periodic keyword is set to True but for some of the "
+                    "structures the definition of the lattice is incomplete or "
+                    "missing."
+                )
+        else:
+            if dataset.all_lattices.shape == (len(dataset), 3, 3) and not np.all(
+                dataset.all_lattices == 0
+            ):
+                raise ValueError(
+                    "The periodic keyword is set to False but for some of the "
+                    "structures a definition of a lattice exists."
+                )
+            else:
+                for frame in dataset:
+                    frame.cell = np.array(
+                        [
+                            [
+                                frame.positions[:, 0].max()
+                                - frame.positions[:, 0].min()
+                                + 2 * self.runner_cutoff,
+                                0.0,
+                                0.0,
+                            ],
+                            [
+                                0.0,
+                                frame.positions[:, 1].max()
+                                - frame.positions[:, 1].min()
+                                + 2 * self.runner_cutoff,
+                                0.0,
+                            ],
+                            [
+                                0.0,
+                                0.0,
+                                frame.positions[:, 2].max()
+                                - frame.positions[:, 2].min()
+                                + 2 * self.runner_cutoff,
+                            ],
+                        ]
+                    )
+
+        dataset.change_units_all({"length": "Ang", "energy": "eV"})
+
+        return dataset
 
     def _write_input_lammps(
         self, path: str, seed: int, temperature: int, pressure: float, integrator: str
@@ -462,9 +420,20 @@ class ActiveLearning:
         runner_cutoff = round(self.runner_cutoff * Bohr2Ang, 12)
         cflength = round(1.0 / Bohr2Ang, 12)
         cfenergy = round(1.0 / Hartree2eV, 15)
-        elements_string = ""
-        for element_type in self.element_types:
-            elements_string += element_type + " "
+
+        # LAMMPS required alphabetically sorted elements TODO REFACTOR
+        elements = np.array(self.element_types)
+        sorted_indices = elements.argsort()
+        elements_map = '"'
+        masses = ""
+        elements_text = ""
+        for alphabetical_index, z_index in enumerate(sorted_indices):
+            elements_map += "{0}:{1},".format(alphabetical_index + 1, elements[z_index])
+            masses += "mass {} {}\n".format(
+                alphabetical_index + 1, self.masses[z_index]
+            )
+            elements_text += " {}".format(elements[z_index])
+        elements_map = elements_map[:-1] + '"'
 
         input_lammps = "variable temperature equal {0}\n".format(float(temperature))
         if integrator == "npt":
@@ -477,8 +446,11 @@ class ActiveLearning:
             + "boundary p p p\n"
             + "atom_style {0}\n".format(self.atom_style)
             + "read_data structure.lammps\n"
+            + masses
             + "pair_style nnp dir RuNNer showew yes resetew no maxew 750 showewsum 0 "
-            + "cflength {0} cfenergy {1}\n".format(cflength, cfenergy)
+            + "cflength {} cfenergy {} emap {}\n".format(
+                cflength, cfenergy, elements_map
+            )
             + "pair_coeff * * {0}\n".format(runner_cutoff)
             + "timestep {0}\n".format(self.timestep)
         )
@@ -526,7 +498,7 @@ class ActiveLearning:
 
             input_lammps += (
                 "dump_modify lammpstrj pbc yes sort id element {0}\n".format(
-                    elements_string[:-1]
+                    elements_text
                 )
             )
         else:
@@ -546,7 +518,7 @@ class ActiveLearning:
                 )
 
             input_lammps += "dump_modify lammpstrj pbc no sort id element {0}\n".format(
-                elements_string[:-1]
+                elements_text
             )
         input_lammps += "velocity all create ${temperature} ${seed}\n\n"
 
@@ -559,116 +531,35 @@ class ActiveLearning:
     def _write_structure_lammps(
         self,
         path: str,
-        lattice: np.ndarray,
-        element: np.ndarray,
-        xyz: np.ndarray,
-        q: np.ndarray,
+        dataset: Dataset,
+        selection: int,
     ):
         """
-        Writes a single structure to file in LAMMPS format from numpy arrays.
+        Writes a single structure to file in LAMMPS format from `dataset`.
 
         Parameters
         ----------
         path : str
             Directory to write the resultant "structure.lammps" file to.
-        lattice : np.ndarray
-            Array with the shape (3, 3) representing the dimensions of the structure's lattice.
-        element : np.ndarray
-            Ordered array of chemical symbols (str) for the atoms in the structure,
-            with length equal to the number of atoms present.
-        xyz : np.ndarray
-            Ordered array of positions with shape (N, 3) for the atoms in the structure,
-            with length equal to the number of atoms N.
-        q : np.ndarray
-            Ordered array of charges for the atoms in the structure, with length equal
-            to the number of atoms present.
+        dataset: Dataset
+            Object containing all Frames to select from.
+        selection: int
+            Index in of the desired Frame from `dataset`.
         """
-        lattice_lammps = self.transform_lattice(lattice)
-
-        structure_lammps = (
-            "RuNNerActiveLearn\n\n"
-            + "{0} atoms\n\n".format(len(element))
-            + "{0} atom types\n\n".format(len(self.element_types))
-            + "0.0 {0} xlo xhi\n".format(round(lattice_lammps[0], 5))
-            + "0.0 {0} ylo yhi\n".format(round(lattice_lammps[1], 5))
-            + "0.0 {0} zlo zhi\n".format(round(lattice_lammps[2], 5))
+        mass_list = []
+        for symbol in dataset[selection].symbols:
+            mass_list.append(self.masses[self.element_types.index(symbol)])
+        dataset[selection].set_masses(masses=mass_list)
+        dataset.write(
+            path + "/structure.lammps",
+            format="lammps-data",
+            conditions=(i == selection for i in range(len(dataset))),
+            atom_style=self.atom_style,
         )
-        if self.barostat_option == "tri":
-            structure_lammps += "{0} {1} {2} xy xz yz\n".format(
-                round(lattice_lammps[3], 5),
-                round(lattice_lammps[4], 5),
-                round(lattice_lammps[5], 5),
-            )
-        structure_lammps += "\nMasses\n\n"
-        for i in range(len(self.masses)):
-            structure_lammps += "{0} {1}\n".format(i + 1, self.masses[i])
-        structure_lammps += "\nAtoms\n\n"
 
-        with open(path + "/structure.lammps", "w") as f:
-            f.write(structure_lammps)
-            if self.atom_style == "atomic":
-                for i, element_i in enumerate(element):
-                    f.write(
-                        "{0:4d} {1} {2:9.5f} {3:9.5f} {4:9.5f}\n".format(
-                            i + 1,
-                            self.element_types.index(element_i) + 1,
-                            xyz[i][0],
-                            xyz[i][1],
-                            xyz[i][2],
-                        )
-                    )
-            elif self.atom_style == "full":
-                for i, element_i in enumerate(element):
-                    f.write(
-                        "{0:4d} 1 {1} {2:6.3f} {3:9.5f} {4:9.5f} {5:9.5f}\n".format(
-                            i + 1,
-                            self.element_types.index(element_i) + 1,
-                            round(q[i], 3),
-                            round(xyz[i][0], 5),
-                            round(xyz[i][1], 5),
-                            round(xyz[i][2], 5),
-                        )
-                    )
-
-    def transform_lattice(self, lattice: np.ndarray) -> List[float]:
+    def write_lammps(self, temperatures: range, seed: int = 1):
         """
-        Transforms the lattice into a format for LAMMPS. As `lattice` supports arbitrary unit
-        vectors, the first lattice vector is taken as lying on the output the x-axis with its
-        original magnitude `lx`. `xy` is the projection of the 2nd lattice vector onto the
-        output x-axis, and `ly` is the magnitude of the 2nd lattice vector which does not lie
-        on the x-axis. Similarly, `xz` and `yz` are projections of the 3rd lattice vector onto
-        the x and y axes, with the remaining magnitude expressed as `lz`.
-
-        Parameters
-        ----------
-        lattice : np.ndarray
-            Array with the shape (3, 3).
-
-        Returns
-        -------
-        list of float
-            The transformed components that lie along the cartesian axes, and the projections
-            between them.
-        """
-        a = np.linalg.norm(lattice[0])
-        b = np.linalg.norm(lattice[1])
-        c = np.linalg.norm(lattice[2])
-        cos_alpha = np.dot(lattice[1], lattice[2]) / b / c
-        cos_beta = np.dot(lattice[0], lattice[2]) / a / c
-        cos_gamma = np.dot(lattice[0], lattice[1]) / a / b
-        xy = b * cos_gamma
-        lx = a
-        xz = c * cos_beta
-        ly = np.sqrt(b ** 2 - xy ** 2)
-        yz = (b * c * cos_alpha - xy * xz) / ly
-        lz = np.sqrt(c ** 2 - xz ** 2 - yz ** 2)
-
-        return [lx, ly, lz, xy, xz, yz]
-
-    def write_lammps(
-        self, temperatures: range, seed: int = 1, comment_name_separator: str = "-"
-    ):
-        """
+        TODO
         Generates the mode1 directory and  LAMMPS files needed to run simulations using the
         two networks.
 
@@ -688,14 +579,7 @@ class ActiveLearning:
             )
         mkdir(mode1_directory)
 
-        # TODO allow non-default arguments
-        (
-            names_all,
-            lattices_all,
-            elements_all,
-            xyzs_all,
-            qs_all,
-        ) = self._read_input_data(comment_name_separator=comment_name_separator)
+        dataset = self._read_input_data()
 
         if self.max_len_joblist == 0:
             joblist_name = self.active_learning_directory + "/joblist_mode1.dat"
@@ -709,17 +593,9 @@ class ActiveLearning:
 
         for name, structure in self.all_structures.items():
             if name is None:
-                names = names_all
-                lattices = lattices_all
-                elements = elements_all
-                xyzs = xyzs_all
-                qs = qs_all
+                names = dataset.all_names
             else:
-                names = names_all[names_all == name]
-                lattices = lattices_all[names_all == name]
-                elements = elements_all[names_all == name]
-                xyzs = xyzs_all[names_all == name]
-                qs = qs_all[names_all == name]
+                names = dataset.all_names[dataset.all_names == name]
 
             structure.selection[0] = structure.selection[0] % structure.selection[1]
             print(
@@ -728,7 +604,7 @@ class ActiveLearning:
                     structure.selection[0], structure.selection[1]
                 )
             )
-            n_structures = len(lattices)
+            n_structures = len(names)
             n_npt = int(np.array([1 for j in self.integrators if j == "npt"]).sum())
             repetitions = max(
                 1,
@@ -835,11 +711,9 @@ class ActiveLearning:
                                     mode1_path, seed, temperature, pressure, integrator
                                 )
                                 self._write_structure_lammps(
-                                    mode1_path,
-                                    lattices[selection],
-                                    elements[selection],
-                                    xyzs[selection],
-                                    qs[selection],
+                                    path=mode1_path,
+                                    dataset=dataset,
+                                    selection=selection,
                                 )
                                 mkdir(mode1_path + "/RuNNer")
                                 copy(
@@ -1804,21 +1678,23 @@ class ActiveLearning:
             charge = np.zeros(len(element))
 
         return Frame(
-            lattice=lattice, symbols=element, positions=position, charges=charge
+            lattice=lattice,
+            symbols=element,
+            positions=position,
+            charges=charge,
+            units={"length": "Ang", "energy": "eV"},
         )
 
     def _read_structure(
         self, data: List[str], path: str, timestep: int, structure: Structure
     ) -> bool:
         """
+        TODO
         For the given `data`, extract the relevant properties and then assess its suitability
         to be used as future datapoint.
         If suitable, then the details are added to:
           - `self.names`
-          - `self.lattices`
-          - `self.elements`
-          - `self.positions`
-          - `self.charges`
+          - `self.dataset`
 
         Parameters
         ----------
@@ -1837,13 +1713,12 @@ class ActiveLearning:
             Whether the `data` was accepted as a valid structure.
         """
         frame = self._get_structure(data)
+        frame.name = structure.name
+        frame.frame_file = path + "_s" + str(timestep)
         accepted = frame.check_min_separation(structure=structure)
         if accepted:
             self.names.append(path + "_s" + str(timestep))
-            self.lattices.append(frame.lattice)
-            self.elements.append(frame.symbols)
-            self.positions.append(frame.positions)
-            self.charges.append(frame.charges)
+            self.dataset_new.append(frame)
 
         return accepted
 
@@ -1935,7 +1810,7 @@ class ActiveLearning:
                         data[start:end], path, selected_timestep[i], structure
                     )
                     if accepted:
-                        self.statistics.append([])
+                        self.dataset_new[-1].statistics = []
                     data = data[end:]
 
         # After the interpolations, the last two timesteps are "small" and "large"
@@ -1966,7 +1841,7 @@ class ActiveLearning:
                 for i in range(len(extrapolation_statistic[small])):
                     species_indices.append(
                         element2index[
-                            self.elements[-1][
+                            self.dataset_new[-1].symbols[
                                 extrapolation_statistic[small][i, 1].astype(int) - 1
                             ]
                         ]
@@ -1984,26 +1859,24 @@ class ActiveLearning:
                 extrapolation_statistic[small] = extrapolation_statistic[small][
                     extrapolation_statistic[small][:, 1].argsort(kind="mergesort")
                 ]
-                self.statistics.append(
-                    [
-                        "small",
-                        str(
-                            list(
-                                np.array(self.element_types)[
-                                    extrapolation_statistic[small][:, 1].astype(int)
-                                ]
-                            )
+                self.dataset_new[-1].statistics = [
+                    "small",
+                    str(
+                        list(
+                            np.array(self.element_types)[
+                                extrapolation_statistic[small][:, 1].astype(int)
+                            ]
                         )
-                        .strip("[]")
-                        .replace("'", ""),
-                        str(
-                            list(extrapolation_statistic[small][:, 2].astype(int) + 1)
-                        ).strip("[]"),
-                        str(
-                            [round(j, 5) for j in extrapolation_statistic[small][:, 0]]
-                        ).strip("[]"),
-                    ]
-                )
+                    )
+                    .strip("[]")
+                    .replace("'", ""),
+                    str(
+                        list(extrapolation_statistic[small][:, 2].astype(int) + 1)
+                    ).strip("[]"),
+                    str(
+                        [round(j, 5) for j in extrapolation_statistic[small][:, 0]]
+                    ).strip("[]"),
+                ]
 
         accepted = False
         # Reduce `tolerance_index` until an acceptable level is found
@@ -2048,7 +1921,7 @@ class ActiveLearning:
             extrapolation_statistic[tolerance_index + n_small][:, 1] = np.array(
                 [
                     element2index[
-                        self.elements[-1][
+                        self.dataset_new[-1].symbols[
                             extrapolation_statistic[tolerance_index + n_small][
                                 i, 1
                             ].astype(int)
@@ -2082,132 +1955,38 @@ class ActiveLearning:
                     kind="mergesort"
                 )
             ]
-            self.statistics.append(
-                [
-                    "large",
-                    str(
-                        list(
-                            np.array(self.element_types)[
-                                extrapolation_statistic[tolerance_index + n_small][
-                                    :, 1
-                                ].astype(int)
-                            ]
-                        )
-                    )
-                    .strip("[]")
-                    .replace("'", ""),
-                    str(
-                        list(
+            self.dataset_new[-1].statistics = [
+                "large",
+                str(
+                    list(
+                        np.array(self.element_types)[
                             extrapolation_statistic[tolerance_index + n_small][
-                                :, 2
+                                :, 1
                             ].astype(int)
-                            + 1
-                        )
-                    ).strip("[]"),
-                    str(
-                        [
-                            round(j, 5)
-                            for j in extrapolation_statistic[tolerance_index + n_small][
-                                :, 0
-                            ]
                         ]
-                    ).strip("[]"),
-                ]
-            )
+                    )
+                )
+                .strip("[]")
+                .replace("'", ""),
+                str(
+                    list(
+                        extrapolation_statistic[tolerance_index + n_small][:, 2].astype(
+                            int
+                        )
+                        + 1
+                    )
+                ).strip("[]"),
+                str(
+                    [
+                        round(j, 5)
+                        for j in extrapolation_statistic[tolerance_index + n_small][
+                            :, 0
+                        ]
+                    ]
+                ).strip("[]"),
+            ]
 
         return tolerance_index
-
-    def _write_data(
-        self,
-        names: np.ndarray,
-        lattices: np.ndarray,
-        elements: np.ndarray,
-        positions: np.ndarray,
-        charges: np.ndarray,
-        file_name: str,
-        mode: str,
-    ):
-        """
-        Writes the information about datapoints passed as arguments to `file_name`, with `mode`
-        (e.g. "a+" for appending to existing files).
-
-        Parameters
-        ----------
-        names : np.ndarray
-           Array of str with length N giving the name of each mode1 path corresponding to the
-           simulation that gave rise to the data.
-        lattices : np.ndarray
-            Three dimensional array of float with shape (N, 3, 3) where the second axis gives
-            the three lattice vectors, each with three cartesian co-ordinates.
-        elements : np.ndarray
-            Two dimensional array of str with shape (N, M) where the second axis gives
-            the chemical symbol of each atom in a given structure.
-        positions : np.ndarray
-            Three dimensional array of float with shape (N, M, 3) where the second axis gives
-            the position of each atom, each with three cartesian co-ordinates.
-        charges : np.ndarray
-            Two dimensional array of float with shape (N, M) giving the charges of each atom.
-        file_name : str
-            The path of the file to write to.
-        mode : str
-            The mode to open `file_name` in.
-        """
-        # Make sure we have a trailing newline if appending to file
-        text = ""
-        if mode == "a+":
-            with open(file_name) as f:
-                lines = f.readlines()
-                if len(lines) > 0 and lines[-1].strip() != "":
-                    text = "\n"
-
-        with open(file_name, mode) as f:
-            f.write(text)
-            for i in range(len(names)):
-                f.write("begin\ncomment file {0}\n".format(names[i]))
-                if (
-                    self.statistics is not None
-                    and i < len(self.statistics)
-                    and list(self.statistics[i])
-                ):
-                    f.write(
-                        "comment statistics {0}\n"
-                        "comment statistics {1}\n"
-                        "comment statistics {2}\n"
-                        "comment statistics {3}\n".format(
-                            self.statistics[i][0],
-                            self.statistics[i][1],
-                            self.statistics[i][2],
-                            self.statistics[i][3],
-                        )
-                    )
-                if self.periodic:
-                    f.write(
-                        "lattice {0:>9.5f} {1:>9.5f} {2:>9.5f}\n"
-                        "lattice {3:>9.5f} {4:>9.5f} {5:>9.5f}\n"
-                        "lattice {6:>9.5f} {7:>9.5f} {8:>9.5f}\n".format(
-                            round(lattices[i][0][0] / Bohr2Ang, 5),
-                            round(lattices[i][0][1] / Bohr2Ang, 5),
-                            round(lattices[i][0][2] / Bohr2Ang, 5),
-                            round(lattices[i][1][0] / Bohr2Ang, 5),
-                            round(lattices[i][1][1] / Bohr2Ang, 5),
-                            round(lattices[i][1][2] / Bohr2Ang, 5),
-                            round(lattices[i][2][0] / Bohr2Ang, 5),
-                            round(lattices[i][2][1] / Bohr2Ang, 5),
-                            round(lattices[i][2][2] / Bohr2Ang, 5),
-                        )
-                    )
-                for j in range(len(elements[i])):
-                    f.write(
-                        "atom {0:>9.5f} {1:>9.5f} {2:>9.5f} {3:2} {4:>6.3f}"
-                        " 0.0 0.0 0.0 0.0\n".format(
-                            round(positions[i][j][0] / Bohr2Ang, 5),
-                            round(positions[i][j][1] / Bohr2Ang, 5),
-                            round(positions[i][j][2] / Bohr2Ang, 5),
-                            elements[i][j],
-                            charges[i][j],
-                        )
-                    )
-                f.write("energy 0.0\ncharge 0.0\nend\n")
 
     def _print_reliability(
         self,
@@ -2321,57 +2100,6 @@ class ActiveLearning:
                             median_extra_steps_2,
                         )
                     )
-
-    def _read_data(self, file_name: str):
-        """
-        Reads `file_name` and sets the following based on the contents:
-          - `self.names`
-          - `self.lattices`
-          - `self.elements`
-          - `self.positions`
-          - `self.charges`
-
-        Parameters
-        ----------
-        file_name : str
-            The file to read. Should be in n2p2 format.
-        """
-        names = []
-        lattices = []
-        elements = []
-        positions = []
-        charges = []
-        statistics = []
-        with open(file_name) as f:
-            for line in f.readlines():
-                if line.startswith("atom"):
-                    line = line.split()
-                    elements[-1].append(line[4])
-                    positions[-1].append(line[1:4])
-                    charges[-1].append(line[5])
-                elif line.startswith("lattice"):
-                    lattices[-1].append(line.strip().split()[1:4])
-                elif line.startswith("comment file"):
-                    names.append(line.strip().split()[2])
-                elif line.startswith("comment statistics"):
-                    statistics[-1].append(line.strip()[19:])
-                elif line.startswith("begin"):
-                    lattices.append([])
-                    elements.append([])
-                    positions.append([])
-                    charges.append([])
-                    statistics.append([])
-                elif line.startswith("end"):
-                    lattices[-1] = np.array(lattices[-1]).astype(float) * Bohr2Ang
-                    elements[-1] = np.array(elements[-1])
-                    positions[-1] = np.array(positions[-1]).astype(float) * Bohr2Ang
-                    charges[-1] = np.array(charges[-1]).astype(float)
-        self.names = np.array(names)
-        self.lattices = np.array(lattices)
-        self.elements = np.array(elements)
-        self.positions = np.array(positions)
-        self.charges = np.array(charges)
-        self.statistics = np.array(statistics)
 
     def _print_performance(self, n_calculations: int):
         """
@@ -2560,29 +2288,19 @@ class ActiveLearning:
     def _improve_selection(
         self,
         selection: np.ndarray,
-        statistics: np.ndarray,
         names: np.ndarray,
-        ordered_structure_names: np.ndarray,
     ) -> np.ndarray:
         """
         Initially, `selection` is based on energy/force discrepancies alone. Using the
-        extrapolation `statistics` this is expanded with appropriate extrapolated datapoints,
+        extrapolation statistics this is expanded with appropriate extrapolated datapoints,
         as well as removing redundant datapoints from the `selection`.
 
         Parameters
         ----------
         selection : np.ndarray
             Array of int corresponding to the indices selected to add to the dataset.
-        statistics : np.ndarray
-            Two dimensional array of str representing the statistics for extrapolations
-            that were selected. Shape is (N, 4) where N is number of extrapolations, and the
-            entries in the second dimension are either "large" or "small", the chemical symbol
-            of the element(s) in question, the symfunc index, and the extrapolation value.
         names : np.ndarray
             Array of str, the names of the directories from mode1.
-        ordered_structure_names : np.ndarray
-            Array of str, the names of the structures from mode1. Is in the same order
-            as `names`, with the same length.
 
         Returns
         -------
@@ -2594,15 +2312,23 @@ class ActiveLearning:
         current_name = None
         steps = []
         indices = []
-        for i, structure_name in enumerate(ordered_structure_names):
-            structure = self.all_structures[structure_name]
-            if list(statistics[i]) and structure.all_extrapolated_structures:
+        for i, frame in enumerate(self.dataset_new):
+            structure = self.all_structures[frame.name]
+            if (
+                list(self.dataset_new[i].statistics)
+                and structure.all_extrapolated_structures
+            ):
                 # If for a given simulated structure we have statistics and add
                 # `all_extrapolated_structures` for it, append to selection.
                 selection = np.append(selection, i)
             elif i in selection:
                 # "_s" denotes the timestep in `names`
                 name_split = names[i].split("_s")
+                if len(name_split) != 2:
+                    raise ValueError(
+                        "'file' comment for the frame should be of the format "
+                        "<filename>_s<timestep>, but was {}".format(names[i])
+                    )
                 if current_name == name_split[0]:
                     # If we are already considering this `current_name`, append
                     steps.append(int(name_split[1]))
@@ -2639,8 +2365,8 @@ class ActiveLearning:
         exceptions = [s.exceptions for s in self.all_structures.values()]
         if any(max_extrapolated_structures) or any(exceptions):
             # Reduce names to the updated selection, and those with "small" extrapolation
-            statistics_reduced = statistics[selection]
-            structure_names_reduced = ordered_structure_names[selection]
+            statistics_reduced = self.dataset_new.all_statistics[selection]
+            structure_names_reduced = self.dataset_new.all_names[selection]
             structure_names_reduced = np.array(
                 [
                     structure_names_reduced[i]
@@ -2733,7 +2459,9 @@ class ActiveLearning:
                 exception_list_keys = exception_list.keys()
                 if list(exception_list_keys):
                     structure_names_reduced = structure_names_reduced[selection]
-                    statistics_reduced = np.array(list(statistics[selection]))
+                    statistics_reduced = np.array(
+                        list(self.dataset_new.all_statistics[selection])
+                    )
                     for i in range(len(selection)):
                         if (
                             list(statistics_reduced[i])
@@ -2758,9 +2486,7 @@ class ActiveLearning:
 
         return selection
 
-    def _print_statistics(
-        self, selection: np.ndarray, statistics: np.ndarray, names: np.ndarray
-    ):
+    def _print_statistics(self, selection: np.ndarray, names: np.ndarray):
         """
         Prints information on how many of the new datapoints arise from small and large
         extrapolations, for each `Structure` in the original dataset.
@@ -2794,14 +2520,13 @@ class ActiveLearning:
                     "{0} missing structures were identified.".format(n_extrapolations)
                 )
                 # Reduce to just the first element of `statistics`, "small"/"large"
-                statistics_reduced = np.array(
-                    [
-                        statistics[selection][i][0]
-                        for i in range(len(statistics[selection]))
-                        if names[selection][i].split("_")[0] == structure_name
-                        and list(statistics[selection][i])
-                    ]
-                )
+                statistics_reduced_list = []
+                for i, stats in enumerate(self.dataset_new.all_statistics[selection]):
+                    if names[selection][i].split("_")[0] == structure_name and list(
+                        stats
+                    ):
+                        statistics_reduced_list.append(stats[0])
+                statistics_reduced = np.array(statistics_reduced_list)
                 if len(statistics_reduced) > 0:
                     n_small_extrapolations = int(
                         np.array([1 for i in statistics_reduced if i == "small"]).sum()
@@ -2818,7 +2543,7 @@ class ActiveLearning:
             print("{0} missing structures were identified.".format(len(selection)))
             # Reduce to just the first element of `statistics`, "small"/"large"
             statistics_reduced = np.array(
-                [i[0] for i in statistics[selection] if list(i)]
+                [i[0] for i in self.dataset_new.all_statistics[selection] if list(i)]
             )
             if len(statistics_reduced) > 0:
                 n_small_extrapolations = int(
@@ -2833,7 +2558,9 @@ class ActiveLearning:
                         n_small_extrapolations, n_large_extrapolations
                     )
                 )
-        statistics = np.array([i for i in statistics[selection] if list(i)])
+        statistics = np.array(
+            [i for i in self.dataset_new.all_statistics[selection] if list(i)]
+        )
         if list(statistics):
             self._analyse_extrapolation_statistics(statistics)
 
@@ -2903,21 +2630,26 @@ class ActiveLearning:
         nn_nodes: int = 1
             How many nodes to use for evaluating the neural networks. Default is 1.
         """
-        # TODO add in an overwrite check?
-        if isfile(join(self.active_learning_directory, "input.data-new")):
+        if not (self.dataset_new is None or len(self.dataset_new) == 0) or not (
+            self.names is None or len(self.names) == 0
+        ):
+            print(
+                "`self.dataset_new` or `self.names` is already set. "
+                "To regenerate the new dataset, set them to None."
+            )
+            return
+        elif isfile(join(self.active_learning_directory, "input.data-new")):
             print(
                 "input.data-new is already present and data will be read from there.\n"
                 "To regenerate input.data-new, delete existing file."
             )
-            self._read_data(join(self.active_learning_directory, "input.data-new"))
+            self.dataset_new = Dataset(
+                data_file=join(self.active_learning_directory, "input.data-new"),
+                all_structures=self.all_structures,
+            )
+            self.names = [frame.frame_file for frame in self.dataset_new]
             return
 
-        self.lattices = []
-        self.elements = []
-        self.charges = []
-        self.statistics = []
-        self.names = []
-        self.positions = []
         for name, structure in self.all_structures.items():
             # Acquire the extrapolation information from all simulations
             if name is None:
@@ -2978,21 +2710,12 @@ class ActiveLearning:
                 extrapolation_timesteps, smalls, tolerance_indices, paths
             )
         self.names = np.array(self.names)
-        self.lattices = np.array(self.lattices)
-        self.elements = np.array(self.elements)
-        self.positions = np.array(self.positions)
-        self.charges = np.array(self.charges)
-        self.statistics = np.array(self.statistics)
-        print("Writing {} names to input.data-new".format(len(self.names)))
-        self._write_data(
-            self.names,
-            self.lattices,
-            self.elements,
-            self.positions,
-            self.charges,
-            file_name=self.active_learning_directory + "/input.data-new",
-            mode="w",
+        print("Writing {} names to input.data-new".format(len(self.dataset_new)))
+        self.dataset_new.change_units_all(new_units={"length": "Bohr", "energy": "Ha"})
+        self.dataset_new.write_data_file(
+            file_out=self.active_learning_directory + "/input.data-new",
         )
+        self.dataset_new.change_units_all(new_units={"length": "Ang", "energy": "eV"})
         self.data_controller._write_active_learning_nn_script(
             n2p2_directories=self.data_controller.n2p2_directories,
             nodes=nn_nodes,
@@ -3009,15 +2732,16 @@ class ActiveLearning:
 
         # If we do not have the results of `prepare_data_new` in memory, attempt to read from
         # file, and failing that, call `prepare_data_new` directly
-        if len(self.names) == 0:
-            if isfile(join(self.active_learning_directory, "input.data-new")):
-                print("Reading from input.data-new")
-                self._read_data(join(self.active_learning_directory, "input.data-new"))
-            else:
-                print("No data loaded, calling `prepare_data_new`")
-                self.prepare_data_new()
+        if (
+            self.dataset_new is None
+            or len(self.dataset_new) == 0
+            or self.names is None
+            or len(self.names) == 0
+        ):
+            print("No data loaded, calling `prepare_data_new`")
+            self.prepare_data_new()
 
-        self._print_performance(len(self.names))
+        self._print_performance(len(self.dataset_new))
 
         energies_1 = self._read_energies(
             self.active_learning_directory + "/mode2/HDNNP_1/trainpoints.000000.out"
@@ -3056,22 +2780,21 @@ class ActiveLearning:
 
         dE = []
         dF = []
-        ordered_structure_names = []
-        for i, name in enumerate(self.names):
+        for frame in self.dataset_new:
             # `name` includes various details seperated by underscores, the first of which is
             # the structure name
-            structure_name_i = name.split("_")[0]
-            ordered_structure_names.append(structure_name_i)
+            # raise ValueError(frame)
+            structure_name_i = frame.name
             for structure_name, structure in self.all_structures.items():
                 if structure_name == structure_name_i:
                     dE.append(structure.delta_E)
-                    for _ in range(3 * len(self.positions[i])):
+                    for _ in frame.forces.flatten():
                         dF.append(structure.delta_F)
                     break
         # Apply factors to convert from physical to the network's internal units
         dE = np.array(dE) * conv_energy_0
         dF = np.array(dF) * conv_energy_0 / conv_length_0
-        ordered_structure_names = np.array(ordered_structure_names)
+        # ordered_structure_names = np.array(ordered_structure_names)
 
         if conv_energy_0 != 1.0 or conv_length_0 != 1.0:
             print(
@@ -3093,15 +2816,11 @@ class ActiveLearning:
         )
         self.selection = np.unique(np.concatenate((energies, forces)).astype(int))
         self.selection = self._improve_selection(
-            self.selection, self.statistics, self.names, ordered_structure_names
+            selection=self.selection, names=self.names
         )
-        self._write_data(
-            self.names[self.selection],
-            self.lattices[self.selection],
-            self.elements[self.selection],
-            self.positions[self.selection],
-            self.charges[self.selection],
-            file_name=self.active_learning_directory + "/input.data-add",
-            mode="w",
+        self.dataset_new.change_units_all({"length": "Bohr", "energy": "Ha"})
+        self.dataset_new.write_data_file(
+            file_out=self.active_learning_directory + "/input.data-add",
         )
-        self._print_statistics(self.selection, self.statistics, self.names)
+        self.dataset_new.change_units_all({"length": "Ang", "energy": "eV"})
+        self._print_statistics(selection=self.selection, names=self.names)

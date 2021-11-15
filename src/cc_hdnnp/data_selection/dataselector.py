@@ -10,8 +10,8 @@ import numpy as np
 
 
 from cc_hdnnp.data import Data
+from cc_hdnnp.dataset import Dataset
 from cc_hdnnp.file_operations import read_atomenv
-from cc_hdnnp.structure import Dataset
 
 
 class DataSelector:
@@ -45,7 +45,7 @@ class DataSelector:
         self.elements = data_controller.elements
         self.n2p2_directory = data_controller.n2p2_directories[n2p2_directory_index]
         t1 = time.time()
-        dataset = Dataset(join(self.n2p2_directory, "input.data"))
+        dataset = Dataset(data_file=join(self.n2p2_directory, "input.data"))
         if len(np.unique(dataset.n_atoms_per_frame)) > 1:
             raise ValueError(
                 "Datasets containing a varying number of atoms per frame are not supported, "
