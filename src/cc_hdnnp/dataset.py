@@ -5,7 +5,7 @@ Class for containing information about atomic species in the structure of intere
 
 from ast import literal_eval
 from copy import deepcopy
-from typing import Dict, Iterator, List, Tuple
+from typing import Dict, Iterable, Iterator, List, Tuple
 
 from ase.atoms import Atoms
 from ase.io.formats import read, write
@@ -538,7 +538,7 @@ class Dataset(List[Frame]):
         if frames is not None:
             for frame in frames:
                 if not isinstance(frame, Frame):
-                    raise ValueError(
+                    raise TypeError(
                         "`frames` must be a list of Frame objects, "
                         "but had entries with type {}".format(type(frame))
                     )
@@ -759,7 +759,7 @@ class Dataset(List[Frame]):
                 charges.append(float(words[5]))
             elif words[0] == "energy":
                 energy = float(words[1])
-            elif words[0] == "charges":
+            elif words[0] == "charge":
                 if not np.isclose(np.sum(charges), float(words[1])):
                     print(
                         "WARNING: Total charge {} and sum of atomic charge {} are not close"
@@ -788,7 +788,7 @@ class Dataset(List[Frame]):
         return frames
 
     def write_data_file(
-        self, file_out: str, conditions: Iterator[bool] = None, append: bool = False
+        self, file_out: str, conditions: Iterable[bool] = None, append: bool = False
     ) -> Tuple[List[int], List[int]]:
         """
         Write the Dataset to file in the n2p2 format.
@@ -797,7 +797,7 @@ class Dataset(List[Frame]):
         ----------
         file_out: str
             The complete filepath to write the dataset to.
-        conditions: Iterator[bool] = None
+        conditions: Iterable[bool] = None
             An iterable object of bool, if True then the corresponding Frame in the Dataset
             will be written to file, else it will be omitted (but still be present in `self`).
         append: bool = False
@@ -813,9 +813,11 @@ class Dataset(List[Frame]):
         removed = []
         mode = "a" if append else "w"
         with open(file_out, mode=mode) as f:
-            for i, frame in enumerate(self):
-                if conditions is None or next(conditions):
-                    f.write(frame.n2p2_text)
+            if conditions is None:
+                conditions = (True for _ in self)
+            for i, condition in enumerate(conditions):
+                if condition:
+                    f.write(self[i].n2p2_text)
                     selected.append(i)
                 else:
                     removed.append(i)
@@ -826,7 +828,7 @@ class Dataset(List[Frame]):
         self,
         file_out: str,
         format: str = "n2p2",
-        conditions: Iterator[bool] = None,
+        conditions: Iterable[bool] = None,
         append: bool = False,
         **kwargs,
     ) -> Tuple[List[int], List[int]]:
@@ -840,7 +842,7 @@ class Dataset(List[Frame]):
         format: str = "n2p2"
             The format to use when writing to file.
             Should either be "n2p2" or a format supported by ASE. Default is "n2p2".
-        conditions: Iterator[bool] = None
+        conditions: Iterable[bool] = None
             An iterable object of bool, if True then the corresponding Frame in the Dataset
             will be written to file, else it will be omitted (but still be present in `self`).
         append: bool = False
@@ -864,9 +866,9 @@ class Dataset(List[Frame]):
             removed = []
             if conditions is not None:
                 images = []
-                for i, frame in enumerate(self):
-                    if next(conditions):
-                        images.append(frame)
+                for i, condition in enumerate(conditions):
+                    if condition:
+                        images.append(self[i])
                         selected.append(i)
                     else:
                         removed.append(i)
