@@ -17,20 +17,18 @@ from os import mkdir, remove
 from os.path import exists, isdir, isfile, join as join_paths
 import re
 from shutil import copy, move
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Iterable, List, Tuple, Union
 
 from ase.atoms import Atoms
 from ase.io import read, write
 from ase.units import create_units
 import numpy as np
 
-from cc_hdnnp.file_operations import (
-    format_template_file,
-    read_last_timestep,
-)
+from cc_hdnnp.file_operations import format_template_file
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
 from cc_hdnnp.structure import AllStructures, Structure
 from .dataset import Dataset
+from .file_readers import read_lammps_log
 
 
 class Data:
@@ -157,70 +155,56 @@ class Data:
 
     def convert_active_learning_to_xyz(
         self,
-        file_structure: str,
+        file_n2p2_data: str,
         file_xyz: str,
-        unit_in: str = "Bohr",
+        xyz_units: Dict[str, str] = None,
         single_output: bool = False,
     ):
         """
-        Reads `file_structure` from `self.active_learning_directory` and writes it as a series
+        Reads `file_n2p2_data` from `self.active_learning_directory` and writes it as a series
         of xyz files. By default length units of Bohr are assumed, so if this is not the case
-        then `unit_in` should be specified to allow conversion. The xyz files will be in Ang.
+        then `unit_in` should be specified to allow conversion.
 
         Parameters
         ----------
-        file_structure : str
+        file_n2p2_data : str
             File containing a series of structures in n2p2 format, relative to
             `self.active_learning_directory`.
         file_xyz : str
             Formatable file name to write to, relative to `self.main_directory`.
-        unit_in: str, optional
-            Length unit for the trajectory. Default is 'Ang'.
+            If `single_output` is True, then a complete filename should be given instead.
+        xyz_units: Dict[str, str] = None
+            The units to write the extxyz file in. Should contain the key "length".
+            Optional, default is None in which case Ang will be used.
+        single_output: bool = False
+            Whether to write all frames to a single file, or separate files formatted with
+            the frame index.
         """
         xyz_path_split = join_paths(self.main_directory, file_xyz).split("/")
         xyz_directory = "/".join(xyz_path_split[:-1])
         if not isdir(xyz_directory):
             mkdir(xyz_directory)
 
-        with open(join_paths(self.active_learning_directory, file_structure)) as f:
-            lines = f.readlines()
+        dataset = Dataset(
+            data_file=join_paths(self.active_learning_directory, file_n2p2_data),
+            all_structures=self.all_structures,
+        )
 
-        i = 0
-        for line in lines:
-            if line.strip() == "begin":
-                atoms = []
-                lattice = []
-            elif line.split()[0] == "lattice":
-                for j in (1, 2, 3):
-                    lattice.append(str(float(line.split()[j]) * self.units[unit_in]))
-            elif line.split()[0] == "atom":
-                atom = [
-                    line.split()[4],
-                    str(float(line.split()[1]) * self.units[unit_in]),
-                    str(float(line.split()[2]) * self.units[unit_in]),
-                    str(float(line.split()[3]) * self.units[unit_in]),
-                ]
-                atoms.append(atom)
-            elif line.strip() == "end":
-                text = str(len(atoms))
-                text += (
-                    '\nLattice="{}" Properties=species:S:1:pos:R:3 pbc="T T T"'.format(
-                        " ".join(lattice)
-                    )
+        if xyz_units is None:
+            xyz_units = {"length": "Ang", "energy": "eV"}
+        dataset.change_units_all(new_units=xyz_units)
+
+        if single_output:
+            dataset.write(
+                file_out=join_paths(self.main_directory, file_xyz), format="extxyz"
+            )
+        else:
+            for i, frame in enumerate(dataset):
+                write(
+                    filename=join_paths(self.main_directory, file_xyz.format(i)),
+                    images=frame,
+                    format="extxyz",
                 )
-                for atom in atoms:
-                    text += "\n" + " ".join(atom)
-                # Depending on what method of training set generation we use, it may be
-                # appropriate to generate a single, or multiple xyz files
-                if single_output:
-                    with open(join_paths(self.main_directory, file_xyz), "a") as f:
-                        f.write(text + "\n")
-                else:
-                    with open(
-                        join_paths(self.main_directory, file_xyz.format(i)), "w"
-                    ) as f:
-                        f.write(text)
-                i += 1
 
     def reduce_dataset_outliers(
         self,
@@ -696,7 +680,8 @@ class Data:
 ##SBATCH --reservation=scddevel
 ##SBATCH --account=scddevel
 #SBATCH -t 0:30:00
-#SBATCH -C [scarf18|scarf17]
+##SBATCH -C [scarf18|scarf17]
+#SBATCH -C scarf18
 
 module purge
 module use /work3/cse/dlp/eb-ml/modules/all
@@ -917,15 +902,15 @@ rm -f tmp.pp
     def write_n2p2_data_qe(
         self,
         structure_name: str,
-        temperatures: List[int],
-        pressures: List[int],
+        temperatures: Iterable[int],
+        pressures: Iterable[int],
         selection: Tuple[int, int] = (0, 1),
         qe_directory: str = "qe",
         file_qe_log: str = "T{temperature}-p{pressure}-{index}/{structure_name}.log",
         file_qe_charges: str = "T{temperature}-p{pressure}-{index}/ACF.dat",
         file_xyz: str = "{structure_name}-T{temperature}-p{pressure}.xyz",
         file_n2p2_input: str = "input.data",
-        n2p2_units: dict = None,
+        n2p2_units: Dict[str, str] = None,
     ):
         """
         Read the Quantum Espresso output files, then format the information for n2p2 and write
@@ -935,9 +920,9 @@ rm -f tmp.pp
         ----------
         structure_name: str
             The name of the Structure in question.
-        temperatures: list of int
+        temperatures: Iterable[int]
             All temperatures that Quantum Espresso was run for.
-        pressures: list of int
+        pressures: Iterable[int]
             All pressures that Quantum Espresso was run for.
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
@@ -959,25 +944,24 @@ rm -f tmp.pp
         file_n2p2_input: str
             File path to write the n2p2 data to, relative to `self.n2p2_directories`.
             Default is "input.data".
-        n2p2_units: dict, optional
+        n2p2_units: Dict[str, str] = None
             The units to use for n2p2. No specific units are required, however
             they should be consistent (i.e. positional data and symmetry
             functions can use 'Ang' or 'Bohr' provided both do). Default is `None`, which will
-            lead to `{'length': 'Bohr', 'energy': 'Ha', 'force': 'Ha / Bohr'}` being used.
+            lead to `{'length': 'Bohr', 'energy': 'Ha'}` being used.
         """
         if structure_name not in self.all_structures.keys():
             raise ValueError(
                 "`structure_name` {} not recognized".format(structure_name)
             )
 
-        text = ""
         if n2p2_units is None:
-            n2p2_units = {"length": "Bohr", "energy": "Ha", "force": "Ha / Bohr"}
+            n2p2_units = {"length": "Bohr", "energy": "Ha"}
 
         for temperature in temperatures:
             for pressure in pressures:
-                trajectory = read(
-                    join_paths(
+                dataset = Dataset(
+                    data_file=join_paths(
                         self.main_directory,
                         qe_directory,
                         file_xyz.format(
@@ -986,9 +970,12 @@ rm -f tmp.pp
                             pressure=pressure,
                         ),
                     ),
-                    index=":",
+                    all_structures=self.all_structures,
+                    format="extxyz",
                 )
-                for index, frame in enumerate(trajectory):
+                dataset.change_units_all(new_units=n2p2_units)
+                remove_indices = []
+                for index, frame in enumerate(dataset):
                     if index >= selection[0] and index % selection[1] == 0:
                         full_filepath = join_paths(
                             self.main_directory,
@@ -1010,19 +997,6 @@ rm -f tmp.pp
                             ),
                         )
                         if exists(full_filepath):
-                            if n2p2_units["length"] != "Ang":
-                                frame.set_cell(
-                                    frame.get_cell() / self.units[n2p2_units["length"]],
-                                    scale_atoms=True,
-                                )
-
-                            if exists(charge_filepath):
-                                charges = self.read_charges_qe(
-                                    charge_filepath, len(frame)
-                                )
-                            else:
-                                charges = None
-
                             with open(full_filepath) as f:
                                 lines = f.readlines()
                             energy = None
@@ -1054,59 +1028,50 @@ rm -f tmp.pp
                                         full_filepath
                                     )
                                 )
+                                remove_indices.append(index)
                                 continue
+
                             if forces is None:
                                 print(
                                     "{} did not complete no forces found, skipping".format(
                                         full_filepath
                                     )
                                 )
-                                continue
+                                remove_indices.append(index)
 
-                            text += "begin\n"
-                            text += "comment frame_index={0} units={1}\n".format(
-                                index, n2p2_units
-                            )
-                            text += "comment structure {}\n".format(structure_name)
-                            for vector in frame.get_cell():
-                                text += "lattice {} {} {}\n".format(*vector)
-
-                            symbols = frame.get_chemical_symbols()
-                            positions = frame.get_positions()
-                            structure = self.all_structures[structure_name]
-                            for i in range(len(frame)):
-                                valence = structure.get_species(symbols[i]).valence
-                                if (
-                                    charges is None
-                                    or len(frame) != len(charges)
-                                    or valence is None
-                                ):
-                                    charge = 0.0
-                                else:
-                                    charge = valence - charges[i]
-                                text += "atom {} {} {} {} {} 0.0 {} {} {}\n".format(
-                                    *positions[i],
-                                    symbols[i],
-                                    charge,
-                                    *forces[i],
+                            frame.energy = energy
+                            frame.forces = forces
+                            if exists(charge_filepath):
+                                charges = self.read_charges_qe(
+                                    charge_filepath, len(frame)
                                 )
+                                relative_charges = []
+                                structure = self.all_structures[structure_name]
+                                for i, symbol in enumerate(frame.symbols):
+                                    valence = structure.get_species(symbol).valence
+                                    if (
+                                        charges is None
+                                        or len(frame) != len(charges)
+                                        or valence is None
+                                    ):
+                                        relative_charges.append(0.0)
+                                    else:
+                                        relative_charges.append(charges[i])
+                                frame.set_initial_charges(charges=relative_charges)
 
-                            text += "energy {}\n".format(energy)
-                            text += "charge {}\n".format(0.0)
-                            text += "end\n"
                         else:
                             print("{} not found, skipping".format(full_filepath))
+                            remove_indices.append(index)
 
-        if len(text) == 0:
+        if len(dataset) == len(remove_indices):
             raise IOError("No files found.")
 
         for n2p2_directory in self.n2p2_directories:
-            if isfile(join_paths(n2p2_directory, file_n2p2_input)):
-                with open(join_paths(n2p2_directory, file_n2p2_input), "a") as f:
-                    f.write(text)
-            else:
-                with open(join_paths(n2p2_directory, file_n2p2_input), "w") as f:
-                    f.write(text)
+            dataset.write_data_file(
+                file_out=join_paths(n2p2_directory, file_n2p2_input),
+                conditions=(i not in remove_indices for i, _ in enumerate(dataset)),
+                append=True,
+            )
 
     def write_n2p2_data(
         self,
@@ -2019,7 +1984,10 @@ rm -f tmp.pp
                         ensemble,
                         t,
                     )
-                    timestep_data[ensemble][t] = read_last_timestep(log_file)
+                    timesteps, _, _ = read_lammps_log(
+                        dump_lammpstrj=1, log_lammps_file=log_file
+                    )
+                    timestep_data[ensemble][t] = timesteps[-1]
                     print("{0:4d} | {1:5d}".format(t, timestep_data[ensemble][t]))
                 timestep_data[ensemble]["mean"] = np.mean(
                     list(timestep_data[ensemble].values())
@@ -2035,7 +2003,10 @@ rm -f tmp.pp
                     self.lammps_directory,
                     ensemble,
                 )
-                timestep_data[ensemble]["mean"] = read_last_timestep(log_file)
+                timesteps, _, _ = read_lammps_log(
+                    dump_lammpstrj=1, log_lammps_file=log_file
+                )
+                timestep_data[ensemble]["mean"] = timesteps[-1]
                 print("MEAN | {0:5d}\n".format(timestep_data[ensemble]["mean"]))
 
         return timestep_data

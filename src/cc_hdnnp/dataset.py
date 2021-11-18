@@ -520,6 +520,9 @@ class Dataset(List[Frame]):
     format: str = "n2p2"
         The format of the `data_file` given. Should either be "n2p2"
         or a format recognised by ASE. Default is "n2p2".
+    verbosity: int = 0,
+        How much information to print during reading. 0 will result in no printing,
+        1 prints warnings. Optional, default is 0.
     **kwargs
         If `format` is not "n2p2", any other keyword arguments will be passed to the ASE
         read function.
@@ -531,9 +534,11 @@ class Dataset(List[Frame]):
         data_file: str = None,
         all_structures: AllStructures = None,
         format: str = "n2p2",
+        verbosity: int = 0,
         **kwargs,
     ):
         self.all_structures = all_structures
+        self.verbosity = verbosity
 
         if frames is not None:
             for frame in frames:
@@ -553,7 +558,10 @@ class Dataset(List[Frame]):
                 for frame in self.read_data_file(data_file=data_file):
                     frames.append(frame)
             else:
-                frames = []
+                if all_structures is not None and len(all_structures) == 1:
+                    structure_name = list(all_structures.keys())[0]
+                else:
+                    structure_name = None
                 for atoms in read(
                     filename=data_file, format=format, index=":", **kwargs
                 ):
@@ -563,6 +571,7 @@ class Dataset(List[Frame]):
                             symbols=atoms.symbols,
                             positions=atoms.positions,
                             charges=atoms.get_initial_charges(),
+                            name=structure_name,
                         )
                     )
             super().__init__(frames)
@@ -760,7 +769,9 @@ class Dataset(List[Frame]):
             elif words[0] == "energy":
                 energy = float(words[1])
             elif words[0] == "charge":
-                if not np.isclose(np.sum(charges), float(words[1])):
+                if self.verbosity > 0 and not np.isclose(
+                    np.sum(charges), float(words[1])
+                ):
                     print(
                         "WARNING: Total charge {} and sum of atomic charge {} are not close"
                         "".format(float(words[1]), np.sum(charges))

@@ -8,9 +8,9 @@ import warnings
 import numpy as np
 
 from cc_hdnnp.data import Data
-from cc_hdnnp.file_operations import read_lammps_log, read_normalisation
 from cc_hdnnp.structure import Structure
 from .dataset import Dataset, Frame
+from .file_readers import read_lammps_log, read_nn_settings
 
 # TODO combine all unit conversions
 # Set a float to define the conversion factor from Bohr radius to Angstrom.
@@ -2757,12 +2757,19 @@ class ActiveLearning:
         )
 
         # Read normalisation factors from file
-        conv_energy_0, conv_length_0 = read_normalisation(
-            join(self.data_controller.n2p2_directories[0], "input.nn")
+        settings_0 = read_nn_settings(
+            settings_file=join(self.data_controller.n2p2_directories[0], "input.nn"),
+            requested_settings=("conv_energy", "conv_length"),
         )
-        conv_energy_1, conv_length_1 = read_normalisation(
-            join(self.data_controller.n2p2_directories[1], "input.nn")
+        conv_energy_0 = float(settings_0["conv_energy"])
+        conv_length_0 = float(settings_0["conv_length"])
+        settings_1 = read_nn_settings(
+            settings_file=join(self.data_controller.n2p2_directories[1], "input.nn"),
+            requested_settings=("conv_energy", "conv_length"),
         )
+        conv_energy_1 = float(settings_1["conv_energy"])
+        conv_length_1 = float(settings_1["conv_length"])
+
         if not np.isclose(conv_energy_0, conv_energy_1) or not np.isclose(
             conv_length_0, conv_length_1
         ):

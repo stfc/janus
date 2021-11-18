@@ -69,10 +69,10 @@ def test_data_convert_active_learning_to_xyz(
 ):
     """
     Test that active learning structures can be written in xyz format, creating a subdirectory
-    if needed, and a trailing newline if writing multiple frames to one file.
+    if needed, and a trailing newline.
     """
     data.convert_active_learning_to_xyz(
-        file_structure="input.data-add",
+        file_n2p2_data="input.data-add",
         file_xyz=file_xyz,
         single_output=single_output,
     )
@@ -81,7 +81,7 @@ def test_data_convert_active_learning_to_xyz(
     assert isfile(file_out)
     with open(file_out) as f:
         text = f.read()
-    assert text.endswith("\n") == single_output
+    assert text.endswith("\n")
 
 
 def test_data_write_xyz(data: Data):
@@ -720,6 +720,11 @@ def test_analyse_extrapolations(
     """
     timestep_data = data.analyse_extrapolations()
 
+    assert timestep_data == {
+        "nve": {"mean": 484},
+        "nvt": {340: 156, "mean": 156},
+        "npt": {340: 255, "mean": 255},
+    }
     assert capsys.readouterr().out == (
         "nve\n"
         "Temp | T_step\n"
@@ -736,11 +741,6 @@ def test_analyse_extrapolations(
         "MEAN |   255\n"
         "\n"
     )
-    assert timestep_data == {
-        "nve": {"mean": 484},
-        "nvt": {340: 156, "mean": 156},
-        "npt": {340: 255, "mean": 255},
-    }
 
 
 @pytest.mark.parametrize(
@@ -935,7 +935,7 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
         lines = f.readlines()
         assert len(lines) == 112 + 9
         for line in lines[6:-3]:
-            assert line.split()[-5] == "0.0"
+            assert float(line.split()[-5]) == 0
 
     data.write_n2p2_data_qe(
         structure_name="test",
@@ -949,7 +949,7 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
         lines = f.readlines()
         assert len(lines) == 2 * (112 + 9)
         for line in lines[112 + 9 + 6 : -3]:
-            assert line.split()[-5] == "0.0"
+            assert float(line.split()[-5]) == 0
 
 
 @pytest.mark.parametrize(
@@ -990,7 +990,7 @@ def test_write_n2p2_data_qe_warnings(
                 f.write(line)
     data.n2p2_directories = ["tests/data/tests_output"]
 
-    with pytest.raises(Exception) as e:
+    with pytest.raises(OSError) as e:
         data.write_n2p2_data_qe(
             structure_name="test",
             temperatures=[300],

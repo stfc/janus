@@ -9,7 +9,8 @@ from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from cc_hdnnp.file_operations import read_data_file, read_normalisation
+from .dataset import Dataset
+from .file_readers import read_nn_settings
 
 
 def plot_learning_curve(
@@ -205,7 +206,13 @@ def plot_epoch_scatter(n2p2_directory: str, epoch: int, subsample_forces: int = 
     plt.title("Test Forces")
 
 
-def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
+def plot_epoch_histogram_2D(
+    n2p2_directory: str,
+    epoch: int,
+    bins: int = 10,
+    force_log: bool = True,
+    energy_log: bool = True,
+):
     """
     For `n2p2_directory`, load the files corresponding to `epoch` and histogrsm plot the
     reference values against the network predictions.
@@ -218,7 +225,10 @@ def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
         The epoch to plot data for
     bins : int, optional
         The number of bins along each axis. Default is 10.
-
+    force_log: bool = True
+        Whether to use a log scale when plotting the forces. Optional, default is True.
+    energy_log:bool = True
+        Whether to use a log scale when plotting the energy. Optional, default is True.
     """
 
     energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
@@ -264,7 +274,12 @@ def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
     ]
 
     plt.subplot(2, 2, 1)
-    plt.hist2d(energy_train_ref, energy_train_nn, bins=bins, cmap="viridis")
+    if energy_log:
+        plt.hist2d(
+            energy_train_ref, energy_train_nn, bins=bins, cmap="viridis", norm=LogNorm()
+        )
+    else:
+        plt.hist2d(energy_train_ref, energy_train_nn, bins=bins, cmap="viridis")
     plt.plot(energy_guide, energy_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
@@ -272,7 +287,12 @@ def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
     plt.colorbar()
 
     plt.subplot(2, 2, 2)
-    plt.hist2d(energy_test_ref, energy_test_nn, bins=bins, cmap="plasma")
+    if energy_log:
+        plt.hist2d(
+            energy_test_ref, energy_test_nn, bins=bins, cmap="plasma", norm=LogNorm()
+        )
+    else:
+        plt.hist2d(energy_test_ref, energy_test_nn, bins=bins, cmap="plasma")
     plt.plot(energy_guide, energy_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
@@ -280,9 +300,12 @@ def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
     plt.colorbar()
 
     plt.subplot(2, 2, 3)
-    plt.hist2d(
-        force_train_ref, force_train_nn, bins=bins, cmap="viridis", norm=LogNorm()
-    )
+    if energy_log:
+        plt.hist2d(
+            force_train_ref, force_train_nn, bins=bins, cmap="viridis", norm=LogNorm()
+        )
+    else:
+        plt.hist2d(force_train_ref, force_train_nn, bins=bins, cmap="viridis")
     plt.plot(force_guide, force_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
@@ -290,7 +313,12 @@ def plot_epoch_histogram_2D(n2p2_directory: str, epoch: int, bins: int = 10):
     plt.colorbar()
 
     plt.subplot(2, 2, 4)
-    plt.hist2d(force_test_ref, force_test_nn, bins=bins, cmap="plasma", norm=LogNorm())
+    if energy_log:
+        plt.hist2d(
+            force_test_ref, force_test_nn, bins=bins, cmap="plasma", norm=LogNorm()
+        )
+    else:
+        plt.hist2d(force_test_ref, force_test_nn, bins=bins, cmap="plasma")
     plt.plot(force_guide, force_guide, "k--")
     plt.xlabel("Reference")
     plt.ylabel("Network")
@@ -459,7 +487,12 @@ def plot_error_histogram(
     force_test_ref, force_test_nn = _read_epoch_file(force_test_file, index=2)
 
     if physical_units:
-        conv_energy, conv_length = read_normalisation(join(n2p2_directory, "input.nn"))
+        settings = read_nn_settings(
+            settings_file=join(n2p2_directory, "input.nn"),
+            requested_settings=("conv_energy", "conv_length"),
+        )
+        conv_energy = float(settings["conv_energy"])
+        conv_length = float(settings["conv_length"])
         energy_train_ref /= conv_energy
         energy_train_nn /= conv_energy
         energy_test_ref /= conv_energy
@@ -561,24 +594,19 @@ def plot_data_histogram(
     energies = []
     forces = []
     for i, data_file in enumerate(data_files):
-        data = read_data_file(data_file)
-        energy = []
-        force = []
-        for frame in data:
-            energy.append(frame[4])
-            for atomic_force in frame[3]:
-                for j in (0, 1, 2):
-                    force.append(atomic_force[j])
+        data = Dataset(data_file=data_file)
+        energy = data.all_energies
+        force = data.all_forces.flatten()
         if i == 0:
             energy_min = min(energy)
             energy_max = max(energy)
-            force_min = min(force)
-            force_max = max(force)
+            force_min = np.amin(force)
+            force_max = np.amax(force)
         else:
             energy_min = min(energy_min, min(energy))
             energy_max = max(energy_max, max(energy))
-            force_min = min(force_min, min(force))
-            force_max = max(force_max, max(force))
+            force_min = min(force_min, np.amin(force))
+            force_max = max(force_max, np.amax(force))
         energies.append(energy)
         forces.append(force)
 
@@ -653,3 +681,43 @@ def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
         plt.ylabel("Cluster labels")
         plt.title(element)
         plt.legend()
+
+
+def plot_environments_histogram_2D(
+    elements: List[str], file_environments: str, bins: int = 10, log: bool = False
+):
+    """
+    Plots histograms for atomic environments in terms of two symmetry functions selected by CUR
+    for each element.
+
+    Parameters
+    ----------
+    elements: List[str]
+        A list of chemical symbols, which is used to format `file_environments`.
+        A plot will be made for each element, using the two best symmetry functions
+        for that element to come out of the CUR decomposition.
+    file_environments: str
+        The filepath to the files containing the evaluated environments in terms of the
+        first two symmetry functions.
+    bins: int = 10
+        The number of bins along each axis. Default is 10.
+    log: bool = False
+        Whether to plot the log of frequency.
+    """
+    n = len(elements)
+    plt.figure(figsize=(12, 12 * n))
+    plt.tight_layout()
+
+    for i, element in enumerate(elements):
+        with open(file_environments.format(element)) as f:
+            x = np.array(f.readline().split(), dtype=float)
+            y = np.array(f.readline().split(), dtype=float)
+        plt.subplot(n, 1, i + 1)
+        if log:
+            plt.hist2d(x, y, bins=bins, cmap="viridis", norm=LogNorm())
+        else:
+            plt.hist2d(x, y, bins=bins, cmap="viridis")
+        plt.xlabel("Symmetry Function 1")
+        plt.ylabel("Symmetry Function 2")
+        plt.title(element)
+        plt.colorbar()

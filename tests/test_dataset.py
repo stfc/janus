@@ -3,7 +3,7 @@ Unit tests for `structure.py`
 """
 
 from os.path import isfile
-from typing import Iterable, Iterator, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pytest
@@ -30,21 +30,17 @@ def test_frame_units_error():
 
 @pytest.mark.parametrize(
     "energy_threshold, energy_accepted",
-    [
-        ((0, 0), False), ((-10, 10), True)
-    ],
+    [((0, 0), False), ((-10, 10), True)],
 )
 @pytest.mark.parametrize(
     "force_threshold, force_accepted",
-    [
-        (0, False), (10, True)
-    ],
+    [(0, False), (10, True)],
 )
 def test_frame_check_threshold(
     energy_threshold: Tuple[float, float],
     energy_accepted: bool,
     force_threshold: float,
-    force_accepted: bool
+    force_accepted: bool,
 ):
     """Test that the correct result is returned for different thresholds"""
     frame = Frame(
@@ -106,9 +102,11 @@ def test_dataset_error():
     with pytest.raises(TypeError) as e:
         Dataset(frames=["text"])
 
-    assert str(
-        e.value
-    ) == "`frames` must be a list of Frame objects, but had entries with type <class 'str'>"
+    assert (
+        str(e.value)
+        == "`frames` must be a list of Frame objects, but had entries with type <class 'str'>"
+    )
+
 
 def test_dataset_units():
     """
@@ -194,7 +192,8 @@ def test_check_nearest_neighbours(
     ],
 )
 def test_write(
-    format: str, lines: int,
+    format: str,
+    lines: int,
 ):
     """
     Test we write correctly in multiple formats without conditions.
@@ -221,7 +220,8 @@ def test_write(
     ],
 )
 def test_write_conditions(
-    format: str, lines: int,
+    format: str,
+    lines: int,
 ):
     """
     Test we write correctly in multiple formats with conditions.
@@ -256,3 +256,18 @@ def test_write_conditions(
         text = f.readlines()
         assert len(text) == lines
         assert "He" not in text
+
+
+def test_read_data_file_charge_warning(capsys: pytest.CaptureFixture):
+    """
+    Test we print a warning if the total charge is not equal to the sum of individual
+    charges when reading from file, if verbosity is high enough.
+    """
+    Dataset(data_file="tests/data/n2p2/input.data", verbosity=1)
+
+    total_charge = 0.055
+    summed_charge = 0.06600000000000172
+    assert capsys.readouterr().out == (
+        f"WARNING: Total charge {total_charge} and sum of atomic charge {summed_charge}"
+        " are not close\n"
+    )

@@ -11,7 +11,7 @@ import numpy as np
 
 from cc_hdnnp.data import Data
 from cc_hdnnp.dataset import Dataset
-from cc_hdnnp.file_operations import read_atomenv
+from ..file_readers import read_atomenv
 
 
 class DataSelector:
