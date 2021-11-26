@@ -25,6 +25,7 @@ from ase.units import create_units
 import numpy as np
 
 from cc_hdnnp.file_operations import format_template_file
+from cc_hdnnp.lammps_input import format_lammps_input
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
 from cc_hdnnp.structure import AllStructures, Structure
 from .dataset import Dataset
@@ -1062,6 +1063,9 @@ rm -f tmp.pp
                         else:
                             print("{} not found, skipping".format(full_filepath))
                             remove_indices.append(index)
+                    else:
+                        # Remove structures if they do not match selection criteria
+                        remove_indices.append(index)
 
         if len(dataset) == len(remove_indices):
             raise IOError("No files found.")
@@ -1467,123 +1471,6 @@ rm -f tmp.pp
             units=lammps_unit_style,
         )
 
-    def format_lammps_input(
-        self,
-        structure: Structure,
-        n_steps: int,
-        r_cutoff: float,
-        file_lammps_template: str = "lammps/template.lmp",
-        file_out: str = "lammps/md.lmp",
-        n2p2_directory: str = "n2p2",
-        lammps_unit_style: str = "electron",
-    ):
-        """
-        Writes the pair commands 'pair_style' and 'pair_coeff' to `file_out`,
-        with the rest of the LAMMPS commands to be contained in `file_lammps_template`
-        along with '{pair_commands}' to allow formatting that section to the
-        following:
-
-            pair_style nnp dir {n2p2_directory} showew no showewsum 10 resetew no maxew 100 \
-                emap {elements_map}
-            pair_coeff * * {r_cutoff}
-
-        `r_cutoff` must be given in the LAMMPS units regardless of what was used for training.
-
-        Also sets {masses}, {n_steps}, and configures the atomic symbols in the dump.
-
-        Parameters
-        ----------
-        structure: Structure
-            The Structure that will be simulated by LAMMPS.
-        n_steps: int
-            The number of steps to run LAMMPS for.
-        r_cutoff: float
-            The cutoff distance for the symmetry functions.
-        file_lammps_template: str, optional
-            Complete file name of the template for `file_out`. Should contain
-            '{pair_commands}' to allow formatting. Default is
-            'lammps/template.lmp'.
-        file_out: str, optional
-            Complete file name of the output file. Default is 'lammps/md.lmp'.
-        n2p2_directory: str, optional
-            Directory containing all the n2p2 files needed by the LAMMPS/n2p2
-            interface. Default is 'n2p2'.
-        lammps_unit_style: str, optional
-            The LAMMPS unit system to use. Default is 'electron'.
-        """
-        # with open(join_paths(self.main_directory, file_lammps_template)) as f:
-        #     template_text = f.read()
-
-        # LAMMPS required alphabetically sorted elements
-        elements = self.elements
-        elements.sort()
-        elements_map = '"'
-        masses = ""
-        elements_text = ""
-        for i, element in enumerate(elements):
-            elements_map += "{0}:{1},".format(i + 1, element)
-            species = structure.get_species(element)
-            masses += "mass {} {}\n".format(i + 1, species.mass)
-            elements_text += " {}".format(element)
-
-        elements_map = elements_map[:-1] + '"'
-
-        pair_style = (
-            "pair_style nnp dir {0} showew no showewsum 10 resetew no maxew 100 emap {1}"
-            "".format(n2p2_directory, elements_map)
-        )
-
-        lammps_units = {
-            "electron": {"length": 1, "energy": 1},
-            "real": {
-                "length": 1 / self.units["Bohr"],
-                "energy": self.units["kcal"] / (self.units["Ha"] * self.units["mol"]),
-            },
-            "metal": {"length": 1 / self.units["Bohr"], "energy": 1 / self.units["Ha"]},
-            "si": {
-                "length": 1e10 / self.units["Bohr"],
-                "energy": self.units["kJ"] / (self.units["Ha"] * 1e3),
-            },
-            "cgs": {
-                "length": 1e8 / self.units["Bohr"],
-                "energy": self.units["kJ"] / (self.units["Ha"] * 1e10),
-            },
-            "micro": {
-                "length": 1e4 / self.units["Bohr"],
-                "energy": self.units["kJ"] / (self.units["Ha"] * 1e15),
-            },
-            "nano": {
-                "length": 1e1 / self.units["Bohr"],
-                "energy": self.units["kJ"] / (self.units["Ha"] * 1e21),
-            },
-        }
-
-        if lammps_unit_style == "electron":
-            # No conversion required
-            pass
-        elif lammps_unit_style in lammps_units:
-            pair_style += " cflength {length} cfenergy {energy}".format(
-                **lammps_units[lammps_unit_style]
-            )
-        else:
-            raise ValueError(
-                "`lammps_unit_style={}` not recognised".format(lammps_unit_style)
-            )
-
-        pair_coeff = "pair_coeff * * {}".format(r_cutoff)
-
-        format_template_file(
-            template_file=join_paths(self.main_directory, file_lammps_template),
-            formatted_file=join_paths(self.main_directory, file_out),
-            format_dict={
-                "pair_commands": pair_style + "\n" + pair_coeff,
-                "lammps_unit_style": lammps_unit_style,
-                "elements": elements_text,
-                "masses": masses,
-                "n_steps": str(n_steps),
-            },
-        )
-
     def _write_active_learning_lammps_script(
         self,
         n_simulations: int,
@@ -1868,8 +1755,9 @@ rm -f tmp.pp
     def write_extrapolations_lammps_script(
         self,
         n2p2_directory_index: int = 0,
-        ensembles: Tuple[str] = ("nve", "nvt", "npt"),
-        temperatures: Tuple[int] = (340,),
+        ensembles: Iterable[str] = ("nve",),
+        temperatures: Iterable[int] = (300,),
+        n_steps: Iterable[str] = ("10000",),
         file_batch_template: str = "template.sh",
         file_batch_out: str = "lammps_extrapolations.sh",
     ):
@@ -1882,12 +1770,18 @@ rm -f tmp.pp
         n2p2_directory_index: str, optional
             The index of the directory within `self.n2p2_directories` containing the weights
             files. Default is 0.
-        ensembles: tuple of str
-            Contains all ensembles to run simulations with. Supported strings are "nve", "nvt"
-            and "npt". Default is ("nve", "nvt", "npt").
-        temperatures: tuple of int
-            Contains all temperatures to run simulations at, in Kelvin. Only applies to "nvt"
-            and "npt" ensembles. Default is (340,).
+        ensembles: Iterable[str] = ("nve",)
+            Contains the ensembles to run simulations with. Each is applied in turn, and each
+            entry should correspond to an entry in `temperatures` and `n_steps` as well.
+            Supported strings are "nve", "nvt" and "npt". Default is ("nve",).
+        temperatures: Iterable[int] = (300,)
+            Contains all temperatures to run simulations at, in Kelvin. Each is applied in
+            turn, and each entry should correspond to an entry in `ensembles` and `n_steps`
+            as well. Default is (300,).
+        n_steps: Iterable[str] = ("10000",)
+            Contains the number of timesteps to run simulations for. Each is applied in
+            turn, and each entry should correspond to an entry in `ensembles` and `tempertures`
+            as well. Default is ("10000",).
         file_batch_template: str, optional
             File location of template to use for batch scripts relative to
             `scripts_sub_directory`. Default is 'template.sh'.
@@ -1903,46 +1797,41 @@ rm -f tmp.pp
             "job_name": "active_learning_NN",
             "nodes": 1,
             "job_array": "",
+            # "job_array": f"#SBATCH --array=1-{len(temperatures)}",
         }
         output_text = batch_template_text.format(**format_dict)
 
         # Setup
+        # temperatures_str = [str(t) for t in temperatures]
+        # output_text += f"\ntemps=({' '.join(temperatures_str)})"
         output_text += "\nln -s {0} {1}/nnp".format(
             self.n2p2_directories[n2p2_directory_index], self.lammps_directory
         )
+        output_text += f"\ncd {self.lammps_directory}"
 
-        for ensemble in ensembles:
-            if "t" in ensemble:
-                for t in temperatures:
-                    output_text += "\nmpirun -np ${SLURM_NTASKS} "
-                    output_text += (
-                        "{0} -in {1}/md-{2}-t{3}.lmp > {1}/{2}-t{3}.log".format(
-                            self.lammps_executable,
-                            self.lammps_directory,
-                            ensemble,
-                            t,
-                        )
-                    )
-                    # Create lammps input file
-                    format_template_file(
-                        template_file="{0}/md-{1}.lmp".format(
-                            self.lammps_directory, ensemble
-                        ),
-                        formatted_file="{0}/md-{1}-t{2}.lmp".format(
-                            self.lammps_directory, ensemble, t
-                        ),
-                        format_dict={"temp": str(t)},
-                        format_shell_variables=True,
-                    )
-            else:
-                output_text += "\nmpirun -np ${SLURM_NTASKS} "
-                output_text += "{0} -in {1}/md-{2}.lmp > {1}/{2}.log".format(
-                    self.lammps_executable,
-                    self.lammps_directory,
-                    ensemble,
-                )
+        # for ensemble in ensembles:
+        file_id = ""
+        for i, ensemble in enumerate(ensembles):
+            file_id += f"-{ensemble}_t{temperatures[i]}"
+        output_text += "\nmpirun -np ${SLURM_NTASKS} "
+        output_text += f"{self.lammps_executable} -in md{file_id}.lmp > md{file_id}.log"
+        # output_text += "-t${temps[${SLURM_ARRAY_TASK_ID} - 1]}.lmp "
+        # output_text += f"> {self.lammps_directory}/{ensemble}"
+        # output_text += "-t${temps[${SLURM_ARRAY_TASK_ID} - 1]}.log"
+        # for t in temperatures:
+            # Create lammps input file
+        format_lammps_input(
+            formatted_file=f"{self.lammps_directory}/md{file_id}.lmp",
+            masses=self.all_structures.mass_map_alphabetical,
+            emap=self.all_structures.element_map_alphabetical,
+            integrators=ensembles,
+            elements=" ".join(self.all_structures.element_list_alphabetical),
+            # dump_file=f"custom_{ensemble}_t{t}.dump",
+            n_steps=n_steps,
+            temps=temperatures,
+        )
 
-        output_text += "\nrm {0}/nnp".format(self.lammps_directory)
+        output_text += "\nrm nnp"
 
         with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
             f.write(output_text)
@@ -1954,8 +1843,10 @@ rm -f tmp.pp
 
     def analyse_extrapolations(
         self,
-        ensembles: Tuple[str] = ("nve", "nvt", "npt"),
-        temperatures: Tuple[int] = (340,),
+        log_file: str = "{ensemble}-t{t}.log",
+        ensembles: Iterable[str] = ("nve", "nvt", "npt"),
+        temperatures: Iterable[int] = (300,),
+        temperature_range: Tuple[int, int] = (0, None),
     ):
         """
         Read the number of successful steps taken in a LAMMPS simulation before stopping due to
@@ -1976,38 +1867,27 @@ rm -f tmp.pp
         for ensemble in ensembles:
             timestep_data[ensemble] = {}
             print(ensemble)
-            print("Temp | T_step")
-            if "t" in ensemble:
-                for t in temperatures:
-                    log_file = "{0}/{1}-t{2}.log".format(
-                        self.lammps_directory,
-                        ensemble,
-                        t,
-                    )
-                    timesteps, _, _ = read_lammps_log(
-                        dump_lammpstrj=1, log_lammps_file=log_file
-                    )
-                    timestep_data[ensemble][t] = timesteps[-1]
-                    print("{0:4d} | {1:5d}".format(t, timestep_data[ensemble][t]))
-                timestep_data[ensemble]["mean"] = np.mean(
-                    list(timestep_data[ensemble].values())
+            print("Temp | Timestep | Temperature")
+            print("----:|---------:|-----------:")
+            for t in temperatures:
+                log_file_formatted = log_file.format(ensemble=ensemble, t=t)
+                log_file_complete = f"{self.lammps_directory}/{log_file_formatted}"
+                timesteps, _, _, lammps_temperatures = read_lammps_log(
+                    dump_lammpstrj=1, log_lammps_file=log_file_complete
                 )
-                print(
-                    "MEAN | {0:5d}\n".format(
-                        int(round(timestep_data[ensemble]["mean"]))
-                    )
+                temp_mean = np.mean(
+                    lammps_temperatures[temperature_range[0] : temperature_range[1]]
                 )
-            else:
-                timestep_data[ensemble] = {}
-                log_file = "{0}/{1}.log".format(
-                    self.lammps_directory,
-                    ensemble,
+                timestep_data[ensemble][t] = timesteps[-1]
+                print(f"{t:4d} | {timestep_data[ensemble][t]:8d} | {temp_mean:8.3f}")
+            timestep_data[ensemble]["mean"] = np.mean(
+                list(timestep_data[ensemble].values())
+            )
+            print(
+                "MEAN | {0:8d}\n".format(
+                    int(round(timestep_data[ensemble]["mean"]))
                 )
-                timesteps, _, _ = read_lammps_log(
-                    dump_lammpstrj=1, log_lammps_file=log_file
-                )
-                timestep_data[ensemble]["mean"] = timesteps[-1]
-                print("MEAN | {0:5d}\n".format(timestep_data[ensemble]["mean"]))
+            )
 
         return timestep_data
 

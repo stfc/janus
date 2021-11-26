@@ -10,7 +10,58 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .dataset import Dataset
-from .file_readers import read_nn_settings
+from .file_readers import read_nn_settings, read_lammps_log
+
+
+def plot_lammps_temperature_multiple(
+    lammps_directory: str,
+    log_file: str,
+    timesteps_range: Tuple[int, int] = None,
+):
+    """
+    TODO
+    """
+    _, _, _, temperatures = read_lammps_log(
+        dump_lammpstrj=1,
+        log_lammps_file=join(lammps_directory, log_file),
+    )
+    plt.figure(figsize=(12, 6))
+    i = 1
+    plt.subplot(1, 1, i)
+    if timesteps_range is not None:
+        plt.plot(temperatures[timesteps_range[0] : timesteps_range[1]])
+    else:
+        plt.plot(temperatures)
+    plt.ylabel("Temperature (K)")
+    i += 1
+
+
+def plot_lammps_temperature(
+    lammps_directory: str,
+    log_file: str = "{ensemble}-t{t}.log",
+    ensembles: List[str] = ("nve", "nvt", "npt"),
+    temperatures: List[int] = (300,),
+    timesteps_range: Tuple[int, int] = None,
+):
+    """
+    TODO
+    """
+    plt.figure(figsize=(12, 6 * len(ensembles) * len(temperatures)))
+    i = 1
+    for ensemble in ensembles:
+        for t in temperatures:
+            plt.subplot(len(ensembles) * len(temperatures), 1, i)
+            _, _, _, lammps_temperatures = read_lammps_log(
+                dump_lammpstrj=1,
+                log_lammps_file=join(lammps_directory, log_file.format(ensemble=ensemble, t=t)),
+            )
+            if timesteps_range is not None:
+                plt.plot(lammps_temperatures[timesteps_range[0] : timesteps_range[1]])
+            else:
+                plt.plot(lammps_temperatures)
+            plt.ylabel("Temperature (K)")
+            plt.title(f"{ensemble}: {t}K")
+            i += 1
 
 
 def plot_learning_curve(

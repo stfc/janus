@@ -16,9 +16,11 @@ def mock_plt_functions(mocker):
     mocker.patch("matplotlib.pyplot.scatter")
     mocker.patch("matplotlib.pyplot.plot")
     mocker.patch("matplotlib.pyplot.xlabel")
+    mocker.patch("matplotlib.pyplot.xticks")
     mocker.patch("matplotlib.pyplot.ylabel")
     mocker.patch("matplotlib.pyplot.legend")
     mocker.patch("matplotlib.pyplot.title")
+    mocker.patch("matplotlib.pyplot.tight_layout")
 
 
 def test_plot_learning_curve_error():
