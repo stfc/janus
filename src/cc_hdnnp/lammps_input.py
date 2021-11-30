@@ -210,7 +210,7 @@ def format_lammps_input(
     else:
         template_text = TEMPLATE
 
-    if isinstance(n_steps, str):
+    if isinstance(n_steps, int):
         n_steps = [n_steps]
     if isinstance(integrators, str):
         integrators = [integrators]

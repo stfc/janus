@@ -168,10 +168,6 @@ def _read_epoch_file(file: str, index: int = 1) -> Tuple[np.ndarray]:
         The first entry is the array of reference values, the second is the array of network
         predictions.
     """
-    if not exists(file):
-        print("{} not found, return `0.`".format(file))
-        return np.array([0.0]), np.array([0.0])
-
     reference_values = []
     nnp_values = []
     with open(file) as f:
@@ -372,7 +368,7 @@ def plot_epoch_histogram_2D(
     plt.colorbar()
 
     plt.subplot(2, 2, 3)
-    if energy_log:
+    if force_log:
         plt.hist2d(
             force_train_ref, force_train_nn, bins=bins, cmap="viridis", norm=LogNorm()
         )
@@ -385,7 +381,7 @@ def plot_epoch_histogram_2D(
     plt.colorbar()
 
     plt.subplot(2, 2, 4)
-    if energy_log:
+    if force_log:
         plt.hist2d(
             force_test_ref, force_test_nn, bins=bins, cmap="plasma", norm=LogNorm()
         )
@@ -749,7 +745,7 @@ def plot_data_histogram(
         plt.legend(data_files)
 
 
-def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
+def plot_clustering(elements: Iterable[str], file_in: str = "clustered_{}.data"):
     """
     Plot the results of clustering as vertical bars. Each element in `elements` is shown on
     a separate subplot. Each bar in the plot represents a line the input file, and if it has
@@ -757,7 +753,7 @@ def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
 
     Parameters
     ----------
-    elements: List[str]
+    elements: Iterable[str]
         The elements to plot for, if the data was split by elements. If not, then `["all"]`
         should be used.
     file_in: str = "clustered_{}.data"
@@ -800,7 +796,7 @@ def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
 
 
 def plot_environments_histogram_2D(
-    elements: List[str], file_environments: str, bins: int = 10, log: bool = False
+    elements: Iterable[str], file_environments: str, bins: int = 10, log: bool = False
 ):
     """
     Plots histograms for atomic environments in terms of two symmetry functions selected by CUR
@@ -808,7 +804,7 @@ def plot_environments_histogram_2D(
 
     Parameters
     ----------
-    elements: List[str]
+    elements: Iterable[str]
         A list of chemical symbols, which is used to format `file_environments`.
         A plot will be made for each element, using the two best symmetry functions
         for that element to come out of the CUR decomposition.

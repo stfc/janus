@@ -638,27 +638,31 @@ def test_analyse_extrapolations(
     """
     Test that the results of the extrapolations are read from file, and formatted as expected.
     """
-    timestep_data = data.analyse_extrapolations()
+    timestep_data = data.analyse_extrapolations(temperatures=(340,))
 
     assert timestep_data == {
-        "nve": {"mean": 484},
+        "nve": {340: 484, "mean": 484},
         "nvt": {340: 156, "mean": 156},
         "npt": {340: 255, "mean": 255},
     }
     assert capsys.readouterr().out == (
         "nve\n"
-        "Temp | T_step\n"
-        "MEAN |   484\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      484 |  340.069\n"
+        "MEAN |      484\n"
         "\n"
         "nvt\n"
-        "Temp | T_step\n"
-        " 340 |   156\n"
-        "MEAN |   156\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      156 |  482.156\n"
+        "MEAN |      156\n"
         "\n"
         "npt\n"
-        "Temp | T_step\n"
-        " 340 |   255\n"
-        "MEAN |   255\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      255 |  509.599\n"
+        "MEAN |      255\n"
         "\n"
     )
 

@@ -66,7 +66,7 @@ def read_forces(filename: str) -> np.ndarray:
         network was evaluated for. Along the second dimension the first element is the
         index of the structure, and the second is a force associated with it in one of the
         cartesian directions. It is ordered so that the forces associated with index `i`
-        appear consequetively, in xyz order:
+        appear consecutively, in xyz order:
         [... [i-1, fz(i-1)], [i, fx(i)], [i, fy(i)], [i, fz(i)], [i+1, fx(i+1)], ...]
     """
     with open(filename) as f:
