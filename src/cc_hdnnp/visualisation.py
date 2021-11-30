@@ -525,7 +525,29 @@ def plot_error_histogram(
     physical_units: bool = False,
 ):
     """
-    TODO
+    Plots the difference between the predicted and reference energies and forces as
+    histograms.
+
+    Parameters
+    ----------
+    n2p2_directory: str
+        The directory containing the files written during training.
+    epoch: int
+        The epoch from the training to plot.
+    bins: int = 10
+        The number of bins to use when plotting the histograms. Optional, default is `10`.
+    combine_xyz: bool = True
+        If `True`, plot all xyz components of forces on the same histogram. Default is `True`.
+    energy_scale: str = "linear"
+        The scale to use for the energy values, should be "linear" or "log".
+        Optional, default is "linear".
+    force_scale: str = "linear"
+        The scale to use for the force values, should be "linear" or "log".
+        Optional, default is "linear".
+    physical_units: bool = False
+        Whether to use the headers of the "input.nn" file to convert normalised values back
+        into physical units. If the data is not normalised, this should be `False`.
+        Optional, default is `False`.
     """
     energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
     energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
@@ -639,7 +661,28 @@ def plot_data_histogram(
     alpha=1.0,
 ):
     """
-    TODO update docstring for new functionality
+    Plots the energy and force values present in a series of reference datasets. This can be
+    useful for identifying the presence of extreme values which may impede training.
+
+    Parameters
+    ----------
+    data_files: List[str]
+        A list of filepaths to n2p2 "input.data" files.
+    bins: int = 10
+        The number of bins to use when plotting the histograms. Optional, default is `10`.
+    energy_scale: str = "linear"
+        The scale to use for the energy values, should be "linear" or "log".
+        Optional, default is "linear".
+    force_scale: str = "linear"
+        The scale to use for the force values, should be "linear" or "log".
+        Optional, default is "linear".
+    superimpose: bool = True
+        Whether to plot the histograms for subsequent entries in `data_files` on the same axes
+        or not. If `True`, then the first entry in `data_files` should contain all points to be
+        plotted, with subsequent entries being subsets to ensure full visibility.
+        Optional, default is `True`.
+    alpha=1.0
+        Sets the transparency of the plotted bars. `1.0` is opaque. Optional, default is `1.0`.
     """
     n_rows = 1 if superimpose else len(data_files)
     energies = []
@@ -686,7 +729,8 @@ def plot_data_histogram(
 
 
 def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
-    """Plot the results of clustering as vertical bars. Each element in `elements` is shown on
+    """
+    Plot the results of clustering as vertical bars. Each element in `elements` is shown on
     a separate subplot. Each bar in the plot represents a line the input file, and if it has
     multiple labels on the line then the bar's colour is split between these labels.
 

@@ -24,12 +24,8 @@ def install_with_constraints(session, *args, **kwargs):
 @nox.session(python="3.8")
 def tests(session):
     args = session.posargs or ["tests", "--cov"]
-    # install_with_constraints(
-    #     session, "coverage[toml]", "pytest", "pytest-cov"
-    # )
     args += [
         "--ignore=tests/data/ --ignore=tests/__pycache__/ --ignore=tests/__init__.py "
-        + "--ignore=tests/test_visualisation.py"
     ]
     session.run("pytest", *args)
 

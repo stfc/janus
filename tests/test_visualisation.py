@@ -5,7 +5,7 @@ Unit tests for `visualisation.py`
 import matplotlib.pyplot as plt
 import pytest
 
-from cc_hdnnp.visualisation import plot_epoch, plot_learning_curve
+from cc_hdnnp.visualisation import plot_epoch_scatter, plot_learning_curve
 
 
 @pytest.fixture
@@ -51,11 +51,11 @@ def test_plot_learning_curve_default(mock_plt_functions):
     plt.legend.assert_called_once_with(["RMSEpa_Etrain_pu", "RMSEpa_Etest_pu"])
 
 
-def test_plot_epoch(mock_plt_functions):
+def test_plot_epoch_scatter(mock_plt_functions):
     """
     Test that plotting functions are called successfully.
     """
-    plot_epoch("tests/data/n2p2", epoch=1)
+    plot_epoch_scatter("tests/data/n2p2", epoch=1)
     plt.figure.assert_called_once()
     plt.subplot.assert_any_call(2, 2, 1)
     plt.subplot.assert_any_call(2, 2, 2)

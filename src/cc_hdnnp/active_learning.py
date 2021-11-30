@@ -2,7 +2,7 @@ from copy import deepcopy
 from os import listdir, mkdir, remove
 from os.path import isdir, isfile, join
 from shutil import copy, rmtree
-from typing import Dict, List, Literal, Tuple, Union
+from typing import Dict, Iterable, List, Literal, Tuple, Union
 import warnings
 
 import numpy as np
@@ -402,6 +402,8 @@ class ActiveLearning:
         self, path: str, seed: int, temperature: int, pressure: float, integrator: str
     ):
         """
+        TODO requires refactor
+
         Prepares an input file for LAMMPS using provided arguments.
 
         Parameters
@@ -555,11 +557,10 @@ class ActiveLearning:
             format="lammps-data",
             conditions=(i == selection for i in range(len(dataset))),
             atom_style=self.atom_style,
-        )
-
-    def write_lammps(self, temperatures: range, seed: int = 1):
+        )   
+        
+    def write_lammps(self, temperatures: Iterable[int], seed: int = 1):
         """
-        TODO
         Generates the mode1 directory and  LAMMPS files needed to run simulations using the
         two networks.
 
@@ -568,8 +569,8 @@ class ActiveLearning:
         temperatures : range
             Range of temperature values (in Kelvin) to run simulations at.
         seed : int, optional
-            Seed used in the LAMMPS simulations. Is increamented by 1 for each value in
-            `self.pressures`.Default is `1`.
+            Seed used in the LAMMPS simulations. Is incremented by 1 for each value in
+            `temperatures` and `self.pressures`. Default is `1`.
         """
         mode1_directory = self.active_learning_directory + "/mode1"
         if isdir(mode1_directory):
@@ -1370,13 +1371,6 @@ class ActiveLearning:
                 criterium = max(mean_small + std_small, self.tolerances[small])
             else:
                 criterium = self.tolerances[small]
-            # TODO REMOVE
-            # print(
-            #     criterium,
-            #     self.tolerances[self.initial_tolerance],
-            #     self.initial_tolerance,
-            #     n_tolerances,
-            # )
             # NB: Changed from the original implementation, an
             while (
                 criterium > self.tolerances[self.initial_tolerance]
@@ -1689,7 +1683,6 @@ class ActiveLearning:
         self, data: List[str], path: str, timestep: int, structure: Structure
     ) -> bool:
         """
-        TODO
         For the given `data`, extract the relevant properties and then assess its suitability
         to be used as future datapoint.
         If suitable, then the details are added to:
