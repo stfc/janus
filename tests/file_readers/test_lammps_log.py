@@ -16,11 +16,13 @@ def test_read_lammps_log_complete():
         timesteps,
         extrapolation_free_lines,
         extrapolation_free_timesteps,
+        temperatures,
     ) = read_lammps_log(dump_lammpstrj=1, log_lammps_file=log_lammps_file)
 
     assert all(timesteps == np.arange(50001))
     assert extrapolation_free_lines == -1
     assert extrapolation_free_timesteps == 50000
+    assert len(temperatures) == 50001
 
 
 @pytest.mark.parametrize("extrapolation_free_timesteps_expected", [162, 100])
@@ -29,7 +31,7 @@ def test_read_lammps_log(extrapolation_free_timesteps_expected: int):
     if extrapolation_free_timesteps_expected > 161:
         extrapolation_free_lines_expected = -1
     else:
-        extrapolation_free_lines_expected = 3613 + extrapolation_free_timesteps_expected
+        extrapolation_free_lines_expected = 3614 + extrapolation_free_timesteps_expected
     timesteps_counter = -3
     text = ""
     log_lammps_file = "tests/data/tests_output/log.lammps"
@@ -52,6 +54,7 @@ def test_read_lammps_log(extrapolation_free_timesteps_expected: int):
         timesteps,
         extrapolation_free_lines,
         extrapolation_free_timesteps,
+        temperatures,
     ) = read_lammps_log(dump_lammpstrj=1, log_lammps_file=log_lammps_file)
 
     assert len(timesteps) == 162
@@ -60,6 +63,7 @@ def test_read_lammps_log(extrapolation_free_timesteps_expected: int):
     assert extrapolation_free_timesteps == min(
         extrapolation_free_timesteps_expected, 161
     )
+    assert len(temperatures) == 162
 
 
 def test_read_lammps_log_errors():

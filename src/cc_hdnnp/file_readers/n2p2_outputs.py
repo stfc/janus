@@ -73,11 +73,7 @@ def read_forces(filename: str) -> np.ndarray:
         line = f.readline().strip()
         if line.startswith("point"):
             forces = np.array(
-                [
-                    np.array(line.strip().split())[[0, 4]]
-                    for line in f
-                    if line.strip()
-                ]
+                [np.array(line.strip().split())[[0, 4]] for line in f if line.strip()]
             ).astype(float)
             forces[:, 0] -= 1
 

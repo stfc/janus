@@ -24,7 +24,6 @@ from ase.io import read, write
 from ase.units import create_units
 import numpy as np
 
-from cc_hdnnp.file_operations import format_template_file
 from cc_hdnnp.lammps_input import format_lammps_input
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
 from cc_hdnnp.structure import AllStructures, Structure
@@ -374,7 +373,7 @@ class Data:
         file_xyz: str = "xyz/{}.xyz",
         n_config: int = None,
         nodes: int = 1,
-        **kwargs
+        **kwargs,
     ) -> str:
         """
         Writes .inp files and batch scripts for running cp2k from `n_config`
@@ -544,7 +543,7 @@ class Data:
         frame_directory: str,
         structure: Structure,
         pseudos: Dict[str, str],
-        **kwargs
+        **kwargs,
     ):
         """
         Writes the input file for Quantum Esspresso to `frame_directory` for the `atoms`
@@ -772,7 +771,7 @@ rm -f tmp.pp
         file_output: str = "cp2k_output/{}.log",
         n_config: int = None,
         n_mpi: int = 1,
-        **kwargs
+        **kwargs,
     ):
         """
         Print the final energy, time taken, and grid allocation for given cp2k
@@ -1757,7 +1756,7 @@ rm -f tmp.pp
         n2p2_directory_index: int = 0,
         ensembles: Iterable[str] = ("nve",),
         temperatures: Iterable[int] = (300,),
-        n_steps: Iterable[str] = ("10000",),
+        n_steps: Iterable[str] = (10000,),
         file_batch_template: str = "template.sh",
         file_batch_out: str = "lammps_extrapolations.sh",
     ):
@@ -1778,10 +1777,10 @@ rm -f tmp.pp
             Contains all temperatures to run simulations at, in Kelvin. Each is applied in
             turn, and each entry should correspond to an entry in `ensembles` and `n_steps`
             as well. Default is (300,).
-        n_steps: Iterable[str] = ("10000",)
+        n_steps: Iterable[int] = (10000,)
             Contains the number of timesteps to run simulations for. Each is applied in
             turn, and each entry should correspond to an entry in `ensembles` and `tempertures`
-            as well. Default is ("10000",).
+            as well. Default is (10000,).
         file_batch_template: str, optional
             File location of template to use for batch scripts relative to
             `scripts_sub_directory`. Default is 'template.sh'.
@@ -1797,13 +1796,10 @@ rm -f tmp.pp
             "job_name": "active_learning_NN",
             "nodes": 1,
             "job_array": "",
-            # "job_array": f"#SBATCH --array=1-{len(temperatures)}",
         }
         output_text = batch_template_text.format(**format_dict)
 
         # Setup
-        # temperatures_str = [str(t) for t in temperatures]
-        # output_text += f"\ntemps=({' '.join(temperatures_str)})"
         output_text += "\nln -s {0} {1}/nnp".format(
             self.n2p2_directories[n2p2_directory_index], self.lammps_directory
         )
@@ -1815,18 +1811,13 @@ rm -f tmp.pp
             file_id += f"-{ensemble}_t{temperatures[i]}"
         output_text += "\nmpirun -np ${SLURM_NTASKS} "
         output_text += f"{self.lammps_executable} -in md{file_id}.lmp > md{file_id}.log"
-        # output_text += "-t${temps[${SLURM_ARRAY_TASK_ID} - 1]}.lmp "
-        # output_text += f"> {self.lammps_directory}/{ensemble}"
-        # output_text += "-t${temps[${SLURM_ARRAY_TASK_ID} - 1]}.log"
-        # for t in temperatures:
-            # Create lammps input file
+        # Create lammps input file
         format_lammps_input(
             formatted_file=f"{self.lammps_directory}/md{file_id}.lmp",
             masses=self.all_structures.mass_map_alphabetical,
             emap=self.all_structures.element_map_alphabetical,
             integrators=ensembles,
             elements=" ".join(self.all_structures.element_list_alphabetical),
-            # dump_file=f"custom_{ensemble}_t{t}.dump",
             n_steps=n_steps,
             temps=temperatures,
         )
@@ -1883,11 +1874,7 @@ rm -f tmp.pp
             timestep_data[ensemble]["mean"] = np.mean(
                 list(timestep_data[ensemble].values())
             )
-            print(
-                "MEAN | {0:8d}\n".format(
-                    int(round(timestep_data[ensemble]["mean"]))
-                )
-            )
+            print("MEAN | {0:8d}\n".format(int(round(timestep_data[ensemble]["mean"]))))
 
         return timestep_data
 

@@ -3,7 +3,7 @@ Utility functions for formatting a LAMMPS input script.
 """
 
 
-from typing import Iterable, List
+from typing import Iterable
 
 
 TEMPLATE = """
@@ -29,7 +29,7 @@ pair_style nnp dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {rese
 pair_coeff * * {pair_coeff}
 
 {integrator_commands}
-"""
+"""  # noqa: E501
 
 INTEGRATOR_NVE = """
 ###############################################################################
@@ -86,6 +86,7 @@ dump_modify     velmov element {elements}
 dump_modify     velmov delay {vel_steps}
 dump_modify     velmov sort id
 """
+
 
 def format_lammps_input(
     formatted_file: str,

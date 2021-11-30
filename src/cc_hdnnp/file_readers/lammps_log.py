@@ -12,24 +12,22 @@ def read_lammps_log(
 ) -> Tuple[np.ndarray, int, int, np.ndarray]:
     """
     Reads a "log.lammps"and extracts information about if and at
-    what timestep extrapolation of the network potential occured.
+    what timestep extrapolation of the network potential occurred.
 
     Parameters
     ----------
     dump_lammpstrj : int
         Integer which defines that only every nth frame of the simulation is returned if no
-        extrapolation occured.
+        extrapolation occurred.
     log_lammps_file : str
         The file path to the "log.lammps" file.
 
     Returns
     -------
-    (np.ndarray, int, int, float)
+    (np.ndarray, int, int, np.ndarray)
         First element is array of int corresponding to timesteps, second is the number of
         extrapolation free lines and the third is the timestep that corresponds to that
-        line. The fourth is the average temperate of the simulation.
-
-        TODO
+        line. The fourth is the temperate at each timestep of the simulation.
     """
     with open(log_lammps_file) as f:
         data = f.readlines()
@@ -58,7 +56,6 @@ def read_lammps_log(
     accept_next = False
     extrapolation = False
     i = header_line_number + 1
-    retvals = []
 
     # Starting at `header_line_number + 1`, check for extrapolation warnings
     while i < n_lines:
@@ -139,4 +136,9 @@ def read_lammps_log(
         # may have been missed.
         raise ValueError("No timesteps completed for {}".format(log_lammps_file))
 
-    return timesteps, extrapolation_free_lines, extrapolation_free_timesteps, temperatures
+    return (
+        timesteps,
+        extrapolation_free_lines,
+        extrapolation_free_timesteps,
+        temperatures,
+    )

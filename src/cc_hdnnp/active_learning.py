@@ -557,8 +557,8 @@ class ActiveLearning:
             format="lammps-data",
             conditions=(i == selection for i in range(len(dataset))),
             atom_style=self.atom_style,
-        )   
-        
+        )
+
     def write_lammps(self, temperatures: Iterable[int], seed: int = 1):
         """
         Generates the mode1 directory and  LAMMPS files needed to run simulations using the
@@ -904,6 +904,7 @@ class ActiveLearning:
                 timesteps,
                 extrapolation_free_lines,
                 extrapolation_free_timesteps,
+                _
             ) = read_lammps_log(
                 self.dump_lammpstrj,
                 log_lammps_file=join(directory, "log.lammps"),

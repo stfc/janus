@@ -367,7 +367,9 @@ class AllStructures(Dict[str, Structure]):
         -------
         str
         """
-        mappings = (f"{i + 1}:{s}" for i, s in enumerate(self.element_list_alphabetical))
+        mappings = (
+            f"{i + 1}:{s}" for i, s in enumerate(self.element_list_alphabetical)
+        )
         return ",".join(mappings)
 
     @property
