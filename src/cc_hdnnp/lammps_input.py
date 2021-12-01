@@ -35,7 +35,7 @@ INTEGRATOR_NVE = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
-velocity     all create {temp} 2020 mom yes rot yes dist gaussian
+velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
 fix x all nve
@@ -48,7 +48,7 @@ INTEGRATOR_NVT = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
-velocity     all create {temp} 2020 mom yes rot yes dist gaussian
+velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
 fix y all nvt temp {temp} {temp} {tdamp}
@@ -61,14 +61,14 @@ INTEGRATOR_NPT = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
-velocity     all create {temp} 2020 mom yes rot yes dist gaussian
+velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
-fix z all npt temp {temp} {temp} {tdamp} iso {pressure} {pressure} {pdamp}  tchain 3
+fix z all npt temp {temp} {temp} {tdamp} {barostat} {pressure} {pressure} {pdamp} {npt_other}
 {dump_commands}
 run {n_steps}
 unfix z
-"""
+"""  # noqa: E501
 
 DUMP_CUSTOM = """
 dump            cust all custom 1 {dump_file} element x y z vx vy vz fx fy fz
@@ -109,8 +109,11 @@ def format_lammps_input(
     integrators: Iterable[str] = ("nve",),
     temps: Iterable[str] = ("300",),
     tdamp: str = "10",
+    seed: str = "0",
+    barostat: str = "iso",
     pressure: str = "0",
     pdamp: str = "50",
+    npt_other: str = "tchain 3",
     dump_commands: str = None,
     elements: str = None,
     dump_file: str = "dump.lammpstrj",
@@ -176,23 +179,36 @@ def format_lammps_input(
         the factor to convert from a network using Ha to LAMMPS using eV.
     pair_coeff: str = "6.351"
         Radial cutoff, in LAMMPS length units. Optional, default is "6.351".
-    n_steps: str = "50000"
-        Number of steps to take in the simulation. Optional, default is "50000".
-    integrator: str = "nve"
-        Ensemble to use, should be one of "nve", "nvt" or "npt".
-        Optional, default is "nve".
-    temp: str = "300"
-        Temperature to use for the simulation. Not used if `integrator` is "nve".
-        Optional, default is "300".
+    n_steps: Iterable[str] = (50000,)
+        Number of steps to take in the simulation. If multiple arguments are provided,
+        each will be used for a simulation in turn with the relevant entry in
+        `integrators` and `temps`. Optional, default is ("50000",).
+    integrator: Iterable[str] = ("nve",)
+        Ensemble to use, should be one of "nve", "nvt" or "npt". If multiple arguments
+        are provided, each will be used for a simulation in turn with the relevant entry in
+        `temps` and `n_steps`. Optional, default is ("nve",).
+    temps: Iterable[str] = ("300",)
+        Temperature to use for the simulation. If multiple arguments are provided,
+        each will be used for a simulation in turn with the relevant entry in
+        `integrators` and `n_steps`. Optional, default is ("300",).
     tdamp: str = "10"
         The timespan of temperature relaxations, in LAMMPS time units.
         Optional, default is "10".
+    seed: str = "0"
+        The seed to use for the velocity creation. Optional, default is "0".
+    barostat: str = "iso"
+        The barostat option is only used when `integrator=="npt"` and should be one of
+        "iso", "aniso", "tri". Optional, default is "iso".
     pressure: str = "0"
         Pressure to use for the simulation. Not used if `integrator` is "nve" or "npt".
         Optional, default is "0".
     pdamp: str = "50"
         The timespan of pressure relaxations, in LAMMPS time units.
         Optional, default is "50".
+    npt_other: str = "tchain 3"
+        Additional keyword commands to include when using the "npt" ensemble.
+        Only used `integrator=="npt"`. For possible values refer to LAMMPS documentation.
+        Optional, default is "tchain 3".
     dump_commands: str = None
         Commands for dumping to file. Optional, default is None in which case the template
         format for dumping will be used, and elements must be provided in order to format it.
@@ -243,24 +259,29 @@ def format_lammps_input(
 
         if integrator == "nve":
             integrator_commands += INTEGRATOR_NVE.format(
-                temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
             )
         elif integrator == "nvt":
             integrator_commands += INTEGRATOR_NVT.format(
-                temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
             )
         elif integrator == "npt":
+            if barostat not in ("iso", "aniso", "tri"):
+                raise ValueError(f"Barostat option '{barostat}' is not implemented.")
             integrator_commands += INTEGRATOR_NPT.format(
+                seed=seed,
                 temp=temp,
                 tdamp=tdamp,
+                barostat=barostat,
                 pressure=pressure,
                 pdamp=pdamp,
+                npt_other=npt_other,
                 dump_commands=dump,
                 n_steps=n_step_i,
             )
         else:
             raise ValueError(
-                f"`integrator` must be one of 'nve', 'nvt' or 'npt', but was {integrator}"
+                f"`integrator` must be one of 'nve', 'nvt' or 'npt', but was '{integrator}'"
             )
 
     output_text = template_text.format(**locals())

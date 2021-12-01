@@ -5,7 +5,18 @@ Unit tests for `visualisation.py`
 import matplotlib.pyplot as plt
 import pytest
 
-from cc_hdnnp.visualisation import plot_clustering, plot_data_histogram, plot_environments_histogram_2D, plot_epoch_histogram_1D, plot_epoch_histogram_2D, plot_epoch_scatter, plot_error_histogram, plot_lammps_temperature, plot_lammps_temperature_multiple, plot_learning_curve
+from cc_hdnnp.visualisation import (
+    plot_clustering,
+    plot_data_histogram,
+    plot_environments_histogram_2D,
+    plot_epoch_histogram_1D,
+    plot_epoch_histogram_2D,
+    plot_epoch_scatter,
+    plot_error_histogram,
+    plot_lammps_temperature,
+    plot_lammps_temperature_multiple,
+    plot_learning_curve,
+)
 
 
 @pytest.fixture
@@ -31,7 +42,9 @@ def test_plot_lammps_temperature(mock_plt_functions):
     """
     Test that (mocked) functions are called successfully.
     """
-    plot_lammps_temperature(lammps_directory="tests/data/lammps", log_file="nve-t340.log")
+    plot_lammps_temperature(
+        lammps_directory="tests/data/lammps", log_file="nve-t340.log"
+    )
     plt.figure.assert_called_once()
     plt.plot.assert_called_once()
     plt.ylabel.assert_called_with("Temperature (K)")
@@ -159,7 +172,9 @@ def test_plot_epoch_histogram_1D(mock_plt_functions, combine_xyz: bool):
 
 @pytest.mark.parametrize("physical_units", [False, True])
 @pytest.mark.parametrize("combine_xyz", [False, True])
-def test_plot_error_histogram(mock_plt_functions, combine_xyz: bool, physical_units: bool):
+def test_plot_error_histogram(
+    mock_plt_functions, combine_xyz: bool, physical_units: bool
+):
     """
     Test that plotting functions are called successfully.
     """

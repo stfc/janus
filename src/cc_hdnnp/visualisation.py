@@ -2,7 +2,7 @@
 Utility functions for reading from file and plotting the performance of the network.
 """
 
-from os.path import exists, join
+from os.path import join
 from typing import Iterable, List, Tuple
 
 from matplotlib.colors import LogNorm

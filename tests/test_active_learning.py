@@ -573,7 +573,11 @@ def test_write_input_lammps(
 @pytest.mark.parametrize(
     "atom_style, integrator, error",
     [
-        ("atomic", "unrecognised", "Integrator unrecognised is not implemented."),
+        (
+            "atomic",
+            "unrecognised",
+            "`integrator` must be one of 'nve', 'nvt' or 'npt', but was 'unrecognised'",
+        ),
         ("unrecognised", "npt", "Atom style unrecognised is not implemented."),
     ],
 )

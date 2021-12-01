@@ -4,6 +4,7 @@ Unit tests for `lammps_input.py`
 
 from os import remove
 from os.path import isfile
+
 import pytest
 
 from cc_hdnnp.lammps_input import format_lammps_input
@@ -46,7 +47,29 @@ def test_format_lammps_input_integrator_error():
             elements="H",
         )
 
-    assert str(e.value) == "`integrator` must be one of 'nve', 'nvt' or 'npt', but was unrecognised"
+    assert (
+        str(e.value)
+        == "`integrator` must be one of 'nve', 'nvt' or 'npt', but was 'unrecognised'"
+    )
+
+
+def test_format_lammps_input_barostat_error():
+    """
+    Test a ValueError is raised for an unrecognised `barostat` argument.
+    """
+    with pytest.raises(ValueError) as e:
+        format_lammps_input(
+            formatted_file="tests/data/tests_output/lammps.md",
+            masses="mass 1 1.00794\n",
+            emap="1:H",
+            n_steps=1,
+            integrators="npt",
+            temps="300",
+            barostat="unrecognised",
+            elements="H",
+        )
+
+    assert str(e.value) == "Barostat option 'unrecognised' is not implemented."
 
 
 def test_format_lammps_input_elements_error():
@@ -63,4 +86,7 @@ def test_format_lammps_input_elements_error():
             temps="300",
         )
 
-    assert str(e.value) == "Either `dump_commands` or `elements` must not be None, but both were."
+    assert (
+        str(e.value)
+        == "Either `dump_commands` or `elements` must not be None, but both were."
+    )

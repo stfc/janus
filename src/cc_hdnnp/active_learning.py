@@ -5,20 +5,21 @@ from shutil import copy, rmtree
 from typing import Dict, Iterable, List, Literal, Tuple, Union
 import warnings
 
+from ase.units import create_units
 import numpy as np
 
 from cc_hdnnp.data import Data
+from cc_hdnnp.lammps_input import format_lammps_input
 from cc_hdnnp.structure import Structure
 from .dataset import Dataset, Frame
 from .file_readers import read_energies, read_forces, read_lammps_log, read_nn_settings
 
-# TODO combine all unit conversions
-# Set a float to define the conversion factor from Bohr radius to Angstrom.
-# Recommendation: 0.529177210903 (CODATA 2018).
-Bohr2Ang = 0.529177210903
-# Set a float to define the conversion factor from Hartree to electronvolt.
-# Recommendation: 27.211386245988 (CODATA 2018).
-Hartree2eV = 27.211386245988
+
+LAMMPS_COMMANDS = """
+variable thermo equal 0
+thermo_style custom v_thermo step time temp epair etotal fmax fnorm press cella cellb cellc cellalpha cellbeta cellgamma density
+thermo_modify format line "thermo %8d %10.4f %8.3f %15.5f %15.5f %9.4f %9.4f %9.2f %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f %8.5f"
+"""  # noqa: E501
 
 
 class ActiveLearning:
@@ -402,8 +403,6 @@ class ActiveLearning:
         self, path: str, seed: int, temperature: int, pressure: float, integrator: str
     ):
         """
-        TODO requires refactor
-
         Prepares an input file for LAMMPS using provided arguments.
 
         Parameters
@@ -419,116 +418,51 @@ class ActiveLearning:
         integrator : {"nve", "nvt", "npt"}
             String to set the integrator.
         """
-        runner_cutoff = round(self.runner_cutoff * Bohr2Ang, 12)
-        cflength = round(1.0 / Bohr2Ang, 12)
-        cfenergy = round(1.0 / Hartree2eV, 15)
+        # Create dump command for appropriate atom_style and periodicity
+        dump_command = "dump lammpstrj all custom 1 structure.lammpstrj id element"
 
-        # LAMMPS required alphabetically sorted elements TODO REFACTOR
-        elements = np.array(self.element_types)
-        sorted_indices = elements.argsort()
-        elements_map = '"'
-        masses = ""
-        elements_text = ""
-        for alphabetical_index, z_index in enumerate(sorted_indices):
-            elements_map += "{0}:{1},".format(alphabetical_index + 1, elements[z_index])
-            masses += "mass {} {}\n".format(
-                alphabetical_index + 1, self.masses[z_index]
-            )
-            elements_text += " {}".format(elements[z_index])
-        elements_map = elements_map[:-1] + '"'
-
-        input_lammps = "variable temperature equal {0}\n".format(float(temperature))
-        if integrator == "npt":
-            input_lammps += "variable pressure equal {0}\n".format(float(pressure))
-        input_lammps += "variable N_steps equal {0}\n".format(
-            self.N_steps
-        ) + "variable seed equal {0}\n\n".format(seed)
-        input_lammps += (
-            "units metal\n"
-            + "boundary p p p\n"
-            + "atom_style {0}\n".format(self.atom_style)
-            + "read_data structure.lammps\n"
-            + masses
-            + "pair_style nnp dir RuNNer showew yes resetew no maxew 750 showewsum 0 "
-            + "cflength {} cfenergy {} emap {}\n".format(
-                cflength, cfenergy, elements_map
-            )
-            + "pair_coeff * * {0}\n".format(runner_cutoff)
-            + "timestep {0}\n".format(self.timestep)
-        )
-        if integrator == "nve":
-            input_lammps += "fix int all nve\n"
-        elif integrator == "nvt":
-            input_lammps += (
-                "fix int all nvt temp ${{temperature}} ${{temperature}} {0}\n".format(
-                    self.timestep * 100
-                )
-            )
-        elif integrator == "npt":
-            input_lammps += (
-                "fix int all npt temp ${{temperature}} ${{temperature}} {0} {1} "
-                "${{pressure}} ${{pressure}} {2} fixedpoint 0.0 0.0 0.0\n"
-                "".format(
-                    self.timestep * 100, self.barostat_option, self.timestep * 1000
-                )
-            )
-        else:
-            raise ValueError("Integrator {0} is not implemented.".format(integrator))
-        input_lammps += (
-            "thermo 1\n"
-            + "variable thermo equal 0\n"
-            + "thermo_style custom v_thermo step time temp epair etotal fmax fnorm press "
-            + "cella cellb cellc cellalpha cellbeta cellgamma density\n"
-            + 'thermo_modify format line "thermo '
-            + "%8d %10.4f %8.3f %15.5f %15.5f %9.4f %9.4f %9.2f "
-            + '%9.5f %9.5f %9.5f %9.5f %9.5f %9.5f %8.5f"\n'
-        )
         if self.periodic:
-            if self.atom_style == "atomic":
-                input_lammps += (
-                    "dump lammpstrj all custom 1 structure.lammpstrj id element x y z\n"
-                )
-            elif self.atom_style == "full":
-                input_lammps += (
-                    "dump lammpstrj all custom 1 structure.lammpstrj id element "
-                    "x y z q\n"
-                )
-            else:
-                raise ValueError(
-                    "Atom style {0} is not implemented.".format(self.atom_style)
-                )
-
-            input_lammps += (
-                "dump_modify lammpstrj pbc yes sort id element {0}\n".format(
-                    elements_text
-                )
-            )
+            dump_command += " x y z"
+            dump_modify_command = "dump_modify lammpstrj pbc yes sort id element "
         else:
-            if self.atom_style == "atomic":
-                input_lammps += (
-                    "dump lammpstrj all custom 1 structure.lammpstrj id element "
-                    "xu yu zu\n"
-                )
-            elif self.atom_style == "full":
-                input_lammps += (
-                    "dump lammpstrj all custom 1 structure.lammpstrj id element "
-                    "xu yu zu q\n"
-                )
-            else:
-                raise ValueError(
-                    "Atom style {0} is not implemented.".format(self.atom_style)
-                )
+            dump_command += " xu yu zu"
+            dump_modify_command = "dump_modify lammpstrj pbc no sort id element "
 
-            input_lammps += "dump_modify lammpstrj pbc no sort id element {0}\n".format(
-                elements_text
-            )
-        input_lammps += "velocity all create ${temperature} ${seed}\n\n"
+        if self.atom_style == "atomic":
+            dump_command += "\n"
+        elif self.atom_style == "full":
+            dump_command += " q\n"
+        else:
+            raise ValueError(f"Atom style {self.atom_style} is not implemented.")
 
-        with open(join(self.active_learning_directory, "simulation.lammps")) as f:
-            input_lammps += f.read()
+        dump_command += dump_modify_command
+        dump_command += " ".join(self.all_structures.element_list_alphabetical)
+        dump_command += "\n"
 
-        with open(path + "/input.lammps", "w") as f:
-            f.write(input_lammps)
+        # Create lammps input file
+        units = create_units("2014")
+        format_lammps_input(
+            formatted_file=f"{path}/input.lammps",
+            masses=self.all_structures.mass_map_alphabetical,
+            emap=self.all_structures.element_map_alphabetical,
+            atom_style=self.atom_style,
+            read_data="structure.lammps",
+            timestep=self.timestep,
+            showew="yes",
+            showewsum="0",
+            maxew="750",
+            pair_coeff=self.runner_cutoff * units["Bohr"],
+            n_steps=self.N_steps,
+            integrators=(integrator,),
+            seed=seed,
+            temps=(temperature,),
+            tdamp=self.timestep * 100,
+            barostat=self.barostat_option,
+            pressure=pressure,
+            pdamp=self.timestep * 1000,
+            npt_other="fixedpoint 0.0 0.0 0.0",
+            dump_commands=dump_command,
+        )
 
     def _write_structure_lammps(
         self,
@@ -904,7 +838,7 @@ class ActiveLearning:
                 timesteps,
                 extrapolation_free_lines,
                 extrapolation_free_timesteps,
-                _
+                _,
             ) = read_lammps_log(
                 self.dump_lammpstrj,
                 log_lammps_file=join(directory, "log.lammps"),
