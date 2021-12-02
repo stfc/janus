@@ -573,7 +573,11 @@ def test_write_input_lammps(
 @pytest.mark.parametrize(
     "atom_style, integrator, error",
     [
-        ("atomic", "unrecognised", "Integrator unrecognised is not implemented."),
+        (
+            "atomic",
+            "unrecognised",
+            "`integrator` must be one of 'nve', 'nvt' or 'npt', but was 'unrecognised'",
+        ),
         ("unrecognised", "npt", "Atom style unrecognised is not implemented."),
     ],
 )
@@ -1758,104 +1762,6 @@ def test_reduce_selection_min_separation(active_learning: ActiveLearning):
     )
 
     assert len(selection) == 0
-
-
-def test_read_forces_point_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_forces` raises and error when given a file in point format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out", "w") as f:
-        f.write("point\n1 0 0 0 10\n1 0 0 0 10\n1 0 0 0 10")
-
-    forces = active_learning._read_forces(
-        input_name="tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out"
-    )
-
-    assert len(forces) == 3
-    assert all(forces[0] == np.array([0.0, 10.0]))
-    assert all(forces[1] == np.array([0.0, 10.0]))
-    assert all(forces[2] == np.array([0.0, 10.0]))
-
-
-def test_read_forces_conf_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_forces` raises and error when given a file in Conf. format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out", "w") as f:
-        f.write("Conf.\n1 0 0 0 0 10 10 10")
-
-    forces = active_learning._read_forces(
-        input_name="tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out"
-    )
-
-    assert len(forces) == 3
-    assert all(forces[0] == np.array([0.0, 10.0]))
-    assert all(forces[1] == np.array([0.0, 10.0]))
-    assert all(forces[2] == np.array([0.0, 10.0]))
-
-
-def test_read_forces_unknown_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_forces` raises and error when given a file in an unknown format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out", "w") as f:
-        f.write("Unrecognised format")
-
-    with pytest.raises(OSError) as e:
-        active_learning._read_forces(
-            input_name="tests/data/tests_output/mode2/HDNNP_1/trainforces.000000.out"
-        )
-
-    assert str(e.value) == "Unknown RuNNer format"
-
-
-def test_read_energy_point_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_energy` raises and error when given a file in point format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out", "w") as f:
-        f.write("point\n1 0 10")
-
-    energy = active_learning._read_energies(
-        input_name="tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out"
-    )
-
-    assert all(energy[0] == np.array([0.0, 10.0]))
-
-
-def test_read_energy_conf_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_energy` raises and error when given a file in Conf. format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out", "w") as f:
-        f.write("Conf.\n1 1 0 10")
-
-    energy = active_learning._read_energies(
-        input_name="tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out"
-    )
-
-    assert all(energy[0] == np.array([0.0, 10.0]))
-
-
-def test_read_energy_unknown_format(active_learning: ActiveLearning):
-    """
-    Test that `_read_energy` raises and error when given a file in an unknown format.
-    """
-    prepare_mode2_files()
-    with open("tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out", "w") as f:
-        f.write("Unrecognised format")
-
-    with pytest.raises(OSError) as e:
-        active_learning._read_energies(
-            input_name="tests/data/tests_output/mode2/HDNNP_1/trainpoints.000000.out"
-        )
-
-    assert str(e.value) == "Unknown RuNNer format"
 
 
 # TEST GET STRUCTURE

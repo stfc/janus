@@ -486,86 +486,6 @@ def test_data_write_lammps_data(data: Data):
     assert isfile("tests/data/tests_output/lammps.data")
 
 
-def test_data_format_lammps_input(data: Data):
-    """
-    Test that LAMMPS data is written successfully.
-    """
-    data.format_lammps_input(
-        structure=data.all_structures["test"],
-        n_steps=1000,
-        r_cutoff=6.35,
-        file_lammps_template="lammps/template.lmp",
-        file_out="tests_output/md.lmp",
-    )
-
-    assert isfile("tests/data/tests_output/md.lmp")
-    with open("tests/data/tests_output/md.lmp") as f:
-        lines = f.readlines()
-    assert "units electron\n" == lines[7]
-    assert "mass 1 1.0\n" == lines[11]
-    assert (
-        'pair_style nnp dir n2p2 showew no showewsum 10 resetew no maxew 100 emap "1:H"\n'
-        == lines[19]
-    )
-    assert "pair_coeff * * 6.35\n" == lines[20]
-    assert "dump_modify     cust element  H\n" == lines[27]
-    assert "run 1000\n" == lines[32]
-
-
-@pytest.mark.parametrize(
-    "lammps_unit_style, cflength, cfenergy",
-    [
-        ("real", 1.8897261258369282, 0.001593601438080425),
-        ("metal", 1.8897261258369282, 0.03674932247495664),
-        ("si", 18897261258.369282, 2.2937123159746854e17),
-        ("cgs", 188972612.58369282, 22937123159.746857),
-        ("micro", 18897.261258369283, 229371.23159746855),
-        ("nano", 18.897261258369284, 0.22937123159746856),
-    ],
-)
-def test_data_format_lammps_input_units(
-    data: Data, lammps_unit_style: str, cflength: float, cfenergy: float
-):
-    """
-    Test that LAMMPS data is written successfully with custom units
-    (i.e. not the default "electron").
-    """
-    data.format_lammps_input(
-        structure=data.all_structures["test"],
-        n_steps=1000,
-        r_cutoff=6.35,
-        file_lammps_template="lammps/template.lmp",
-        file_out="tests_output/md.lmp",
-        lammps_unit_style=lammps_unit_style,
-    )
-
-    assert isfile("tests/data/tests_output/md.lmp")
-    with open("tests/data/tests_output/md.lmp") as f:
-        lines = f.readlines()
-    assert "units {}\n".format(lammps_unit_style) == lines[7]
-    assert "cflength {0} cfenergy {1}".format(cflength, cfenergy) in lines[19]
-
-
-def test_data_format_lammps_input_unknown_units(data: Data):
-    """
-    Test that an error is raised when given unrecognised units.
-    """
-    lammps_unit_style = "bad_units"
-    with pytest.raises(ValueError) as e:
-        data.format_lammps_input(
-            structure=data.all_structures["test"],
-            n_steps=1000,
-            r_cutoff=6.35,
-            file_lammps_template="lammps/template.lmp",
-            file_out="tests_output/md.lmp",
-            lammps_unit_style=lammps_unit_style,
-        )
-
-    assert str(e.value) == "`lammps_unit_style={}` not recognised".format(
-        lammps_unit_style
-    )
-
-
 def test_min_n_config(data: Data):
     """
     Test that the correct number is returned when `n_config` and `self.trajectory` are (not)
@@ -678,7 +598,7 @@ def test_reduce_dataset_outliers(
     capsys: pytest.CaptureFixture,
 ):
     """
-    Test that `reduce_dataset_outliers` gives the exptected outcome when removing outliers,
+    Test that `reduce_dataset_outliers` gives the expected outcome when removing outliers,
     and when not.
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
@@ -718,27 +638,31 @@ def test_analyse_extrapolations(
     """
     Test that the results of the extrapolations are read from file, and formatted as expected.
     """
-    timestep_data = data.analyse_extrapolations()
+    timestep_data = data.analyse_extrapolations(temperatures=(340,))
 
     assert timestep_data == {
-        "nve": {"mean": 484},
+        "nve": {340: 484, "mean": 484},
         "nvt": {340: 156, "mean": 156},
         "npt": {340: 255, "mean": 255},
     }
     assert capsys.readouterr().out == (
         "nve\n"
-        "Temp | T_step\n"
-        "MEAN |   484\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      484 |  340.069\n"
+        "MEAN |      484\n"
         "\n"
         "nvt\n"
-        "Temp | T_step\n"
-        " 340 |   156\n"
-        "MEAN |   156\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      156 |  482.156\n"
+        "MEAN |      156\n"
         "\n"
         "npt\n"
-        "Temp | T_step\n"
-        " 340 |   255\n"
-        "MEAN |   255\n"
+        "Temp | Timestep | Temperature\n"
+        "----:|---------:|-----------:\n"
+        " 340 |      255 |  509.599\n"
+        "MEAN |      255\n"
         "\n"
     )
 

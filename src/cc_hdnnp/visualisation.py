@@ -2,15 +2,87 @@
 Utility functions for reading from file and plotting the performance of the network.
 """
 
-from os.path import exists, join
-from typing import List, Tuple
+from os.path import join
+from typing import Iterable, List, Tuple
 
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
 
 from .dataset import Dataset
-from .file_readers import read_nn_settings
+from .file_readers import read_lammps_log, read_nn_settings
+
+
+def plot_lammps_temperature(
+    lammps_directory: str,
+    log_file: str,
+    timesteps_range: Tuple[int, int] = (0, None),
+):
+    """
+    Plots temperatures from a single LAMMPS log file.
+
+    Parameters
+    ----------
+    lammps_directory: str
+        The directory containing `log_file`.
+    log_file: str
+        The filepath of the LAMMPS log file, relative to `lammps_directory`.
+    timesteps_range: Tuple[int, int] = None
+        Sets the upper and lower limit on the timesteps to plot.
+        Optional, default is `(0, None)` which plots all timesteps.
+    """
+    _, _, _, temperatures = read_lammps_log(
+        dump_lammpstrj=1,
+        log_lammps_file=join(lammps_directory, log_file),
+    )
+    plt.figure(figsize=(12, 6))
+    plt.plot(temperatures[timesteps_range[0] : timesteps_range[1]])
+    plt.ylabel("Temperature (K)")
+    plt.title(log_file)
+
+
+def plot_lammps_temperature_multiple(
+    lammps_directory: str,
+    log_file: str = "{ensemble}-t{t}.log",
+    ensembles: Iterable[str] = ("nve", "nvt", "npt"),
+    temperatures: Iterable[int] = (300,),
+    timesteps_range: Tuple[int, int] = (0, None),
+):
+    """
+    Plots temperatures from several LAMMPS log files that match the provided arguments.
+
+    Parameters
+    ----------
+    lammps_directory: str
+        The directory containing `log_file`.
+    log_file: str = "{ensemble}-t{t}.log"
+        The filepath of a LAMMPS log file, relative to `lammps_directory` that can be
+        formatted with `ensemble` and `t`.
+    ensembles: Iterable[str] = ("nve", "nvt", "npt")
+        An iterable sequence of str representing ensembles. Will attempt to format
+        `log_file` with each in turn, and plot the temperatures from that file.
+    temperatures: Iterable[int] = (300,)
+        An iterable sequence of int representing temperatures. Will attempt to format
+        `log_file` with each in turn, and plot the temperatures from that file.
+    timesteps_range: Tuple[int, int] = None
+        Sets the upper and lower limit on the timesteps to plot.
+        Optional, default is `(0, None)` which plots all timesteps.
+    """
+    plt.figure(figsize=(12, 6 * len(ensembles) * len(temperatures)))
+    i = 1
+    for ensemble in ensembles:
+        for t in temperatures:
+            plt.subplot(len(ensembles) * len(temperatures), 1, i)
+            _, _, _, lammps_temperatures = read_lammps_log(
+                dump_lammpstrj=1,
+                log_lammps_file=join(
+                    lammps_directory, log_file.format(ensemble=ensemble, t=t)
+                ),
+            )
+            plt.plot(lammps_temperatures[timesteps_range[0] : timesteps_range[1]])
+            plt.ylabel("Temperature (K)")
+            plt.title(f"{ensemble}: {t}K")
+            i += 1
 
 
 def plot_learning_curve(
@@ -96,10 +168,6 @@ def _read_epoch_file(file: str, index: int = 1) -> Tuple[np.ndarray]:
         The first entry is the array of reference values, the second is the array of network
         predictions.
     """
-    if not exists(file):
-        print("{} not found, return `0.`".format(file))
-        return np.array([0.0]), np.array([0.0])
-
     reference_values = []
     nnp_values = []
     with open(file) as f:
@@ -300,7 +368,7 @@ def plot_epoch_histogram_2D(
     plt.colorbar()
 
     plt.subplot(2, 2, 3)
-    if energy_log:
+    if force_log:
         plt.hist2d(
             force_train_ref, force_train_nn, bins=bins, cmap="viridis", norm=LogNorm()
         )
@@ -313,7 +381,7 @@ def plot_epoch_histogram_2D(
     plt.colorbar()
 
     plt.subplot(2, 2, 4)
-    if energy_log:
+    if force_log:
         plt.hist2d(
             force_test_ref, force_test_nn, bins=bins, cmap="plasma", norm=LogNorm()
         )
@@ -474,7 +542,29 @@ def plot_error_histogram(
     physical_units: bool = False,
 ):
     """
-    TODO
+    Plots the difference between the predicted and reference energies and forces as
+    histograms.
+
+    Parameters
+    ----------
+    n2p2_directory: str
+        The directory containing the files written during training.
+    epoch: int
+        The epoch from the training to plot.
+    bins: int = 10
+        The number of bins to use when plotting the histograms. Optional, default is `10`.
+    combine_xyz: bool = True
+        If `True`, plot all xyz components of forces on the same histogram. Default is `True`.
+    energy_scale: str = "linear"
+        The scale to use for the energy values, should be "linear" or "log".
+        Optional, default is "linear".
+    force_scale: str = "linear"
+        The scale to use for the force values, should be "linear" or "log".
+        Optional, default is "linear".
+    physical_units: bool = False
+        Whether to use the headers of the "input.nn" file to convert normalised values back
+        into physical units. If the data is not normalised, this should be `False`.
+        Optional, default is `False`.
     """
     energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
     energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
@@ -588,7 +678,28 @@ def plot_data_histogram(
     alpha=1.0,
 ):
     """
-    TODO update docstring for new functionality
+    Plots the energy and force values present in a series of reference datasets. This can be
+    useful for identifying the presence of extreme values which may impede training.
+
+    Parameters
+    ----------
+    data_files: List[str]
+        A list of filepaths to n2p2 "input.data" files.
+    bins: int = 10
+        The number of bins to use when plotting the histograms. Optional, default is `10`.
+    energy_scale: str = "linear"
+        The scale to use for the energy values, should be "linear" or "log".
+        Optional, default is "linear".
+    force_scale: str = "linear"
+        The scale to use for the force values, should be "linear" or "log".
+        Optional, default is "linear".
+    superimpose: bool = True
+        Whether to plot the histograms for subsequent entries in `data_files` on the same axes
+        or not. If `True`, then the first entry in `data_files` should contain all points to be
+        plotted, with subsequent entries being subsets to ensure full visibility.
+        Optional, default is `True`.
+    alpha=1.0
+        Sets the transparency of the plotted bars. `1.0` is opaque. Optional, default is `1.0`.
     """
     n_rows = 1 if superimpose else len(data_files)
     energies = []
@@ -634,14 +745,15 @@ def plot_data_histogram(
         plt.legend(data_files)
 
 
-def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
-    """Plot the results of clustering as vertical bars. Each element in `elements` is shown on
+def plot_clustering(elements: Iterable[str], file_in: str = "clustered_{}.data"):
+    """
+    Plot the results of clustering as vertical bars. Each element in `elements` is shown on
     a separate subplot. Each bar in the plot represents a line the input file, and if it has
     multiple labels on the line then the bar's colour is split between these labels.
 
     Parameters
     ----------
-    elements: List[str]
+    elements: Iterable[str]
         The elements to plot for, if the data was split by elements. If not, then `["all"]`
         should be used.
     file_in: str = "clustered_{}.data"
@@ -684,7 +796,7 @@ def plot_clustering(elements: List[str], file_in: str = "clustered_{}.data"):
 
 
 def plot_environments_histogram_2D(
-    elements: List[str], file_environments: str, bins: int = 10, log: bool = False
+    elements: Iterable[str], file_environments: str, bins: int = 10, log: bool = False
 ):
     """
     Plots histograms for atomic environments in terms of two symmetry functions selected by CUR
@@ -692,7 +804,7 @@ def plot_environments_histogram_2D(
 
     Parameters
     ----------
-    elements: List[str]
+    elements: Iterable[str]
         A list of chemical symbols, which is used to format `file_environments`.
         A plot will be made for each element, using the two best symmetry functions
         for that element to come out of the CUR decomposition.

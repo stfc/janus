@@ -6,6 +6,7 @@ Class for containing information about atomic species in the structure of intere
 from typing import Dict, List
 
 from ase.data import atomic_masses, atomic_numbers, chemical_symbols
+import numpy as np
 
 
 class Species:
@@ -341,3 +342,47 @@ class AllStructures(Dict[str, Structure]):
         self.element_list = structures[0].element_list
         self.atomic_number_list = structures[0].atomic_number_list
         self.mass_list = structures[0].mass_list
+
+    @property
+    def element_list_alphabetical(self) -> List[str]:
+        """
+        Get the mapping of index to chemical symbol, sorted alphabetically,
+        for use with LAMMPS.
+
+        Returns
+        -------
+        str
+        """
+        element_list_copy = self.element_list.copy()
+        element_list_copy.sort()
+        return element_list_copy
+
+    @property
+    def element_map_alphabetical(self) -> str:
+        """
+        Get the mapping of index to chemical symbol, sorted alphabetically,
+        for use with LAMMPS.
+
+        Returns
+        -------
+        str
+        """
+        mappings = (
+            f"{i + 1}:{s}" for i, s in enumerate(self.element_list_alphabetical)
+        )
+        return ",".join(mappings)
+
+    @property
+    def mass_map_alphabetical(self) -> str:
+        """
+        Get the mapping of index to mass in AMU, sorted alphabetically,
+        for use with LAMMPS.
+
+        Returns
+        -------
+        str
+        """
+        alphabetical_order = np.argsort(self.element_list)
+        masses_alphabetical = np.array(self.mass_list)[alphabetical_order]
+        mappings = (f"mass {i + 1} {m}\n" for i, m in enumerate(masses_alphabetical))
+        return "".join(mappings)
