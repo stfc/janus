@@ -10,17 +10,17 @@ from typing import Dict, List, Literal, Union
 import numpy as np
 import pytest
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.data_selection import Separator
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
-def data():
+def controller():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
     structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
-    yield Data(
+    yield Controller(
         structures=AllStructures(structure),
         main_directory="tests/data",
         n2p2_bin="",
@@ -139,7 +139,7 @@ def data():
     ],
 )
 def test_run_separation_selection(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
     settings: str,
     scaling: str,
@@ -162,8 +162,8 @@ def test_run_separation_selection(
         f.write(settings)
     with open("tests/data/tests_output/scaling.data", "w") as f:
         f.write(scaling)
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = ["H"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = ["H"]
     difference = np.array(
         [
             differences["{0}{1}".format(i, expected_starting_indices)]
@@ -171,7 +171,7 @@ def test_run_separation_selection(
         ]
     )
 
-    separator = Separator(data_controller=data, verbosity=verbosity)
+    separator = Separator(data_controller=controller, verbosity=verbosity)
 
     selected_indices = separator.run_separation_selection(
         n_frames_to_select=1,
@@ -257,7 +257,7 @@ def test_run_separation_selection(
     ],
 )
 def test_run_separation_selection_errors(
-    data: Data,
+    controller: Controller,
     criteria: Union[float, Literal["mean"]],
     settings: str,
     error: str,
@@ -272,10 +272,10 @@ def test_run_separation_selection_errors(
     with open("tests/data/tests_output/scaling.data", "w") as f:
         f.write("1 1 0.0 1.0 0.5 1.0\n1 2 0.0 2.0 1.0 2.0\n1 3 0.0 3.0 1.5 3.0\n")
 
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = ["H"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = ["H"]
 
-    separator = Separator(data_controller=data)
+    separator = Separator(data_controller=controller)
 
     with pytest.raises(ValueError) as e:
         separator.run_separation_selection(

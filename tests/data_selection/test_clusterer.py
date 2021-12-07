@@ -10,17 +10,17 @@ from genericpath import isdir
 import numpy as np
 import pytest
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.data_selection import Clusterer
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
-def data():
+def controller():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
     structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
-    yield Data(
+    yield Controller(
         structures=AllStructures(structure),
         main_directory="tests/data",
         n2p2_bin="",
@@ -36,7 +36,7 @@ def data():
 
 @pytest.mark.parametrize("verbosity", [True, False])
 def test_run_atom_clustering(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
     verbosity: bool,
 ):
@@ -49,10 +49,10 @@ def test_run_atom_clustering(
 
     copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = [element]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = [element]
 
-    clusterer = Clusterer(data_controller=data, verbosity=verbosity)
+    clusterer = Clusterer(data_controller=controller, verbosity=verbosity)
 
     clusterer.run_atom_clustering()
 
@@ -86,7 +86,7 @@ def test_run_atom_clustering(
 
 @pytest.mark.parametrize("verbosity", [True, False])
 def test_run_frame_clustering(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
     verbosity: bool,
 ):
@@ -99,10 +99,10 @@ def test_run_frame_clustering(
 
     copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = [element]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = [element]
 
-    clusterer = Clusterer(data_controller=data, verbosity=verbosity)
+    clusterer = Clusterer(data_controller=controller, verbosity=verbosity)
 
     clusterer.run_frame_clustering()
 

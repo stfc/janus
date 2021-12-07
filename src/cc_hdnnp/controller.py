@@ -1,16 +1,7 @@
 """
-Read data from file and convert it to other formats so it can be used as input
-for the next stage of the pipeline.
-
-ASE uses units of:
-    Length: Angstrom
-    Energy: eV
-    Force:  eV / Ang
-
-cp2k uses units of:
-    Length: Angstrom
-    Energy: Ha
-    Force:  Ha / Bohr
+Central control object for high level user facing interactions. Mainly holds
+information about the directory structure and executables so it can be passed
+to other functions.
 """
 
 from os import mkdir, remove
@@ -21,19 +12,21 @@ from typing import Dict, Iterable, List, Tuple, Union
 
 from ase.atoms import Atoms
 from ase.io import read, write
-from ase.units import create_units
 import numpy as np
 
 from cc_hdnnp.lammps_input import format_lammps_input
 from cc_hdnnp.sfparamgen import SymFuncParamGenerator
+from cc_hdnnp.slurm_input import format_slurm_input
 from cc_hdnnp.structure import AllStructures, Structure
 from .dataset import Dataset
 from .file_readers import read_lammps_log
+from .units import UNITS
 
 
-class Data:
+class Controller:
     """
-    Holds information relevant to reading and writing data from and to file.
+    Holds information about the directory structure and executables so it can be passed
+    to other functions.
 
     Parameters
     ----------
@@ -47,6 +40,14 @@ class Data:
         Path of the LAMMPS executable.
     n2p2_bin : str
         Path to the n2p2 bin directory.
+    cp2k_module_commands: List[str] = None
+        Commands needed to load CP2K for use in SLURM batch scripts. Each entry should be
+        a separate command, e.g. ("module use ...", "module load ..."). Optional, default
+        is None.
+    qe_module_commands: List[str] = None
+        Commands needed to load QE for use in SLURM batch scripts. Each entry should be
+        a separate command, e.g. ("module use ...", "module load ..."). Optional, default
+        is None.
     scripts_sub_directory : str, optional
         Path for the directory to read/write scripts from/to, relative to the
         `main_directory`. Default is "scripts".
@@ -67,18 +68,25 @@ class Data:
         main_directory: str,
         lammps_executable: str,
         n2p2_bin: str,
+        cp2k_module_commands: List[str] = None,
+        qe_module_commands: List[str] = None,
         scripts_sub_directory: str = "scripts",
         n2p2_sub_directories: Union[str, List[str]] = "n2p2",
         active_learning_sub_directory: str = "active_learning",
         lammps_sub_directory: str = "lammps",
     ):
-        self.units = create_units("2014")
-        self.units["au"] = self.units["Bohr"]
         self.all_structures = structures
-        # TODO convert to getters
         self.elements = structures.element_list
         self.main_directory = main_directory
         self.lammps_executable = lammps_executable
+        if cp2k_module_commands is not None:
+            self.cp2k_module_commands = cp2k_module_commands
+        else:
+            self.cp2k_module_commands = []
+        if qe_module_commands is not None:
+            self.qe_module_commands = qe_module_commands
+        else:
+            self.qe_module_commands = []
         self.n2p2_bin = n2p2_bin
         self.scripts_directory = join_paths(main_directory, scripts_sub_directory)
         if isinstance(n2p2_sub_directories, str):
@@ -148,8 +156,8 @@ class Data:
             for frame in trajectory:
                 cell = frame.get_cell()
                 positions = frame.get_positions()
-                frame.set_cell(cell * self.units[unit_in])
-                frame.set_positions(positions * self.units[unit_in])
+                frame.set_cell(cell * UNITS[unit_in])
+                frame.set_positions(positions * UNITS[unit_in])
 
         self.trajectory = trajectory
 
@@ -303,8 +311,8 @@ class Data:
             if unit_out != "Ang":
                 cell = frame.get_cell()
                 positions = frame.get_positions()
-                frame.set_cell(cell / self.units[unit_out])
-                frame.set_positions(positions / self.units[unit_out])
+                frame.set_cell(cell / UNITS[unit_out])
+                frame.set_positions(positions / UNITS[unit_out])
 
             write(
                 join_paths(self.main_directory, file_xyz.format(i)),
@@ -372,15 +380,17 @@ class Data:
         file_input: str = "cp2k_input/{}.inp",
         file_xyz: str = "xyz/{}.xyz",
         n_config: int = None,
-        nodes: int = 1,
         **kwargs,
     ) -> str:
         """
+        TODO
         Writes .inp files and batch scripts for running cp2k from `n_config`
         .xyz files. Can set supported settings using `**kwargs`, in which case
         template file(s) will be formatted to contain the values provided. Note
         that the .xyz files should be in 'Ang'. Returns the command for running
         all cp2k files.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
 
         Parameters
         ----------
@@ -423,8 +433,18 @@ class Data:
             template provided should contain a formatable string at the
             relevant location in the file. Each should be a tuple containing
             one or more values to run cp2k with:
-            - cutoff: tuple of float
-            - relcutoff: tuple of float
+              - cutoff: tuple of float
+              - relcutoff: tuple of float
+            Can also be used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
 
         Returns
         -------
@@ -445,22 +465,18 @@ class Data:
                             cutoff=(400, 500, 600, 700, 800),
                             relcutoff=(40, 50, 60, 70))
         """
+        # Read the template for the CP2K file
         with open(
             join_paths(self.main_directory, file_input.format("template"))
         ) as f_template:
             input_template = f_template.read()
-
-        with open(
-            join_paths(self.scripts_directory, file_batch.format("template"))
-        ) as f_template:
-            batch_text_template = f_template.read()
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
 
         if "cutoff" in kwargs:
             file_id_template += "_cutoff_{cutoff}"
-            cutoff_values = kwargs["cutoff"]
+            cutoff_values = kwargs.pop("cutoff")
             if isinstance(cutoff_values, float) or isinstance(cutoff_values, int):
                 cutoff_values = [cutoff_values]
         else:
@@ -468,70 +484,76 @@ class Data:
 
         if "relcutoff" in kwargs:
             file_id_template += "_relcutoff_{relcutoff}"
-            relcutoff_values = kwargs["relcutoff"]
+            relcutoff_values = kwargs.pop("relcutoff")
             if isinstance(relcutoff_values, float) or isinstance(relcutoff_values, int):
                 relcutoff_values = [relcutoff_values]
         else:
             relcutoff_values = [None]
 
-        batch_scripts = []
-        for i in range(n_config):
-            # Do not require job_array, so format with blank string
-            format_dict = {"i": i, "job_array": ""}
-            with open(join_paths(self.main_directory, file_xyz.format(i))) as f:
-                header_line = f.readlines()[1]
-                lattice_string = header_line.split('"')[1]
-                lattice_list = lattice_string.split()
-                format_dict["cell_x"] = " ".join(lattice_list[0:3])
-                format_dict["cell_y"] = " ".join(lattice_list[3:6])
-                format_dict["cell_z"] = " ".join(lattice_list[6:9])
+        bash_text = ""
+        for cutoff in cutoff_values:
+            for relcutoff in relcutoff_values:
+                for i in range(n_config):
+                    # Extract the lattice vectors from the xyz file
+                    file_xyz_i = join_paths(self.main_directory, file_xyz.format(i))
+                    with open(file_xyz_i) as f:
+                        header_line = f.readlines()[1]
+                        lattice_string = header_line.split('"')[1]
+                        lattice_list = lattice_string.split()
+                        cell_x = " ".join(lattice_list[0:3])
+                        cell_y = " ".join(lattice_list[3:6])
+                        cell_z = " ".join(lattice_list[6:9])
 
-            for cutoff in cutoff_values:
-                for relcutoff in relcutoff_values:
-                    format_dict["cutoff"] = cutoff
-                    format_dict["relcutoff"] = relcutoff
-                    format_dict["file_xyz"] = join_paths(
-                        self.main_directory, file_xyz.format(i)
+                    file_id = file_id_template.format(
+                        i=i, cutoff=cutoff, relcutoff=relcutoff
                     )
-                    file_id = file_id_template.format(**format_dict)
-                    file_input_formatted = join_paths(
+                    file_input_i = join_paths(
                         self.main_directory, file_input.format(file_id)
                     )
-                    with open(file_input_formatted, "w") as f:
+                    with open(file_input_i, "w") as f:
                         f.write(
                             input_template.format(
                                 file_id=file_id,
                                 structure_name=structure_name,
                                 basis_set=basis_set,
                                 potential=potential,
-                                **format_dict,
+                                cell_x=cell_x,
+                                cell_y=cell_y,
+                                cell_z=cell_z,
+                                cutoff=cutoff,
+                                relcutoff=relcutoff,
+                                file_xyz=file_xyz,
                             )
                         )
 
-                    batch_scripts.append(
-                        join_paths(self.scripts_directory, file_batch.format(file_id))
+                    file_batch_i = join_paths(
+                        self.scripts_directory,
+                        file_batch.format(f"cp2k_cutoff{cutoff}_relcutoff{relcutoff}"),
                     )
 
-                    batch_text = batch_text_template.format(
-                        nodes=nodes, job_name="CP2K", file_id=file_id, **format_dict
+                    commands = kwargs.pop("commands", [])
+                    run_command = (
+                        "mpirun -np ${SLURM_NTASKS} cp2k.popt "
+                        f"{file_input_i} &> ../cp2k_output/{structure_name}_{file_id}.log"
                     )
-                    batch_text += "\nmpirun -np ${SLURM_NTASKS} cp2k.popt "
-                    batch_text += "{0} &> ../cp2k_output/{1}_{2}.log" "".format(
-                        file_input_formatted, structure_name, file_id
+                    move_command = (
+                        f"mv {structure_name}_{file_id}-forces-1_0.xyz "
+                        f"../cp2k_output/{structure_name}_{file_id}-forces-1_0.xyz"
                     )
-                    batch_text += (
-                        "\nmv {0}_{1}-forces-1_0.xyz ../cp2k_output/{0}_{1}-forces-1_0.xyz"
-                        "".format(structure_name, file_id)
+                    format_slurm_input(
+                        formatted_file=file_batch_i,
+                        commands=[
+                            *self.cp2k_module_commands,
+                            run_command,
+                            move_command,
+                            *commands,
+                        ],
+                        job_name="CP2K",
+                        array=f"0-{n_config - 1}",
+                        **kwargs,
                     )
+                    bash_text += f"sbatch {file_batch_i}\n"
 
-                    with open(
-                        join_paths(self.scripts_directory, file_batch.format(file_id)),
-                        "w",
-                    ) as f:
-                        f.write(batch_text)
-
-        bash_text = "sbatch "
-        bash_text += "\nsbatch ".join(batch_scripts)
         with open(join_paths(self.scripts_directory, file_bash), "w") as f:
             f.write(bash_text)
 
@@ -546,7 +568,7 @@ class Data:
         **kwargs,
     ):
         """
-        Writes the input file for Quantum Esspresso to `frame_directory` for the `atoms`
+        Writes the input file for Quantum Espresso to `frame_directory` for the `atoms`
         provided.
 
         Parameters
@@ -628,7 +650,7 @@ class Data:
 
     def write_qe_pp(self, frame_directory: str, structure: Structure):
         """
-        Write "pp.in" input script for Quantum Espresso plottting.
+        Write "pp.in" input script for Quantum Espresso plotting.
 
         Parameters
         ----------
@@ -656,7 +678,7 @@ class Data:
                 file=f,
             )
 
-    def write_qe_slurm(self, frame_directory: str, structure: Structure):
+    def write_qe_slurm(self, frame_directory: str, structure: Structure, **kwargs):
         """
         Writes the batch script for running all stages of Quantum Espresso.
 
@@ -664,46 +686,44 @@ class Data:
         ----------
         frame_directory: str
             Complete path to the directory in which to write the QE input file.
-        structure: Stucture
+        structure: Structure
             The `Structure` being simulated. Will be used to determine the file name and
             get relevant elements.
+        **kwargs:
+            Can be used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
-        with open(join_paths(frame_directory, "qe.slurm"), "w") as f:
-            print(
-                """#!/usr/bin/env bash
+        commands = self.qe_module_commands
+        commands += [
+            "n=$SLURM_NTASKS",
+            "export OMP_NUM_THREADS=1",
+            f"cd {frame_directory}",
+            f"mpirun -n $n pw.x  -i  {structure.name}.in > {structure.name}.log",
+            f"mpirun -n $n pp.x  <  pp.in > {structure.name}-pp.log",
+            f"/home/vol02/scarf562/bin/bader {structure.name}.cube > bader.log",
+            f"rm -f {structure.name}.cube",
+            f"rm -rf ./{structure.name}/pwscf.save",
+            "rm -f tmp.pp",
+        ]
+        commands += kwargs.pop("commands", [])
 
-##SBATCH -n 128
-#SBATCH -N 2
-#SBATCH --ntasks-per-node=24
-#SBATCH --cpus-per-task=1
-#SBATCH --exclusive
-##SBATCH --reservation=scddevel
-##SBATCH --account=scddevel
-#SBATCH -t 0:30:00
-##SBATCH -C [scarf18|scarf17]
-#SBATCH -C scarf18
+        formatted_file = join_paths(frame_directory, "qe.slurm")
+        format_slurm_input(
+            formatted_file=join_paths(frame_directory, "qe.slurm"),
+            commands=commands,
+            job_name=f"QE_{structure.name}",
+            **kwargs,
+        )
 
-module purge
-module use /work3/cse/dlp/eb-ml/modules/all
-module load QuantumESPRESSO/6.8-foss-2021a
-n=$SLURM_NTASKS
-
-export OMP_NUM_THREADS=1
-
-cd {frame_directory}
-mpirun -n $n pw.x  -i  {structure_name}.in > {structure_name}.log
-mpirun -n 32 pp.x  <  pp.in > {structure_name}-pp.log
-/home/vol02/scarf562/bin/bader {structure_name}.cube > bader.log
-rm -f {structure_name}.cube
-rm -rf ./{structure_name}/pwscf.save
-rm -f tmp.pp
-""".format(
-                    frame_directory=frame_directory, structure_name=structure.name
-                ),
-                file=f,
-            )
-
-        return "sbatch {}\n".format(join_paths(frame_directory, "qe.slurm"))
+        return f"sbatch {formatted_file}"
 
     def prepare_qe(
         self,
@@ -1005,8 +1025,8 @@ rm -f tmp.pp
                                 if line.startswith("!    total energy"):
                                     energy = (
                                         float(line.split()[4])
-                                        * self.units[line.split()[5]]
-                                        / self.units[n2p2_units["energy"]]
+                                        * UNITS[line.split()[5]]
+                                        / UNITS[n2p2_units["energy"]]
                                     )
                                 elif line.startswith("     Forces acting on atoms"):
                                     forces = [
@@ -1017,10 +1037,10 @@ rm -f tmp.pp
                                     ]
                                     forces = np.array(forces).astype(float)
                                     qe_force_unit = line.split()[-1][:-2]
-                                    forces *= self.units[qe_force_unit.split("/")[0]]
-                                    forces /= self.units[qe_force_unit.split("/")[1]]
-                                    forces /= self.units[n2p2_units["energy"]]
-                                    forces *= self.units[n2p2_units["length"]]
+                                    forces *= UNITS[qe_force_unit.split("/")[0]]
+                                    forces /= UNITS[qe_force_unit.split("/")[1]]
+                                    forces /= UNITS[n2p2_units["energy"]]
+                                    forces *= UNITS[n2p2_units["length"]]
 
                             if energy is None:
                                 print(
@@ -1168,9 +1188,7 @@ rm -f tmp.pp
                 lattice_list = header_list[1].split()
                 if n2p2_units["length"] != "Ang":
                     for j, lattice in enumerate(lattice_list):
-                        lattice_list[j] = (
-                            float(lattice) / self.units[n2p2_units["length"]]
-                        )
+                        lattice_list[j] = float(lattice) / UNITS[n2p2_units["length"]]
 
             with open(join_paths(self.main_directory, file_cp2k_forces.format(i))) as f:
                 force_lines = f.readlines()
@@ -1189,9 +1207,7 @@ rm -f tmp.pp
                 raise ValueError("Energy not found in {}".format(file_cp2k_out))
             if n2p2_units["energy"] != "Ha":
                 # cp2k output is in Ha
-                energy = (
-                    float(energy) * self.units["Ha"] / self.units[n2p2_units["energy"]]
-                )
+                energy = float(energy) * UNITS["Ha"] / UNITS[n2p2_units["energy"]]
 
             text += "begin\n"
             text += "comment config_index={0} units={1}\n".format(i, n2p2_units)
@@ -1208,7 +1224,7 @@ rm -f tmp.pp
             for j in range(n_atoms):
                 atom_xyz = xyz_lines[j + 2].split()
                 for k, position in enumerate(atom_xyz[1:], 1):
-                    atom_xyz[k] = float(position) / self.units[n2p2_units["length"]]
+                    atom_xyz[k] = float(position) / UNITS[n2p2_units["length"]]
 
                 force = force_lines[j + 4].split()[-3:]
                 if n2p2_units["force"] != "Ha / Bohr":
@@ -1216,9 +1232,9 @@ rm -f tmp.pp
                     for i in range(len(force)):
                         force[i] = (
                             float(force[i])
-                            * self.units["Ha"]
-                            / self.units["Bohr"]
-                            / self.units[n2p2_units["energy"]]
+                            * UNITS["Ha"]
+                            / UNITS["Bohr"]
+                            / UNITS[n2p2_units["energy"]]
                         )
 
                 charge = charge_lines[j].split()[-1]
@@ -1352,7 +1368,6 @@ rm -f tmp.pp
         n_scaling_bins: int = 500,
         range_threshold: float = 1e-4,
         nodes: int = 1,
-        file_batch_template: str = "template.sh",
         file_prepare: str = "n2p2_prepare.sh",
         file_train: str = "n2p2_train.sh",
         file_nn: str = "input.nn",
@@ -1372,9 +1387,6 @@ rm -f tmp.pp
             used in the training. Default is `1e-4`.
         nodes: int, optional
             Number of nodes to request for the batch job. Default is `1`.
-        file_batch_template: str, optional
-            File location of template to use for batch scripts. Default is
-            'template.sh'.
         file_prepare: str, optional
             File location to write scaling and pruning batch script to.
             Default is 'n2p2_prepare.sh'.
@@ -1385,60 +1397,61 @@ rm -f tmp.pp
             File location of n2p2 file defining the neural network. Default is
             "input.nn".
         """
-        with open(join_paths(self.scripts_directory, file_batch_template)) as f:
-            batch_template_text = f.read()
 
-        format_dict = {
-            "job_name": "n2p2_scale_prune",
-            "nodes": nodes,
-            "job_array": "#SBATCH --array=1-{}".format(len(self.n2p2_directories)),
-        }
+        n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
+        common_commands = [
+            f"n2p2_directories=({n2p2_directory_str})",
+            "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+        ]
 
-        output_text = batch_template_text.format(**format_dict)
-        output_text += "\nn2p2_directories=( "
-        for n2p2_directory in self.n2p2_directories:
-            output_text += "'{}' ".format(n2p2_directory)
-        output_text += ")\ncd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}"
+        prepare_commands = common_commands.copy()
         if normalise:
-            output_text += "\nmpirun -np ${SLURM_NTASKS} " + join_paths(
-                self.n2p2_bin, "nnp-norm"
-            )
-        output_text += (
-            "\nmpirun -np ${SLURM_NTASKS} "
-            + join_paths(self.n2p2_bin, "nnp-scaling")
-            + " "
-            + str(n_scaling_bins)
-        )
-        output_text += (
-            "\nmpirun -np ${SLURM_NTASKS} "
-            + join_paths(self.n2p2_bin, "nnp-prune")
-            + " range "
-            + str(range_threshold)
-        )
-        output_text += "\nmv {0} {0}.unpruned".format(file_nn)
-        output_text += "\nmv output-prune-range.nn {}".format(file_nn)
-        output_text += (
-            "\nmpirun -np ${SLURM_NTASKS} "
-            + join_paths(self.n2p2_bin, "nnp-scaling")
-            + " "
-            + str(n_scaling_bins)
+            prepare_commands += [
+                "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-norm")
+            ]
+
+        prepare_commands += [
+            (
+                "mpirun -np ${SLURM_NTASKS} "
+                + join_paths(self.n2p2_bin, "nnp-scaling")
+                + f" {n_scaling_bins}"
+            ),
+            (
+                "mpirun -np ${SLURM_NTASKS} "
+                + join_paths(self.n2p2_bin, "nnp-prune")
+                + f" range {range_threshold}"
+            ),
+            f"mv {file_nn} {file_nn}.unpruned",
+            f"mv output-prune-range.nn {file_nn}",
+            (
+                "mpirun -np ${SLURM_NTASKS} "
+                + join_paths(self.n2p2_bin, "nnp-scaling")
+                + f" {n_scaling_bins}"
+            ),
+        ]
+
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_prepare),
+            commands=prepare_commands,
+            job_name="n2p2_prepare",
+            array=f"0-{len(self.n2p2_directories) - 1}",
+            nodes=nodes,
         )
 
-        with open(join_paths(self.scripts_directory, file_prepare), "w") as f:
-            f.write(output_text)
+        train_commands = common_commands.copy()
+        train_commands += [
+            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-train")
+        ]
 
-        format_dict["job_name"] = "n2p2_train"
-        output_text = batch_template_text.format(**format_dict)
-        output_text += "\nn2p2_directories=( "
-        for n2p2_directory in self.n2p2_directories:
-            output_text += "'{}' ".format(n2p2_directory)
-        output_text += ")\ncd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}"
-        output_text += "\nmpirun -np ${SLURM_NTASKS} " + join_paths(
-            self.n2p2_bin, "nnp-train"
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_train),
+            commands=train_commands,
+            job_name="n2p2_train",
+            array=f"0-{len(self.n2p2_directories) - 1}",
+            nodes=nodes,
         )
 
-        with open(join_paths(self.scripts_directory, file_train), "w") as f:
-            f.write(output_text)
+        return f"sbatch {file_prepare}\nsbatch {file_train}"
 
     def write_lammps_data(
         self,
@@ -1474,7 +1487,6 @@ rm -f tmp.pp
         self,
         n_simulations: int,
         nodes: int = 1,
-        file_batch_template: str = "template.sh",
         file_batch_out: str = "active_learning_lammps.sh",
     ):
         """
@@ -1487,56 +1499,46 @@ rm -f tmp.pp
             job array.
         nodes: int, optional
             Number of nodes to request for the batch job. Default is `1`.
-        file_batch_template: str, optional
-            File location of template to use for batch scripts relative to
-            `scripts_sub_directory`. Default is 'scripts/template.sh'.
         file_batch_out: str, optional
             File location to write the batch script relative to `scripts_sub_directory`.
             Default is 'scripts/active_learning_lammps.sh'.
         """
-        with open(join_paths(self.scripts_directory, file_batch_template)) as f:
-            batch_template_text = f.read()
+        commands = [
+            "ulimit -s unlimited",
+            (
+                "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
+                f"{self.active_learning_directory}/joblist_mode1.dat)"
+            ),
+            "dir=$(date '+%Y%m%d_%H%M%S_%N')",
+            "mkdir -p /scratch/$(whoami)/${dir}",
+            (
+                "rsync -a ${SLURM_SUBMIT_DIR}/"
+                f"{self.active_learning_directory}"
+                "/mode1/${path}/* /scratch/$(whoami)/${dir}/"
+            ),
+            "cd /scratch/$(whoami)/${dir}",
+            (
+                "mpirun -np ${SLURM_NTASKS} "
+                f"{self.lammps_executable} -in input.lammps -screen none"
+            ),
+            "rm -r /scratch/$(whoami)/${dir}/RuNNer",
+            (
+                "rsync -a /scratch/$(whoami)/${dir}/* ${SLURM_SUBMIT_DIR}/"
+                f"{self.active_learning_directory}"
+                "/mode1/${path}/"
+            ),
+            "rm -r /scratch/$(whoami)/${dir}",
+        ]
 
-        format_dict = {
-            "job_name": "active_learning_LAMMPS",
-            "nodes": nodes,
-            "job_array": "#SBATCH --array=1-{}".format(n_simulations),
-        }
-        output_text = batch_template_text.format(**format_dict)
-        output_text += "\nulimit -s unlimited"
-        output_text += (
-            "\npath=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
-            + self.active_learning_directory
-            + "/joblist_mode1.dat)"
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_batch_out),
+            commands=commands,
+            job_name="active_learning_LAMMPS",
+            array=f"0-{n_simulations - 1}",
+            nodes=nodes,
         )
-        output_text += "\ndir=$(date '+%Y%m%d_%H%M%S_%N')"
-        output_text += "\nmkdir -p /scratch/$(whoami)/${dir}"
-        output_text += (
-            "\nrsync -a ${SLURM_SUBMIT_DIR}/"
-            + self.active_learning_directory
-            + "/mode1/${path}/* /scratch/$(whoami)/${dir}/"
-        )
-        output_text += "\ncd /scratch/$(whoami)/${dir}"
-        output_text += (
-            "\nmpirun -np ${SLURM_NTASKS} "
-            + self.lammps_executable
-            + " -in input.lammps -screen none"
-        )
-        output_text += "\nrm -r /scratch/$(whoami)/${dir}/RuNNer"
-        output_text += (
-            "\nrsync -a /scratch/$(whoami)/${dir}/* ${SLURM_SUBMIT_DIR}/"
-            + self.active_learning_directory
-            + "/mode1/${path}/"
-        )
-        output_text += "\nrm -r /scratch/$(whoami)/${dir}"
 
-        with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
-            f.write(output_text)
-            print(
-                "Batch script written to {}".format(
-                    join_paths(self.scripts_directory, file_batch_out)
-                )
-            )
+        return f"sbatch {file_batch_out}"
 
     def _write_active_learning_nn_script(
         self,
@@ -1562,6 +1564,7 @@ rm -f tmp.pp
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
         """
+        # Create directories if they don't exist
         mode2 = "{}/mode2".format(self.active_learning_directory)
         HDNNP_1 = "{}/mode2/HDNNP_1".format(self.active_learning_directory)
         HDNNP_2 = "{}/mode2/HDNNP_2".format(self.active_learning_directory)
@@ -1569,6 +1572,7 @@ rm -f tmp.pp
             if not isdir(dir):
                 mkdir(dir)
 
+        # Write copies of data to directories
         dataset = Dataset(
             data_file="{}/input.data-new".format(self.active_learning_directory),
             all_structures=self.all_structures,
@@ -1584,84 +1588,77 @@ rm -f tmp.pp
             )
         )
 
-        with open(join_paths(self.scripts_directory, file_batch_template)) as f:
-            batch_template_text = f.read()
+        n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
+        commands = [
+            f"n2p2_directories=({n2p2_directory_str})",
+            (
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/input.nn "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+            ),
+            (
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/scaling.data "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+            ),
+            (
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/weights.*.data "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+            ),
+            (
+                "sed -i s/'.*test_fraction.*'/'test_fraction 0.0'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'epochs.*'/'epochs 0'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*use_old_weights_short'/'use_old_weights_short'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*use_short_forces'/'use_short_forces'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*write_trainpoints'/'write_trainpoints'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*write_trainforces'/'write_trainforces'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*precondition_weights'/'#precondition_weights'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            (
+                "sed -i s/'.*nguyen_widrow_weights_short'/'#nguyen_widrow_weights_short'/g "
+                f"{self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
+            ),
+            "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+            "mpirun -np ${SLURM_NTASKS} " + f"{self.n2p2_bin}/nnp-train > mode_2.out",
+        ]
 
-        # Format SBATCH variables
-        format_dict = {
-            "job_name": "active_learning_NN",
-            "nodes": nodes,
-            "job_array": "#SBATCH --array=1-2",
-        }
-        output_text = batch_template_text.format(**format_dict)
-
-        # Setup
-        output_text += "\nn2p2_directories=({} {})".format(*n2p2_directories)
-        output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/input.nn "
-            + "{}/mode2".format(self.active_learning_directory)
-            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
-        )
-        output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/scaling.data "
-            + "{}/mode2".format(self.active_learning_directory)
-            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
-        )
-        output_text += (
-            "\ncp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/weights.*.data "
-            + "{}/mode2".format(self.active_learning_directory)
-            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
-        )
-        output_text += (
-            "\nsed -i s/'.*test_fraction.*'/'test_fraction 0.0'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'epochs.*'/'epochs 0'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*use_old_weights_short'/'use_old_weights_short'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*use_short_forces'/'use_short_forces'/g"
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*write_trainpoints'/'write_trainpoints'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*write_trainforces'/'write_trainforces'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*precondition_weights'/'#precondition_weights'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
-        )
-        output_text += (
-            "\nsed -i s/'.*nguyen_widrow_weights_short'/'#nguyen_widrow_weights_short'/g "
-            "{}/mode2/HDNNP_*/input.nn".format(self.active_learning_directory)
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_batch_out),
+            commands=commands,
+            job_name="active_learning_NN",
+            array="0-1",
+            nodes=nodes,
         )
 
-        # Train
-        output_text += (
-            "\ncd {}/mode2".format(self.active_learning_directory)
-            + "/HDNNP_${SLURM_ARRAY_TASK_ID}"
-        )
-        output_text += (
-            "\nmpirun -np ${SLURM_NTASKS} "
-            + "{}/nnp-train > mode_2.out".format(self.n2p2_bin)
-        )
-
-        with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
-            f.write(output_text)
-            print(
-                "Batch script written to {}".format(
-                    join_paths(self.scripts_directory, file_batch_out)
-                )
-            )
+        return f"sbatch {file_batch_out}"
 
     def choose_weights(
         self,

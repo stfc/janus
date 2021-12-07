@@ -9,13 +9,10 @@ from typing import Dict, Iterable, Iterator, List, Tuple
 
 from ase.atoms import Atoms
 from ase.io.formats import read, write
-from ase.units import create_units
 import numpy as np
 
 from cc_hdnnp.structure import AllStructures, Structure
-
-
-UNIT_CONVERSIONS = create_units("2014")
+from .units import UNITS
 
 
 class Frame(Atoms):
@@ -186,14 +183,8 @@ class Frame(Atoms):
         units: Dict[str, str]
             The new units to convert the frame to. Supports keys of "length" and "energy".
         """
-        length_conversion = (
-            UNIT_CONVERSIONS[self.units["length"]]
-            / UNIT_CONVERSIONS[new_units["length"]]
-        )
-        energy_conversion = (
-            UNIT_CONVERSIONS[self.units["energy"]]
-            / UNIT_CONVERSIONS[new_units["energy"]]
-        )
+        length_conversion = UNITS[self.units["length"]] / UNITS[new_units["length"]]
+        energy_conversion = UNITS[self.units["energy"]] / UNITS[new_units["energy"]]
         force_conversion = energy_conversion / length_conversion
 
         self.positions *= length_conversion

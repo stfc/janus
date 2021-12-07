@@ -9,7 +9,7 @@ from typing import List
 import numpy as np
 
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.dataset import Dataset
 from ..file_readers import read_atomenv
 
@@ -35,7 +35,7 @@ class DataSelector:
 
     def __init__(
         self,
-        data_controller: Data,
+        data_controller: Controller,
         n2p2_directory_index: int = 0,
         verbosity: int = 1,
         dtype: str = "float32",

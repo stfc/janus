@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from cc_hdnnp.active_learning import ActiveLearning
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.dataset import Dataset, Frame
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
@@ -65,7 +65,6 @@ PREPARE_DATA_NEW_STDOUT = (
     "The median number of time steps between the first and second selected extrapolated "
     "structure is 6 (HDNNP_1: 6, HDNNP_2: nan).\n"
     "Writing 1 names to input.data-new\n"
-    "Batch script written to tests/data/tests_output/active_learning_nn.sh\n"
 )
 
 
@@ -81,7 +80,7 @@ def all_species() -> List[Species]:
 
 
 @pytest.fixture
-def data(all_species: List[Species]) -> Data:
+def controller(all_species: List[Species]) -> Controller:
     """
     Fixture to create a Data object for testing,
     including removal of files in the test output folder.
@@ -90,7 +89,7 @@ def data(all_species: List[Species]) -> Data:
         name="test", all_species=all_species, delta_E=1.0, delta_F=1.0
     )
 
-    yield Data(
+    yield Controller(
         structures=AllStructures(structure),
         main_directory="tests/data",
         scripts_sub_directory="tests_output",
@@ -108,7 +107,7 @@ def data(all_species: List[Species]) -> Data:
 
 
 @pytest.fixture
-def active_learning(data: Data) -> ActiveLearning:
+def active_learning(controller: Controller) -> ActiveLearning:
     """
     Fixture to create a ActiveLearning object for testing,
     including linking and removal of relevant files.
@@ -123,7 +122,7 @@ def active_learning(data: Data) -> ActiveLearning:
     copytree("tests/data/n2p2", "tests/data/n2p2_copy")
 
     yield ActiveLearning(
-        data_controller=data,
+        data_controller=controller,
     )
 
     rmtree("tests/data/n2p2_copy")
@@ -175,12 +174,12 @@ def prepare_mode2_files():
 # TEST INIT
 
 
-def test_init_len_n2p2_directories(data: Data):
+def test_init_len_n2p2_directories(controller: Controller):
     """Test that a ValueError is raised for an empty list of `n2p2_directories`."""
-    data.n2p2_directories = []
+    controller.n2p2_directories = []
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
         )
 
     assert (
@@ -189,22 +188,22 @@ def test_init_len_n2p2_directories(data: Data):
     )
 
 
-def test_init_integrators(data: Data):
+def test_init_integrators(controller: Controller):
     """Test that unrecognised `integrators` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             integrators=["unrecognised"],
         )
 
     assert str(e.value) == "Integrator unrecognised is not implemented."
 
 
-def test_init_npt_no_pressures(data: Data):
+def test_init_npt_no_pressures(controller: Controller):
     """Test that not providing pressures raises an error for the "npt" integrator."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             pressures=[],
         )
 
@@ -214,35 +213,35 @@ def test_init_npt_no_pressures(data: Data):
     )
 
 
-def test_init_barostat_option(data: Data):
+def test_init_barostat_option(controller: Controller):
     """Test that unrecognised `barostat_option` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             barostat_option="unrecognised",
         )
 
     assert str(e.value) == "Barostat option unrecognised is not implemented."
 
 
-def test_init_atom_style(data: Data):
+def test_init_atom_style(controller: Controller):
     """Test that unrecognised `atom_style` raise a value error."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             atom_style="unrecognised",
         )
 
     assert str(e.value) == "Atom style unrecognised is not implemented."
 
 
-def test_init_N_steps(data: Data):
+def test_init_N_steps(controller: Controller):
     """
     Test that a ValueError is raised when `N_steps` is not a multiple of `dump_lammpstrj`.
     """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             N_steps=200001,
         )
 
@@ -252,14 +251,14 @@ def test_init_N_steps(data: Data):
     )
 
 
-def test_init_dump_lammpstrj(data: Data):
+def test_init_dump_lammpstrj(controller: Controller):
     """
     Test that when `dump_lammpstrj` is less than the `min_t_separation_interpolation` of a
     Structure then a ValueError is raised.
     """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             dump_lammpstrj=1,
         )
 
@@ -270,11 +269,11 @@ def test_init_dump_lammpstrj(data: Data):
     )
 
 
-def test_init_max_len_joblist(data: Data):
+def test_init_max_len_joblist(controller: Controller):
     """Test that a negative values for `max_len_joblist` raises a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             max_len_joblist=-1,
         )
 
@@ -284,14 +283,14 @@ def test_init_max_len_joblist(data: Data):
     )
 
 
-def test_init_comment_name_keyword(data: Data):
+def test_init_comment_name_keyword(controller: Controller):
     """
     Test that setting `comment_name_keyword` to `None` raises a ValueError when
     the `name` of a Structure is not `None`.
     """
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             comment_name_keyword=None,
         )
 
@@ -311,7 +310,7 @@ def test_init_structure_names_none(all_species: List[Species]):
     structure_1 = Structure(
         name=None, all_species=all_species, delta_E=1.0, delta_F=1.0
     )
-    data = Data(
+    controller = Controller(
         structures=AllStructures(structure_0, structure_1),
         main_directory="tests/data",
         scripts_sub_directory="tests_output",
@@ -323,7 +322,7 @@ def test_init_structure_names_none(all_species: List[Species]):
 
     with pytest.raises(TypeError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
         )
 
     assert str(e.value) == (
@@ -331,23 +330,23 @@ def test_init_structure_names_none(all_species: List[Species]):
     )
 
 
-def test_init_initial_tolerance(data: Data):
+def test_init_initial_tolerance(controller: Controller):
     """Test that values of `initial_tolerance` <= 1 rause a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             initial_tolerance=1,
         )
 
     assert str(e.value) == ("The value of initial_tolerance has to be higher than 1.")
 
 
-def test_init_len_tolerances(data: Data):
+def test_init_len_tolerances(controller: Controller):
     """Test that a value of `initial_tolerance` greater than the length of `tolerances` raises
     a ValueError."""
     with pytest.raises(ValueError) as e:
         ActiveLearning(
-            data_controller=data,
+            data_controller=controller,
             initial_tolerance=100,
         )
 
@@ -362,7 +361,7 @@ def test_init_len_tolerances(data: Data):
 @pytest.mark.parametrize("new", [True, False])
 @pytest.mark.parametrize("add", [True, False])
 def test_init_remove_existing_files(
-    data: Data,
+    controller: Controller,
     mode1: bool,
     mode2: bool,
     new: bool,
@@ -379,7 +378,7 @@ def test_init_remove_existing_files(
         open("tests/data/tests_output/input.data-add", "w")
 
     ActiveLearning(
-        data_controller=data,
+        data_controller=controller,
         remove_existing_files=True,
     )
 
@@ -712,7 +711,6 @@ def test_write_lammps_choose_weights(
         "{0} not found, attempting to automatically choose one\n"
         "WARNING: The structures of the input.data file are used more than once.\n"
         "Input was generated for 2 simulations.\n"
-        "Batch script written to tests/data/tests_output/active_learning_lammps.sh\n"
         "".format(weights_files[0])
     )
 
@@ -1322,16 +1320,16 @@ def test_prepare_data_new(
 
 
 def test_prepare_data_new_name_none(
-    data: Data, all_species: List[Species], capsys: pytest.CaptureFixture
+    controller: Controller, all_species: List[Species], capsys: pytest.CaptureFixture
 ):
     """Test that `prepare_data_new` does not print the name of the Structure in the case
     where we only have one without a defined name."""
     prepare_mode1_files()
     copy("tests/data/scripts/template.sh", "tests/data/tests_output/template.sh")
     structure = Structure(name=None, all_species=all_species, delta_E=1.0, delta_F=1.0)
-    data.all_structures = AllStructures(structure)
+    controller.all_structures = AllStructures(structure)
     active_learning = ActiveLearning(
-        data_controller=data,
+        data_controller=controller,
     )
 
     active_learning.prepare_data_new()

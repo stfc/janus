@@ -1,5 +1,5 @@
 """
-Unit tests for `data.py`
+Unit tests for `controller.py`
 """
 
 from os import listdir, mkdir, remove
@@ -12,16 +12,16 @@ from genericpath import isdir
 import numpy as np
 import pytest
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
-def data():
+def controller():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
     structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
-    yield Data(
+    yield Controller(
         structures=AllStructures(structure),
         main_directory="tests/data",
         n2p2_bin="",
@@ -35,24 +35,45 @@ def data():
             rmtree("tests/data/tests_output/" + file)
 
 
-def test_data_read_trajectory(data: Data):
+@pytest.mark.parametrize("input, output", [(None, []), (["not_None"], ["not_None"])])
+def test_controller_init_module_commands(input: List[str], output: List[str]):
+    """
+    Test that the values for `cp2k_module_commands` and `qe_module_commands` can be set
+    and default to empty lists correctly.
+    """
+    species = Species(symbol="H", atomic_number=1, mass=1.0)
+    structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
+    controller = Controller(
+        structures=AllStructures(structure),
+        main_directory="tests/data",
+        n2p2_bin="",
+        lammps_executable="",
+        cp2k_module_commands=input,
+        qe_module_commands=input,
+    )
+
+    assert controller.cp2k_module_commands == output
+    assert controller.qe_module_commands == output
+
+
+def test_controller_read_trajectory(controller: Controller):
     """
     Test that a trajectory can be read from file successfully.
     """
-    data.read_trajectory("trajectory.history")
+    controller.read_trajectory("trajectory.history")
 
-    assert len(data.trajectory) == 2
-    assert data.trajectory[0].cell[0, 0] == 17.7128441229
+    assert len(controller.trajectory) == 2
+    assert controller.trajectory[0].cell[0, 0] == 17.7128441229
 
 
-def test_data_read_trajectory_bohr(data: Data):
+def test_controller_read_trajectory_bohr(controller: Controller):
     """
     Test that a trajectory can be read from file successfully, with length unit conversion.
     """
-    data.read_trajectory("trajectory.history", unit_in="Bohr")
+    controller.read_trajectory("trajectory.history", unit_in="Bohr")
 
-    assert len(data.trajectory) == 2
-    assert data.trajectory[0].cell[0, 0] == 9.373233444108351
+    assert len(controller.trajectory) == 2
+    assert controller.trajectory[0].cell[0, 0] == 9.373233444108351
 
 
 @pytest.mark.parametrize(
@@ -64,14 +85,14 @@ def test_data_read_trajectory_bohr(data: Data):
         ("tests_output/sub_directory/file.xyz", True),
     ],
 )
-def test_data_convert_active_learning_to_xyz(
-    data: Data, file_xyz: str, single_output: bool
+def test_controller_convert_active_learning_to_xyz(
+    controller: Controller, file_xyz: str, single_output: bool
 ):
     """
     Test that active learning structures can be written in xyz format, creating a subdirectory
     if needed, and a trailing newline.
     """
-    data.convert_active_learning_to_xyz(
+    controller.convert_active_learning_to_xyz(
         file_n2p2_data="input.data-add",
         file_xyz=file_xyz,
         single_output=single_output,
@@ -84,12 +105,12 @@ def test_data_convert_active_learning_to_xyz(
     assert text.endswith("\n")
 
 
-def test_data_write_xyz(data: Data):
+def test_controller_write_xyz(controller: Controller):
     """
     Test that a trajectory can be wtitten to xyz files successfully.
     """
-    data.read_trajectory("trajectory.history")
-    data.write_xyz(file_xyz="tests_output/{}.xyz")
+    controller.read_trajectory("trajectory.history")
+    controller.write_xyz(file_xyz="tests_output/{}.xyz")
 
     assert isfile("tests/data/tests_output/0.xyz")
     assert isfile("tests/data/tests_output/1.xyz")
@@ -102,12 +123,12 @@ def test_data_write_xyz(data: Data):
         assert position == "15.40516331"
 
 
-def test_data_write_xyz_bohr(data: Data):
+def test_controller_write_xyz_bohr(controller: Controller):
     """
     Test that a trajectory can be wtitten to xyz files successfully with Bohr units.
     """
-    data.read_trajectory("trajectory.history")
-    data.write_xyz(file_xyz="tests_output/{}.xyz", unit_out="Bohr")
+    controller.read_trajectory("trajectory.history")
+    controller.write_xyz(file_xyz="tests_output/{}.xyz", unit_out="Bohr")
 
     assert isfile("tests/data/tests_output/0.xyz")
     assert isfile("tests/data/tests_output/1.xyz")
@@ -120,14 +141,14 @@ def test_data_write_xyz_bohr(data: Data):
         assert position == "29.11153958"
 
 
-def test_scale_xyz(data: Data):
+def test_scale_xyz(controller: Controller):
     """
     Test that xyz files can be scaled successfully.
     """
     base_cell_length = 17.7128441229
     base_position = 15.40516331
     scale_factor = 0.05
-    data.scale_xyz(
+    controller.scale_xyz(
         file_xyz_in="cp2k_input/{}.xyz",
         file_xyz_out="tests_output/{}.xyz",
         n_config=1,
@@ -145,14 +166,14 @@ def test_scale_xyz(data: Data):
         assert position == pytest.approx((1 - scale_factor) * base_position)
 
 
-def test_scale_xyz_random(data: Data):
+def test_scale_xyz_random(controller: Controller):
     """
     Test that xyz files can be randomly scaled successfully.
     """
     base_cell_length = 17.7128441229
     base_position = 15.40516331
     scale_factor = 0.05
-    data.scale_xyz(
+    controller.scale_xyz(
         file_xyz_in="cp2k_input/{}.xyz",
         file_xyz_out="tests_output/{}.xyz",
         n_config=1,
@@ -175,7 +196,7 @@ def test_scale_xyz_random(data: Data):
         assert position > (1 - scale_factor) * base_position
 
 
-def test_write_cp2k(data: Data):
+def test_write_cp2k(controller: Controller):
     """
     Test that cp2k input and batch scripts are written to file.
     """
@@ -183,8 +204,8 @@ def test_write_cp2k(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_cp2k(
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
@@ -196,11 +217,11 @@ def test_write_cp2k(data: Data):
     )
 
     assert isfile("tests/data/tests_output/all.sh")
-    assert isfile("tests/data/tests_output/n_0.sh")
+    assert isfile("tests/data/tests_output/cp2k_cutoffNone_relcutoffNone.sh")
     assert isfile("tests/data/tests_output/n_0.inp")
 
 
-def test_write_cp2k_kwargs(data: Data):
+def test_write_cp2k_kwargs(controller: Controller):
     """
     Test that cp2k input and batch scripts are written to file with n_config, cutoff and
     relcutoff given.
@@ -209,8 +230,8 @@ def test_write_cp2k_kwargs(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_cp2k(
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
@@ -224,11 +245,11 @@ def test_write_cp2k_kwargs(data: Data):
     )
 
     assert isfile("tests/data/tests_output/all.sh")
-    assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.sh")
+    assert isfile("tests/data/tests_output/cp2k_cutoff60.0_relcutoff600.0.sh")
     assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp")
 
 
-def test_write_cp2k_kwargs_floats(data: Data):
+def test_write_cp2k_kwargs_floats(controller: Controller):
     """
     Test that cp2k input and batch scripts are written to file with n_config, cutoff and
     relcutoff given as floats.
@@ -237,8 +258,8 @@ def test_write_cp2k_kwargs_floats(data: Data):
     copy("tests/data/cp2k_input/template.inp", "tests/data/tests_output/template.inp")
     copy("tests/data/cp2k_input/template.sh", "tests/data/tests_output/template.sh")
 
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_cp2k(
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_cp2k(
         structure_name="test",
         basis_set="test",
         potential="test",
@@ -252,15 +273,17 @@ def test_write_cp2k_kwargs_floats(data: Data):
     )
 
     assert isfile("tests/data/tests_output/all.sh")
-    assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.sh")
+    assert isfile("tests/data/tests_output/cp2k_cutoff60.0_relcutoff600.0.sh")
     assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp")
 
 
-def test_data_print_cp2k_table(data: Data, capsys: pytest.CaptureFixture):
+def test_controller_print_cp2k_table(
+    controller: Controller, capsys: pytest.CaptureFixture
+):
     """
     Test that cp2k output summary table is printed correctly.
     """
-    data.print_cp2k_table(
+    controller.print_cp2k_table(
         file_output="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         n_config=1,
     )
@@ -273,11 +296,13 @@ def test_data_print_cp2k_table(data: Data, capsys: pytest.CaptureFixture):
     )
 
 
-def test_data_print_cp2k_table_kwargs(data: Data, capsys: pytest.CaptureFixture):
+def test_controller_print_cp2k_table_kwargs(
+    controller: Controller, capsys: pytest.CaptureFixture
+):
     """
     Test that cp2k output summary table is printed correctly with **kwargs.
     """
-    data.print_cp2k_table(
+    controller.print_cp2k_table(
         file_output="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         n_config=1,
         cutoff=(60.0,),
@@ -293,11 +318,15 @@ def test_data_print_cp2k_table_kwargs(data: Data, capsys: pytest.CaptureFixture)
     )
 
 
-def test_data_print_cp2k_table_no_total_time(data: Data, capsys: pytest.CaptureFixture):
+def test_controller_print_cp2k_table_no_total_time(
+    controller: Controller, capsys: pytest.CaptureFixture
+):
     """
     Test that cp2k output summary table is printed correctly when total_time cannot be set.
     """
-    data.print_cp2k_table(file_output="cp2k_output/no_timings_energy.log", n_config=1)
+    controller.print_cp2k_table(
+        file_output="cp2k_output/no_timings_energy.log", n_config=1
+    )
 
     assert (
         capsys.readouterr().out == "| Processes | Energy                | t/step (s) "
@@ -306,12 +335,12 @@ def test_data_print_cp2k_table_no_total_time(data: Data, capsys: pytest.CaptureF
     )
 
 
-def test_data_write_n2p2_data(data: Data):
+def test_controller_write_n2p2_data(controller: Controller):
     """
     Test that n2p2 data is written to file successfully.
     """
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.write_n2p2_data(
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
@@ -323,13 +352,13 @@ def test_data_write_n2p2_data(data: Data):
     assert isfile("tests/data/tests_output/input.data")
 
 
-def test_data_write_n2p2_data_wrong_name(data: Data):
+def test_controller_write_n2p2_data_wrong_name(controller: Controller):
     """
     Test that an error is raised when the incorrect name is provided.
     """
     structure_name = "not_test"
     with pytest.raises(ValueError) as e:
-        data.write_n2p2_data(
+        controller.write_n2p2_data(
             structure_name=structure_name,
             file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
             file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
@@ -341,13 +370,13 @@ def test_data_write_n2p2_data_wrong_name(data: Data):
     assert str(e.value) == "`structure_name` {} not recognized".format(structure_name)
 
 
-def test_data_write_n2p2_data_no_energy(data: Data):
+def test_controller_write_n2p2_data_no_energy(controller: Controller):
     """
     Test that an error is raised when energy missing from the log file.
     """
     file_cp2k_out = "cp2k_output/no_timings_energy.log"
     with pytest.raises(ValueError) as e:
-        data.write_n2p2_data(
+        controller.write_n2p2_data(
             structure_name="test",
             file_cp2k_out=file_cp2k_out,
             file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
@@ -359,12 +388,12 @@ def test_data_write_n2p2_data_no_energy(data: Data):
     assert str(e.value) == "Energy not found in {}".format(file_cp2k_out)
 
 
-def test_data_write_n2p2_data_units(data: Data):
+def test_controller_write_n2p2_data_units(controller: Controller):
     """
     Test that n2p2 data is written to file successfully with units provided.
     """
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.write_n2p2_data(
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
@@ -377,15 +406,15 @@ def test_data_write_n2p2_data_units(data: Data):
     assert isfile("tests/data/tests_output/input.data")
 
 
-def test_data_write_n2p2_data_appended(data: Data):
+def test_controller_write_n2p2_data_appended(controller: Controller):
     """
     Test that n2p2 data is appended to file without overwrite if output file already exists.
     """
-    data.n2p2_directories = ["tests/data/tests_output"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
     with open("tests/data/tests_output/input.data", "w") as f:
         f.write("test text\n")
 
-    data.write_n2p2_data(
+    controller.write_n2p2_data(
         structure_name="test",
         file_cp2k_out="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         file_cp2k_forces="cp2k_output/n_0_cutoff_600_relcutoff_60-forces-1_0.xyz",
@@ -400,11 +429,11 @@ def test_data_write_n2p2_data_appended(data: Data):
         assert f.readline() == "test text\n"
 
 
-def test_write_n2p2_nn(data: Data):
+def test_write_n2p2_nn(controller: Controller):
     """
     Test that n2p2 nn file is written successfully.
     """
-    data.write_n2p2_nn(
+    controller.write_n2p2_nn(
         r_cutoff=12.0,
         type="radial",
         rule="imbalzano2018",
@@ -417,13 +446,13 @@ def test_write_n2p2_nn(data: Data):
     assert isfile("tests/data/tests_output/input.nn")
 
 
-def test_write_n2p2_nn_append(data: Data):
+def test_write_n2p2_nn_append(controller: Controller):
     """
     Test that n2p2 nn file is appended to successfully.
     """
     with open("tests/data/tests_output/input.nn", "w") as f:
         f.write("test text\n")
-    data.write_n2p2_nn(
+    controller.write_n2p2_nn(
         r_cutoff=12.0,
         type="radial",
         rule="imbalzano2018",
@@ -439,13 +468,12 @@ def test_write_n2p2_nn_append(data: Data):
         assert f.readline() == "test text\n"
 
 
-def test_data_write_n2p2_scripts(data: Data):
+def test_controller_write_n2p2_scripts(controller: Controller):
     """
     Test that n2p2 scripts are written successfully.
     """
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_n2p2_scripts(
-        file_batch_template="../scripts/template.sh",
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_n2p2_scripts(
         file_prepare="n2p2_prune.sh",
         file_train="n2p2_train.sh",
     )
@@ -456,13 +484,12 @@ def test_data_write_n2p2_scripts(data: Data):
         assert "nnp-norm" not in f.read()
 
 
-def test_data_write_n2p2_scripts_norm(data: Data):
+def test_controller_write_n2p2_scripts_norm(controller: Controller):
     """
     Test that n2p2 scripts are written successfully with `normalise=True`.
     """
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_n2p2_scripts(
-        file_batch_template="../scripts/template.sh",
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_n2p2_scripts(
         file_prepare="n2p2_prune.sh",
         file_train="n2p2_train.sh",
         normalise=True,
@@ -474,50 +501,50 @@ def test_data_write_n2p2_scripts_norm(data: Data):
         assert "nnp-norm" in f.read()
 
 
-def test_data_write_lammps_data(data: Data):
+def test_controller_write_lammps_data(controller: Controller):
     """
     Test that LAMMPS data is written successfully.
     """
-    data.lammps_directory = "tests/data/tests_output"
-    data.write_lammps_data(
+    controller.lammps_directory = "tests/data/tests_output"
+    controller.write_lammps_data(
         file_xyz="cp2k_input/0.xyz",
     )
 
     assert isfile("tests/data/tests_output/lammps.data")
 
 
-def test_min_n_config(data: Data):
+def test_min_n_config(controller: Controller):
     """
     Test that the correct number is returned when `n_config` and `self.trajectory` are (not)
     `None`.
     """
-    assert data._min_n_config(n_provided=None) == 0
-    assert data._min_n_config(n_provided=1) == 1
+    assert controller._min_n_config(n_provided=None) == 0
+    assert controller._min_n_config(n_provided=1) == 1
 
-    data.read_trajectory(file_trajectory="trajectory.history")
+    controller.read_trajectory(file_trajectory="trajectory.history")
 
-    assert data._min_n_config(n_provided=None) == 2
-    assert data._min_n_config(n_provided=1) == 1
-    assert data._min_n_config(n_provided=3) == 2
+    assert controller._min_n_config(n_provided=None) == 2
+    assert controller._min_n_config(n_provided=1) == 1
+    assert controller._min_n_config(n_provided=3) == 2
 
 
-def test_choose_weights_multiple_arguments(data: Data):
+def test_choose_weights_multiple_arguments(controller: Controller):
     """
     Test that an error is raised when multiple arguments provided.
     """
     with pytest.raises(ValueError) as e:
-        data.choose_weights(epoch=0, minimum_criterion="RMSEpa_Etrain_pu")
+        controller.choose_weights(epoch=0, minimum_criterion="RMSEpa_Etrain_pu")
 
     assert str(e.value) == "Both `epoch` and `minimum_criterion` provided."
 
 
-def test_choose_weights_unknown_criterion(data: Data):
+def test_choose_weights_unknown_criterion(controller: Controller):
     """
     Test that an error is raised when an unrecognised criterion .
     """
     minimum_criterion = "unrecognisable"
     with pytest.raises(ValueError) as e:
-        data.choose_weights(minimum_criterion=minimum_criterion)
+        controller.choose_weights(minimum_criterion=minimum_criterion)
 
     assert str(e.value) == (
         "`minimum_criterion={}` not found in `learning-curve.out` headers: "
@@ -528,11 +555,11 @@ def test_choose_weights_unknown_criterion(data: Data):
     )
 
 
-def test_choose_weights_default(data: Data):
+def test_choose_weights_default(controller: Controller):
     """
     Test success for the default case (no arguments).
     """
-    data.choose_weights()
+    controller.choose_weights()
 
     assert isfile("tests/data/n2p2/weights.001.data")
     try:
@@ -542,11 +569,11 @@ def test_choose_weights_default(data: Data):
         remove("tests/data/n2p2/weights.001.data")
 
 
-def test_choose_weights_criterion(data: Data):
+def test_choose_weights_criterion(controller: Controller):
     """
     Test success for the `minimum_criterion` case.
     """
-    data.choose_weights(minimum_criterion="RMSEpa_Etest_pu")
+    controller.choose_weights(minimum_criterion="RMSEpa_Etest_pu")
 
     assert isfile("tests/data/n2p2/weights.001.data")
     try:
@@ -556,11 +583,11 @@ def test_choose_weights_criterion(data: Data):
         remove("tests/data/n2p2/weights.001.data")
 
 
-def test_choose_weights_epoch(data: Data):
+def test_choose_weights_epoch(controller: Controller):
     """
     Test success for the `epoch` case.
     """
-    data.choose_weights(epoch=10)
+    controller.choose_weights(epoch=10)
 
     assert isfile("tests/data/n2p2/weights.001.data")
     try:
@@ -590,7 +617,7 @@ def test_choose_weights_epoch(data: Data):
     ],
 )
 def test_reduce_dataset_outliers(
-    data: Data,
+    controller: Controller,
     energy_threshold: float,
     force_threshold: float,
     expected_removed_indicies: List[int],
@@ -603,8 +630,8 @@ def test_reduce_dataset_outliers(
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/output.data", "tests/data/tests_output/output.data")
-    data.n2p2_directories = ["tests/data/tests_output"]
-    removed_indices = data.reduce_dataset_outliers(
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    removed_indices = controller.reduce_dataset_outliers(
         energy_threshold=energy_threshold, force_threshold=force_threshold
     )
 
@@ -613,14 +640,14 @@ def test_reduce_dataset_outliers(
 
 
 def test_write_extrapolations_lammps_script(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
 ):
     """
     Test that the script is written to file successfully.
     """
-    data.scripts_directory = "tests/data/tests_output"
-    data.write_extrapolations_lammps_script(
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.write_extrapolations_lammps_script(
         file_batch_template="../scripts/template.sh",
         file_batch_out="lammps_extrapolations.sh",
     )
@@ -632,13 +659,13 @@ def test_write_extrapolations_lammps_script(
 
 
 def test_analyse_extrapolations(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
 ):
     """
     Test that the results of the extrapolations are read from file, and formatted as expected.
     """
-    timestep_data = data.analyse_extrapolations(temperatures=(340,))
+    timestep_data = controller.analyse_extrapolations(temperatures=(340,))
 
     assert timestep_data == {
         "nve": {340: 484, "mean": 484},
@@ -680,7 +707,7 @@ def test_analyse_extrapolations(
     ],
 )
 def test_reduce_dataset_min_separation(
-    data: Data,
+    controller: Controller,
     separation: float,
     expected_indices: List[int],
     stdout: str,
@@ -690,12 +717,12 @@ def test_reduce_dataset_min_separation(
     Test that frames are removed (or not) as expected based on the separation value.
     """
     copy("tests/data/n2p2/input.data", "tests/data/tests_output/input.data")
-    data.n2p2_directories = ["tests/data/tests_output"]
-    structure = list(data.all_structures.values())[0]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    structure = list(controller.all_structures.values())[0]
     for species in structure.all_species:
         species.min_separation = {"H": separation, "C": separation, "O": separation}
 
-    remove_indices = data.reduce_dataset_min_separation()
+    remove_indices = controller.reduce_dataset_min_separation()
 
     assert remove_indices == expected_indices
     assert capsys.readouterr().out == stdout
@@ -708,18 +735,18 @@ def test_reduce_dataset_min_separation(
 # QUANTUM ESPRESSO UNIT TESTS
 
 
-def test_prepare_qe(data: Data):
+def test_prepare_qe(controller: Controller):
     """
     Test that the input files and submission scripts are generated for QE in the correct
     locations.
     """
     copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
-    data.scripts_directory = "tests/data/tests_output"
-    data.prepare_qe(
+    controller.scripts_directory = "tests/data/tests_output"
+    controller.prepare_qe(
         qe_directory="tests_output",
         temperatures=[300],
         pressures=[1],
-        structure=data.all_structures["test"],
+        structure=controller.all_structures["test"],
         pseudos={"H": "H.pseudo"},
     )
     assert isdir("tests/data/tests_output/T300-p1-0")
@@ -730,14 +757,14 @@ def test_prepare_qe(data: Data):
 
 
 @pytest.mark.parametrize("mixing_beta", [0.25, 0.5, 0.75])
-def test_write_qe_input(data: Data, mixing_beta: float):
+def test_write_qe_input(controller: Controller, mixing_beta: float):
     """
     Test that providing kwargs results in the correct value in file.
     """
-    data.write_qe_input(
+    controller.write_qe_input(
         atoms=Atoms("H", cell=[1, 1, 1]),
         frame_directory="tests/data/tests_output",
-        structure=data.all_structures["test"],
+        structure=controller.all_structures["test"],
         pseudos={"H": "H.pseudo"},
         mixing_beta=mixing_beta,
     )
@@ -747,15 +774,15 @@ def test_write_qe_input(data: Data, mixing_beta: float):
         assert "mixing_beta      = {}".format(mixing_beta) in text
 
 
-def test_write_qe_input_error(data: Data):
+def test_write_qe_input_error(controller: Controller):
     """
     Test that an error is raised when an unrecognised kwarg is given.
     """
     with pytest.raises(ValueError) as e:
-        data.write_qe_input(
+        controller.write_qe_input(
             atoms=Atoms(),
             frame_directory="tests/data/tests_output",
-            structure=data.all_structures["test"],
+            structure=controller.all_structures["test"],
             pseudos={"H": "H.pseudo"},
             unrecognised="unrecognised",
         )
@@ -792,7 +819,7 @@ def test_write_qe_input_error(data: Data):
     )
 
 
-def test_write_n2p2_data_qe(data: Data):
+def test_write_n2p2_data_qe(controller: Controller):
     """
     Test that the output from QE can be read and formatted into an n2p2 "input.data" file.
     """
@@ -802,10 +829,10 @@ def test_write_n2p2_data_qe(data: Data):
         "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
     )
     copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.all_structures["test"].get_species("H").valence = 1
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.all_structures["test"].get_species("H").valence = 1
 
-    data.write_n2p2_data_qe(
+    controller.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],
         pressures=[1],
@@ -819,7 +846,7 @@ def test_write_n2p2_data_qe(data: Data):
         for line in lines[6:-3]:
             assert line.split()[-5] != "0.0"
 
-    data.write_n2p2_data_qe(
+    controller.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],
         pressures=[1],
@@ -834,20 +861,45 @@ def test_write_n2p2_data_qe(data: Data):
             assert line.split()[-5] != "0.0"
 
 
-def test_write_n2p2_data_qe_charge_default(data: Data):
+def test_write_n2p2_data_qe_selection(controller: Controller):
     """
-    Test that the output from QE can be read and formatted into an n2p2 "input.data" file,
-    but if charges are absent then 0 is assumed.
+    Test that no files are selected if they do not meet `selection` criteria.
     """
     copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
     mkdir("tests/data/tests_output/T300-p1-0")
     copy(
         "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
     )
-    data.n2p2_directories = ["tests/data/tests_output"]
+    copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.all_structures["test"].get_species("H").valence = 1
 
-    data.all_structures["test"].get_species("H").valence = 1
-    data.write_n2p2_data_qe(
+    with pytest.raises(OSError) as e:
+        controller.write_n2p2_data_qe(
+            structure_name="test",
+            temperatures=[300],
+            pressures=[1],
+            qe_directory="tests_output",
+            selection=(1, 1),
+        )
+
+    assert str(e.value) == "No files found."
+
+
+def test_write_n2p2_data_qe_charge_default(controller: Controller):
+    """
+    Test that the output from QE can be read and formatted into an n2p2 "input.data" file,
+    but if charges are absent or the valence is not set then 0 is assumed.
+    """
+    copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
+    mkdir("tests/data/tests_output/T300-p1-0")
+    copy(
+        "tests/data/qe/T300-p1-0/test.log", "tests/data/tests_output/T300-p1-0/test.log"
+    )
+    controller.n2p2_directories = ["tests/data/tests_output"]
+
+    controller.all_structures["test"].get_species("H").valence = 1
+    controller.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],
         pressures=[1],
@@ -861,7 +913,9 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
         for line in lines[6:-3]:
             assert float(line.split()[-5]) == 0
 
-    data.write_n2p2_data_qe(
+    copy("tests/data/qe/T300-p1-0/ACF.dat", "tests/data/tests_output/T300-p1-0/ACF.dat")
+    controller.all_structures["test"].get_species("H").valence = None
+    controller.write_n2p2_data_qe(
         structure_name="test",
         temperatures=[300],
         pressures=[1],
@@ -896,7 +950,10 @@ def test_write_n2p2_data_qe_charge_default(data: Data):
     ],
 )
 def test_write_n2p2_data_qe_warnings(
-    data: Data, remove_line: str, warning: str, capsys: pytest.CaptureFixture
+    controller: Controller,
+    remove_line: str,
+    warning: str,
+    capsys: pytest.CaptureFixture,
 ):
     """
     Test warnings are printed if log files are present, but missing energies or forces.
@@ -912,10 +969,10 @@ def test_write_n2p2_data_qe_warnings(
         for line in lines:
             if remove_line not in line:
                 f.write(line)
-    data.n2p2_directories = ["tests/data/tests_output"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
 
     with pytest.raises(OSError) as e:
-        data.write_n2p2_data_qe(
+        controller.write_n2p2_data_qe(
             structure_name="test",
             temperatures=[300],
             pressures=[1],
@@ -933,14 +990,16 @@ def test_write_n2p2_data_qe_warnings(
         ("test", "No files found."),
     ],
 )
-def test_write_n2p2_data_qe_errors(data: Data, structure_name: str, error: str):
+def test_write_n2p2_data_qe_errors(
+    controller: Controller, structure_name: str, error: str
+):
     """
     Test an error is raised if an invalid `structure_name` is provided,
     or if no filepaths can be found.
     """
     copy("tests/data/qe/test-T300-p1.xyz", "tests/data/tests_output/test-T300-p1.xyz")
     with pytest.raises(Exception) as e:
-        data.write_n2p2_data_qe(
+        controller.write_n2p2_data_qe(
             structure_name=structure_name,
             temperatures=[300],
             pressures=[1],
@@ -950,7 +1009,7 @@ def test_write_n2p2_data_qe_errors(data: Data, structure_name: str, error: str):
     assert str(e.value) == error
 
 
-def test_remove_n2p2_normalisation(data: Data):
+def test_remove_n2p2_normalisation(controller: Controller):
     """
     Test that the files are moved and removed correctly.
     """
@@ -962,9 +1021,9 @@ def test_remove_n2p2_normalisation(data: Data):
         f.write("Output file.")
     with open("tests/data/tests_output/evsv.dat", "w") as f:
         f.write("EVSV file.")
-    data.n2p2_directories = ["tests/data/tests_output"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
 
-    data.remove_n2p2_normalisation()
+    controller.remove_n2p2_normalisation()
 
     assert not isfile("tests/data/tests_output/input.nn.bak")
     assert not isfile("tests/data/tests_output/output.data")

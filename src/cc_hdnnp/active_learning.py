@@ -5,12 +5,12 @@ from shutil import copy, rmtree
 from typing import Dict, Iterable, List, Literal, Tuple, Union
 import warnings
 
-from ase.units import create_units
 import numpy as np
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.lammps_input import format_lammps_input
 from cc_hdnnp.structure import Structure
+from cc_hdnnp.units import UNITS
 from .dataset import Dataset, Frame
 from .file_readers import read_energies, read_forces, read_lammps_log, read_nn_settings
 
@@ -28,7 +28,7 @@ class ActiveLearning:
 
     Parameters
     ----------
-    data_controller : Data
+    data_controller : Controller
         Used for locations of relevant directories and storing Structure objects.
     integrators : str or list of str, optional
         Set (an array of) string(s) which defines the usage of the "nve", "nvt", and/or "npt"
@@ -107,7 +107,7 @@ class ActiveLearning:
 
     def __init__(
         self,
-        data_controller: Data,
+        data_controller: Controller,
         integrators: Union[str, List[str]] = "npt",
         pressures: Union[float, List[float]] = 1.0,
         N_steps: int = 200000,
@@ -440,7 +440,6 @@ class ActiveLearning:
         dump_command += "\n"
 
         # Create lammps input file
-        units = create_units("2014")
         format_lammps_input(
             formatted_file=f"{path}/input.lammps",
             masses=self.all_structures.mass_map_alphabetical,
@@ -451,7 +450,7 @@ class ActiveLearning:
             showew="yes",
             showewsum="0",
             maxew="750",
-            pair_coeff=self.runner_cutoff * units["Bohr"],
+            pair_coeff=self.runner_cutoff * UNITS["Bohr"],
             n_steps=self.N_steps,
             integrators=(integrator,),
             seed=seed,

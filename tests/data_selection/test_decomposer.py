@@ -11,17 +11,17 @@ from genericpath import isdir
 import numpy as np
 import pytest
 
-from cc_hdnnp.data import Data
+from cc_hdnnp.controller import Controller
 from cc_hdnnp.data_selection import Decomposer
 from cc_hdnnp.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture
-def data():
+def controller():
     species = Species(symbol="H", atomic_number=1, mass=1.0)
     structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
 
-    yield Data(
+    yield Controller(
         structures=AllStructures(structure),
         main_directory="tests/data",
         n2p2_bin="",
@@ -41,7 +41,7 @@ def data():
 @pytest.mark.parametrize("weight", [True, False])
 @pytest.mark.parametrize("verbosity", [0, 1, 2])
 def test_decompose_dataset_symf(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
     weight: bool,
     n_to_select_list: List[int],
@@ -62,10 +62,10 @@ def test_decompose_dataset_symf(
             "symfunction_short H 9 H H 1.0 1 1.0 1.0 1.0\n"
         )
 
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = ["H"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = ["H"]
 
-    decomposer = Decomposer(data_controller=data, verbosity=verbosity)
+    decomposer = Decomposer(data_controller=controller, verbosity=verbosity)
     decomposer.run_CUR_symf(weight=weight, n_to_select_list=n_to_select_list)
 
     assert list(decomposer._atom_environments.keys()) == ["H"]
@@ -118,7 +118,7 @@ def test_decompose_dataset_symf(
 
 
 def test_decompose_dataset_data(
-    data: Data,
+    controller: Controller,
     capsys: pytest.CaptureFixture,
 ):
     """
@@ -128,10 +128,10 @@ def test_decompose_dataset_data(
     copy("tests/data/n2p2/input.data.CUR", "tests/data/tests_output/input.data")
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
-    data.n2p2_directories = ["tests/data/tests_output"]
-    data.elements = ["H"]
+    controller.n2p2_directories = ["tests/data/tests_output"]
+    controller.elements = ["H"]
 
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     decomposer.run_CUR_data()
 
     assert list(decomposer._atom_environments.keys()) == ["H"]
@@ -182,14 +182,14 @@ def test_decompose_dataset_data(
     ],
 )
 def test_validate_n_to_select(
-    data: Data,
+    controller: Controller,
     n_to_select_list: List[int],
     error: str,
 ):
     """
     Test ValueErrors are raised if `n_to_select_list` is greater than `n_total` or less than 0.
     """
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     with pytest.raises(ValueError) as e:
         decomposer._validate_n_to_select(
             n_to_select_list=n_to_select_list,
@@ -202,7 +202,7 @@ def test_validate_n_to_select(
 
 
 def test_calculate_symf_weights_unrecognised(
-    data: Data,
+    controller: Controller,
 ):
     """
     Test ValueError raised if symmetry functions are unrecognised.
@@ -218,7 +218,7 @@ def test_calculate_symf_weights_unrecognised(
     with open("tests/data/tests_output/input.nn", "a") as f:
         f.write("symfunction_short H 0 H 1.0 1.0 1.0\n")
 
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     with pytest.raises(ValueError) as e:
         decomposer._calculate_symf_weights(
             file_data=file_data,
@@ -251,7 +251,7 @@ def test_calculate_symf_weights_unrecognised(
     ],
 )
 def test_calculate_symf_weights_errors(
-    data: Data,
+    controller: Controller,
     text: str,
     error: str,
 ):
@@ -269,7 +269,7 @@ def test_calculate_symf_weights_errors(
     with open("tests/data/tests_output/input.nn", "a") as f:
         f.write(text)
 
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     with pytest.raises(ValueError) as e:
         decomposer._calculate_symf_weights(
             file_data=file_data,
@@ -281,7 +281,7 @@ def test_calculate_symf_weights_errors(
 
 
 def test_n_frames_error(
-    data: Data,
+    controller: Controller,
 ):
     """
     Test ValueError raised if atom environments have different numbers of frames.
@@ -290,7 +290,7 @@ def test_n_frames_error(
 
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     decomposer._atom_environments = {"H": np.zeros(1), "He": np.zeros(0)}
     with pytest.raises(ValueError) as e:
         decomposer.n_frames
@@ -299,7 +299,7 @@ def test_n_frames_error(
 
 
 def test_run_k1_CUR_error(
-    data: Data,
+    controller: Controller,
 ):
     """
     Test ValueError raised if there's a non-finite entry in `environments_r2`.
@@ -310,7 +310,7 @@ def test_run_k1_CUR_error(
 
     copy("tests/data/n2p2/atomic-env.G", "tests/data/tests_output/atomic-env.G")
 
-    decomposer = Decomposer(data_controller=data)
+    decomposer = Decomposer(data_controller=controller)
     with pytest.raises(ValueError) as e:
         decomposer._run_k1_CUR(
             environments_r2=np.array([[np.inf]]), n_to_select=1, weights=None
