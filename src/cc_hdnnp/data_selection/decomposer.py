@@ -18,15 +18,12 @@ from .dataselector import DataSelector
 
 class Decomposer(DataSelector):
     """
-    Performs k=1 CUR decomposition in the manner described by Imbalzano
-    TODO: proper citations and references
+    Performs k=1 CUR decomposition in the manner described by Imbalzano et al. in
+    https://arxiv.org/abs/1804.02150
 
     Parameters
     ----------
-    atoms_per_frame: int,
-        The number of atoms present in each frame, needed to read the atomic environment data
-        from file.
-    data_controller: Data,
+    data_controller: Controller
         Controller object used to get the n2p2 directory to work from, and elements present.
     n2p2_directory_index: int = 0,
         Used in conjunction with `data_controller` to get the n2p2 directory to work from.

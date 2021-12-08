@@ -77,18 +77,7 @@
        &end center_coordinates
        MULTIPLE_UNIT_CELL 1 1 1
     &end topology
-    &KIND C
-      BASIS_SET DZVP-MOLOPT-SR-GTH-q4
-      POTENTIAL GTH-HCTH407-q4
-    &END
-    &KIND H
-      BASIS_SET DZVP-MOLOPT-SR-GTH-q1
-      POTENTIAL GTH-HCTH407-q1
-    &END
-    &KIND O
-      BASIS_SET DZVP-MOLOPT-SR-GTH-q6
-      POTENTIAL GTH-HCTH407-q6
-    &END
+{pseudos_text}
     &PRINT
       &KINDS
         BASIS_SET

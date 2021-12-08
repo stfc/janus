@@ -373,8 +373,10 @@ class Controller:
     def write_cp2k(
         self,
         structure_name: str,
-        basis_set: str,
-        potential: str,
+        basis_set_directory: str,
+        potential_directory: str,
+        basis_set_dict: Dict[str, str],
+        potential_dict: Dict[str, str],
         file_bash: str = "all.sh",
         file_batch: str = "{}.sh",
         file_input: str = "cp2k_input/{}.inp",
@@ -383,7 +385,6 @@ class Controller:
         **kwargs,
     ) -> str:
         """
-        TODO
         Writes .inp files and batch scripts for running cp2k from `n_config`
         .xyz files. Can set supported settings using `**kwargs`, in which case
         template file(s) will be formatted to contain the values provided. Note
@@ -397,10 +398,16 @@ class Controller:
         structure_name : str
             Name of the structure, used as part of the CP2K project name which in turn
             determines file names.
-        basis_set : str
+        basis_set_directory : str
             Filepath to the CP2K basis set to use.
-        potential : str
+        potential_directory : str
             Filepath to the CP2K potential to use.
+        basis_set_dict: Dict[str, str]
+            Keys are chemical symbol of the element, values are the files within the
+            `basis_set_directory` to use.
+        potential_dict: Dict[str, str]
+            Keys are chemical symbol of the element, values are the files within the
+            `potential_directory` to use.
         file_bash : str, optional
             File name to write a utility script which submits all of the batch
             scripts created by this function. Default is 'all.sh'.
@@ -450,26 +457,21 @@ class Controller:
         -------
         str
             Command to run `file_bash`, which in turn will submit all batch scripts.
-
-        Examples
-        --------
-        To write 100 cp2k input files with specific values for `cutoff` and
-        `relcutoff`:
-            >>> from data import Data
-            >>> d = Data('path/to/example_directory')
-            >>> d.write_cp2k(n_config=100, cutoff=(600,), relcutoff=(60,))
-
-        To create a "grid" of 20 input files with varying `cutoff` and
-        `relcutoff` but for a single frame:
-            >>> d.write_cp2k(n_config=1,
-                            cutoff=(400, 500, 600, 700, 800),
-                            relcutoff=(40, 50, 60, 70))
         """
         # Read the template for the CP2K file
         with open(
             join_paths(self.main_directory, file_input.format("template"))
         ) as f_template:
             input_template = f_template.read()
+
+        pseudos_text = ""
+        for e in self.elements:
+            pseudos_text += (
+                f"    &KIND {e}\n"
+                f"      BASIS_SET {basis_set_dict[e]}\n"
+                f"      POTENTIAL {potential_dict[e]}\n"
+                "    &END\n"
+            )
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
@@ -515,8 +517,9 @@ class Controller:
                             input_template.format(
                                 file_id=file_id,
                                 structure_name=structure_name,
-                                basis_set=basis_set,
-                                potential=potential,
+                                basis_set=basis_set_directory,
+                                potential=potential_directory,
+                                pseudos_text=pseudos_text,
                                 cell_x=cell_x,
                                 cell_y=cell_y,
                                 cell_z=cell_z,
@@ -815,17 +818,6 @@ class Controller:
             Each should be a tuple containing one or more values:
               - cutoff: tuple of float
               - relcutoff: tuple of float
-
-        Examples
-        --------
-        >>> from data import Data
-        >>> d = Data('path/to/example_directory')
-        >>> d.print_cp2k_table(file_output='cutoff/cp2k_output/{}.log',
-                               n_config=1,
-                               cutoff=(400, 500, 600, 700, 800, 900, 1000,
-                                       1100, 1200, 1300, 1400, 1500, 1600,
-                                       1700, 1800, 1900, 2000, 2100, 2200,
-                                       2300, 2400))
         """
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
@@ -1309,30 +1301,7 @@ class Controller:
             it is appended to with the new symmetry functions. If it does not,
             then it is created and the text from `file_nn_template` is written to
             it before the symmetry functions are written. Default is
-            'n2p2/input.nn'..
-
-        Examples
-        --------
-        To write multiple sets of symmetry functions to the same file:
-            >>> from data import Data
-            >>> d = Data('path/to/example_directory')
-            >>> d.write_n2p2_nn(r_cutoff=12.0,
-                                type='radial',
-                                rule='imbalzano2018',
-                                mode='center',
-                                n_pairs=10)
-            >>> d.write_n2p2_nn(r_cutoff=12.0,
-                                type='angular_narrow',
-                                rule='imbalzano2018',
-                                mode='center',
-                                n_pairs=10,
-                                zetas=[1, 4])
-            >>> d.write_n2p2_nn(r_cutoff=12.0,
-                                type='angular_wide',
-                                rule='imbalzano2018',
-                                mode='center',
-                                n_pairs=10,
-                                zetas=[1, 4])
+            'n2p2/input.nn'.
         """
         if zetas is None:
             zetas = []
@@ -1451,7 +1420,7 @@ class Controller:
             nodes=nodes,
         )
 
-        return f"sbatch {file_prepare}\nsbatch {file_train}"
+        return f"sbatch {file_prepare}; sbatch {file_train}"
 
     def write_lammps_data(
         self,
@@ -1754,7 +1723,6 @@ class Controller:
         ensembles: Iterable[str] = ("nve",),
         temperatures: Iterable[int] = (300,),
         n_steps: Iterable[str] = (10000,),
-        file_batch_template: str = "template.sh",
         file_batch_out: str = "lammps_extrapolations.sh",
     ):
         """
@@ -1778,36 +1746,14 @@ class Controller:
             Contains the number of timesteps to run simulations for. Each is applied in
             turn, and each entry should correspond to an entry in `ensembles` and `tempertures`
             as well. Default is (10000,).
-        file_batch_template: str, optional
-            File location of template to use for batch scripts relative to
-            `scripts_sub_directory`. Default is 'template.sh'.
         file_batch_out: str, optional
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
         """
-        with open(join_paths(self.scripts_directory, file_batch_template)) as f:
-            batch_template_text = f.read()
-
-        # Format SBATCH variables
-        format_dict = {
-            "job_name": "active_learning_NN",
-            "nodes": 1,
-            "job_array": "",
-        }
-        output_text = batch_template_text.format(**format_dict)
-
-        # Setup
-        output_text += "\nln -s {0} {1}/nnp".format(
-            self.n2p2_directories[n2p2_directory_index], self.lammps_directory
-        )
-        output_text += f"\ncd {self.lammps_directory}"
-
-        # for ensemble in ensembles:
         file_id = ""
         for i, ensemble in enumerate(ensembles):
             file_id += f"-{ensemble}_t{temperatures[i]}"
-        output_text += "\nmpirun -np ${SLURM_NTASKS} "
-        output_text += f"{self.lammps_executable} -in md{file_id}.lmp > md{file_id}.log"
+
         # Create lammps input file
         format_lammps_input(
             formatted_file=f"{self.lammps_directory}/md{file_id}.lmp",
@@ -1819,15 +1765,21 @@ class Controller:
             temps=temperatures,
         )
 
-        output_text += "\nrm nnp"
+        commands = [
+            f"ln -s {self.n2p2_directories[n2p2_directory_index]} {self.lammps_directory}/nnp",
+            f"\ncd {self.lammps_directory}",
+            (
+                "mpirun -np ${SLURM_NTASKS} "
+                f"{self.lammps_executable} -in md{file_id}.lmp > md{file_id}.log"
+            ),
+            "rm nnp",
+        ]
 
-        with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
-            f.write(output_text)
-            print(
-                "Batch script written to {}".format(
-                    join_paths(self.scripts_directory, file_batch_out)
-                )
-            )
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_batch_out),
+            commands=commands,
+            job_name="LAMMPS_extrapolations",
+        )
 
     def analyse_extrapolations(
         self,

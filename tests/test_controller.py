@@ -207,8 +207,10 @@ def test_write_cp2k(controller: Controller):
     controller.scripts_directory = "tests/data/tests_output"
     controller.write_cp2k(
         structure_name="test",
-        basis_set="test",
-        potential="test",
+        basis_set_directory="test",
+        potential_directory="test",
+        basis_set_dict={"H": "test_basis"},
+        potential_dict={"H": "test_potential"},
         file_bash="all.sh",
         file_batch="{}.sh",
         file_input="tests_output/{}.inp",
@@ -219,6 +221,12 @@ def test_write_cp2k(controller: Controller):
     assert isfile("tests/data/tests_output/all.sh")
     assert isfile("tests/data/tests_output/cp2k_cutoffNone_relcutoffNone.sh")
     assert isfile("tests/data/tests_output/n_0.inp")
+
+    with open("tests/data/tests_output/n_0.inp") as f:
+        text = f.read()
+    assert "&KIND H" in text
+    assert "BASIS_SET test_basis" in text
+    assert "POTENTIAL test_potential" in text
 
 
 def test_write_cp2k_kwargs(controller: Controller):
@@ -233,8 +241,10 @@ def test_write_cp2k_kwargs(controller: Controller):
     controller.scripts_directory = "tests/data/tests_output"
     controller.write_cp2k(
         structure_name="test",
-        basis_set="test",
-        potential="test",
+        basis_set_directory="test",
+        potential_directory="test",
+        basis_set_dict={"H": "test_basis"},
+        potential_dict={"H": "test_potential"},
         file_bash="all.sh",
         file_batch="{}.sh",
         file_input="tests_output/{}.inp",
@@ -247,6 +257,12 @@ def test_write_cp2k_kwargs(controller: Controller):
     assert isfile("tests/data/tests_output/all.sh")
     assert isfile("tests/data/tests_output/cp2k_cutoff60.0_relcutoff600.0.sh")
     assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp")
+
+    with open("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp") as f:
+        text = f.read()
+    assert "&KIND H" in text
+    assert "BASIS_SET test_basis" in text
+    assert "POTENTIAL test_potential" in text
 
 
 def test_write_cp2k_kwargs_floats(controller: Controller):
@@ -261,8 +277,10 @@ def test_write_cp2k_kwargs_floats(controller: Controller):
     controller.scripts_directory = "tests/data/tests_output"
     controller.write_cp2k(
         structure_name="test",
-        basis_set="test",
-        potential="test",
+        basis_set_directory="test",
+        potential_directory="test",
+        basis_set_dict={"H": "test_basis"},
+        potential_dict={"H": "test_potential"},
         file_bash="all.sh",
         file_batch="{}.sh",
         file_input="tests_output/{}.inp",
@@ -275,6 +293,12 @@ def test_write_cp2k_kwargs_floats(controller: Controller):
     assert isfile("tests/data/tests_output/all.sh")
     assert isfile("tests/data/tests_output/cp2k_cutoff60.0_relcutoff600.0.sh")
     assert isfile("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp")
+
+    with open("tests/data/tests_output/n_0_cutoff_60.0_relcutoff_600.0.inp") as f:
+        text = f.read()
+    assert "&KIND H" in text
+    assert "BASIS_SET test_basis" in text
+    assert "POTENTIAL test_potential" in text
 
 
 def test_controller_print_cp2k_table(
@@ -648,13 +672,9 @@ def test_write_extrapolations_lammps_script(
     """
     controller.scripts_directory = "tests/data/tests_output"
     controller.write_extrapolations_lammps_script(
-        file_batch_template="../scripts/template.sh",
         file_batch_out="lammps_extrapolations.sh",
     )
 
-    assert capsys.readouterr().out == (
-        "Batch script written to tests/data/tests_output/lammps_extrapolations.sh\n"
-    )
     assert isfile("tests/data/tests_output/lammps_extrapolations.sh")
 
 

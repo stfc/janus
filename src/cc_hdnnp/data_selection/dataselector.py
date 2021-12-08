@@ -20,7 +20,7 @@ class DataSelector:
 
     Parameters
     ----------
-    data_controller: Data,
+    data_controller: Controller
         Controller object used to get the n2p2 directory to work from, and elements present.
     n2p2_directory_index: int = 0,
         Used in conjunction with `data_controller` to get the n2p2 directory to work from.
