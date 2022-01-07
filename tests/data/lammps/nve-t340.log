@@ -59,7 +59,7 @@ Please cite the following papers when publishing results obtained with n²p²:
 
 *** SETUP: SETTINGS FILE ******************************************************
 
-Settings file name: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/input.nn
+Settings file name:
 Read 1128 lines.
 Found 852 lines with keywords.
 This settings file defines a short-range only NNP.
@@ -2687,7 +2687,7 @@ Scaling type::ST_SCALESIGMA (4)
 Gs = Smin + (Smax - Smin) * (G - Gmean) / Gsigma
 Smin = 0.000000
 Smax = 1.000000
-Symmetry function scaling statistics from file: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/scaling.data
+Symmetry function scaling statistics from file:
 -------------------------------------------------------------------------------
 
 Abbreviations:
@@ -3527,10 +3527,10 @@ Halt on any extrapolation warning                 : 0
 
 *** SETUP: NEURAL NETWORK WEIGHTS *********************************************
 
-Short  NN weight file name format: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/weights.%03d.data
-Setting short  NN weights for element  H from file: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/weights.001.data
-Setting short  NN weights for element  C from file: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/weights.006.data
-Setting short  NN weights for element  O from file: /home/vol00/scarf860/cc_placement/CC_HDNNP/examples/m_cresol/nvt_frames/lammps/nnp/weights.008.data
+Short  NN weight file name format:
+Setting short  NN weights for element  H from file:
+Setting short  NN weights for element  C from file:
+Setting short  NN weights for element  O from file:
 *******************************************************************************
 
 *** SETUP: LAMMPS INTERFACE ***************************************************

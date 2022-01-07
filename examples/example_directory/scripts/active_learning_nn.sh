@@ -8,13 +8,11 @@
 #SBATCH --array=1-1000
 #SBATCH --account=scddevel  
 
-# TODO remove hardcoding
-nn_exe='/home/vol00/scarf860/cc_placement/n2p2/bin'
+nn_exe='~/n2p2/bin'
 
 mkdir ../active_learning/mode2
 mkdir ../active_learning/mode2/HDNNP_1 ../active_learning/mode2/HDNNP_2
 
-# TODO remove hardcoding
 cp ../n2p2_1/input.nn ../active_learning/mode2/HDNNP_1/input.nn
 cp ../n2p2_2/input.nn ../active_learning/mode2/HDNNP_2/input.nn
 
@@ -52,7 +50,3 @@ cd ../..
 wait
 
 rm mode2/HDNNP_*/000000.short.*.out mode2/HDNNP_*/debug.out mode2/HDNNP_*/function.data mode2/HDNNP_*/testforces.000000.out mode2/HDNNP_*/testforces.data mode2/HDNNP_*/testing.data mode2/HDNNP_*/testpoints.000000.out mode2/HDNNP_*/teststruct.data mode2/HDNNP_*/trainforces.data mode2/HDNNP_*/trainstruct.data
-
-####################################################################################################
-
-####################################################################################################

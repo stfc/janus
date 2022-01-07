@@ -1748,7 +1748,7 @@ class Controller:
             as well. Default is (10000,).
         file_batch_out: str, optional
             File location to write the batch script to relative to
-            `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
+            `scripts_sub_directory`. Default is 'lammps_extrapolations.sh'.
         """
         file_id = ""
         for i, ensemble in enumerate(ensembles):

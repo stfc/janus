@@ -665,12 +665,12 @@ def test_reduce_dataset_outliers(
 
 def test_write_extrapolations_lammps_script(
     controller: Controller,
-    capsys: pytest.CaptureFixture,
 ):
     """
     Test that the script is written to file successfully.
     """
     controller.scripts_directory = "tests/data/tests_output"
+    controller.lammps_directory = "tests/data/tests_output"
     controller.write_extrapolations_lammps_script(
         file_batch_out="lammps_extrapolations.sh",
     )

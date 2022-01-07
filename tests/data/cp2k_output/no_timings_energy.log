@@ -44,11 +44,9 @@ cpu-bind=MASK - cn855, task 20 20 [230541]: mask 0x400000400 set
 
   **** **** ******  **  PROGRAM STARTED AT               2021-08-02 16:37:06.700
  ***** ** ***  *** **   PROGRAM STARTED ON                  cn855.scarf.rl.ac.uk
- **    ****   ******    PROGRAM STARTED BY                              scarf860
+ **    ****   ******    PROGRAM STARTED BY                              
  ***** **    ** ** **   PROGRAM PROCESS ID                                230521
-  **** **  *******  **  PROGRAM STARTED IN /home/vol00/scarf860/cc_placement/CC_
-                                           HDNNP/examples/m_cresol/all_frames/sc
-                                           ripts
+  **** **  *******  **  PROGRAM STARTED IN
 
  CP2K| version string:                                          CP2K version 8.1
  CP2K| source code revision number:                                  git:0b61f2f
@@ -61,8 +59,8 @@ cpu-bind=MASK - cn855, task 20 20 [230541]: mask 0x400000400 set
  CP2K| Input file name        ../cp2k_input/cresol_n_0_cutoff_600_relcutoff_60.i
 
  GLOBAL| Force Environment number                                              1
- GLOBAL| Basis set file name            /home/vol00/scarf860/cc_placement/cp2k/d
- GLOBAL| Potential file name            /home/vol00/scarf860/cc_placement/cp2k/d
+ GLOBAL| Basis set file name
+ GLOBAL| Potential file name
  GLOBAL| MM Potential file name                                     MM_POTENTIAL
  GLOBAL| Coordinate file name                       ../active_learning/xyz/0.xyz
  GLOBAL| Method name                                                        CP2K
@@ -2954,8 +2952,6 @@ LINE REMOVED FOR TESTING
  -------------------------------------------------------------------------------
   **** **** ******  **  PROGRAM ENDED AT                 2021-08-02 16:42:34.608
  ***** ** ***  *** **   PROGRAM RAN ON                      cn855.scarf.rl.ac.uk
- **    ****   ******    PROGRAM RAN BY                                  scarf860
+ **    ****   ******    PROGRAM RAN BY
  ***** **    ** ** **   PROGRAM PROCESS ID                                230521
-  **** **  *******  **  PROGRAM STOPPED IN /home/vol00/scarf860/cc_placement/CC_
-                                           HDNNP/examples/m_cresol/all_frames/sc
-                                           ripts
+  **** **  *******  **  PROGRAM STOPPED IN

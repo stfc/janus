@@ -17,14 +17,10 @@ module load foss/2020a
 
 dir=$(date '+%Y%m%d_%H%M%S_%N')
 mkdir -p /scratch/${whoami}/${dir}
-rsync -a ${SLURM_SUBMIT_DIR}/../active_learning/mode1/${path}/* /scratch/scarf860/${dir}/
+rsync -a ${SLURM_SUBMIT_DIR}/../active_learning/mode1/${path}/* /scratch/$USER/${dir}/
 cd /scratch/${whoami}/${dir}
 
-# TODO remove hardcoding
-mpirun -np ${SLURM_NTASKS} /home/vol00/scarf860/cc_placement/lammps/build/lmp_mpi -in input.lammps -screen none
-
-# TODO move cleanup to a seperate sh script?
-# ${SLURM_SUBMIT_DIR}/RuNNerActiveLearn.py 1a
+mpirun -np ${SLURM_NTASKS} ~/lammps/build/lmp_mpi -in input.lammps -screen none
 
 rm -r /scratch/${whoami}/${dir}/RuNNer
 rsync -a /scratch/${whoami}/${dir}/* ${SLURM_SUBMIT_DIR}/../active_learning/mode1/${path}/
