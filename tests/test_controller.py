@@ -38,8 +38,8 @@ def controller():
 @pytest.mark.parametrize("input, output", [(None, []), (["not_None"], ["not_None"])])
 def test_controller_init_module_commands(input: List[str], output: List[str]):
     """
-    Test that the values for `cp2k_module_commands` and `qe_module_commands` can be set
-    and default to empty lists correctly.
+    Test that the values for `n2p2_module_commands`, `cp2k_module_commands` and
+    `qe_module_commands` can be set and default to empty lists correctly.
     """
     species = Species(symbol="H", atomic_number=1, mass=1.0)
     structure = Structure(name="test", all_species=[species], delta_E=1.0, delta_F=1.0)
@@ -48,10 +48,12 @@ def test_controller_init_module_commands(input: List[str], output: List[str]):
         main_directory="tests/data",
         n2p2_bin="",
         lammps_executable="",
+        n2p2_module_commands=input,
         cp2k_module_commands=input,
         qe_module_commands=input,
     )
 
+    assert controller.n2p2_module_commands == output
     assert controller.cp2k_module_commands == output
     assert controller.qe_module_commands == output
 
@@ -308,6 +310,7 @@ def test_controller_print_cp2k_table(
     Test that cp2k output summary table is printed correctly.
     """
     controller.print_cp2k_table(
+        structure_name="test",
         file_output="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         n_config=1,
     )
@@ -327,6 +330,7 @@ def test_controller_print_cp2k_table_kwargs(
     Test that cp2k output summary table is printed correctly with **kwargs.
     """
     controller.print_cp2k_table(
+        structure_name="test",
         file_output="cp2k_output/n_0_cutoff_600_relcutoff_60.log",
         n_config=1,
         cutoff=(60.0,),
@@ -349,7 +353,9 @@ def test_controller_print_cp2k_table_no_total_time(
     Test that cp2k output summary table is printed correctly when total_time cannot be set.
     """
     controller.print_cp2k_table(
-        file_output="cp2k_output/no_timings_energy.log", n_config=1
+        structure_name="test",
+        file_output="cp2k_output/no_timings_energy.log",
+        n_config=1,
     )
 
     assert (
@@ -685,7 +691,9 @@ def test_analyse_extrapolations(
     """
     Test that the results of the extrapolations are read from file, and formatted as expected.
     """
-    timestep_data = controller.analyse_extrapolations(temperatures=(340,))
+    timestep_data = controller.analyse_extrapolations(
+        log_file="{ensemble}-t{t}.log", temperatures=(340,)
+    )
 
     assert timestep_data == {
         "nve": {340: 484, "mean": 484},

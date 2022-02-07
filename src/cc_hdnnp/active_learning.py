@@ -15,8 +15,7 @@ from .dataset import Dataset, Frame
 from .file_readers import read_energies, read_forces, read_lammps_log, read_nn_settings
 
 
-LAMMPS_COMMANDS = """
-variable thermo equal 0
+LAMMPS_COMMANDS = """variable thermo equal 0
 thermo_style custom v_thermo step time temp epair etotal fmax fnorm press cella cellb cellc cellalpha cellbeta cellgamma density
 thermo_modify format line "thermo %8d %10.4f %8.3f %15.5f %15.5f %9.4f %9.4f %9.2f %9.5f %9.5f %9.5f %9.5f %9.5f %9.5f %8.5f"
 """  # noqa: E501
@@ -400,7 +399,13 @@ class ActiveLearning:
         return dataset
 
     def _write_input_lammps(
-        self, path: str, seed: int, temperature: int, pressure: float, integrator: str
+        self,
+        path: str,
+        seed: int,
+        temperature: int,
+        pressure: float,
+        integrator: str,
+        is_orthorhombic: bool = True,
     ):
         """
         Prepares an input file for LAMMPS using provided arguments.
@@ -417,9 +422,14 @@ class ActiveLearning:
             Pressure of the simulation in bar.
         integrator : {"nve", "nvt", "npt"}
             String to set the integrator.
+        is_orthorhombic : bool = True
+            Whether the cell of the accompanying data file is orthorhombic or not.
         """
         # Create dump command for appropriate atom_style and periodicity
-        dump_command = "dump lammpstrj all custom 1 structure.lammpstrj id element"
+        dump_command = (
+            LAMMPS_COMMANDS
+            + "\ndump lammpstrj all custom 1 structure.lammpstrj id element"
+        )
 
         if self.periodic:
             dump_command += " x y z"
@@ -439,7 +449,16 @@ class ActiveLearning:
         dump_command += " ".join(self.all_structures.element_list_alphabetical)
         dump_command += "\n"
 
+        npt_other = "fixedpoint 0.0 0.0 0.0"
+        if is_orthorhombic and self.barostat_option == "tri":
+            # LAMMPS can't run triclinic with an orthorhombic cell
+            barostat = "iso"
+        else:
+            barostat = self.barostat_option
+
         # Create lammps input file
+        # LAMMPS will fail if `pair_coeff` is lower than `self.runner_cutoff`,
+        # use `np.ceil` to avoid rounding errors at 3 s.f.
         format_lammps_input(
             formatted_file=f"{path}/input.lammps",
             masses=self.all_structures.mass_map_alphabetical,
@@ -447,19 +466,20 @@ class ActiveLearning:
             atom_style=self.atom_style,
             read_data="structure.lammps",
             timestep=self.timestep,
+            nnp_dir="RuNNer",
             showew="yes",
             showewsum="0",
             maxew="750",
-            pair_coeff=self.runner_cutoff * UNITS["Bohr"],
+            pair_coeff=np.ceil(self.runner_cutoff * UNITS["Bohr"] * 1000) / 1000,
             n_steps=self.N_steps,
             integrators=(integrator,),
             seed=seed,
             temps=(temperature,),
             tdamp=self.timestep * 100,
-            barostat=self.barostat_option,
+            barostat=barostat,
             pressure=pressure,
             pdamp=self.timestep * 1000,
-            npt_other="fixedpoint 0.0 0.0 0.0",
+            npt_other=npt_other,
             dump_commands=dump_command,
         )
 
@@ -492,10 +512,12 @@ class ActiveLearning:
             atom_style=self.atom_style,
         )
 
-    def write_lammps(self, temperatures: Iterable[int], seed: int = 1):
+    def write_lammps(self, temperatures: Iterable[int], seed: int = 1, **kwargs):
         """
         Generates the mode1 directory and  LAMMPS files needed to run simulations using the
         two networks.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
 
         Parameters
         ----------
@@ -503,7 +525,18 @@ class ActiveLearning:
             Range of temperature values (in Kelvin) to run simulations at.
         seed : int, optional
             Seed used in the LAMMPS simulations. Is incremented by 1 for each value in
-            `temperatures` and `self.pressures`. Default is `1`.
+            `temperatures` and `self.pressures`. Default is 1.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
         mode1_directory = self.active_learning_directory + "/mode1"
         if isdir(mode1_directory):
@@ -642,7 +675,12 @@ class ActiveLearning:
                                     )
                                 mkdir(mode1_path)
                                 self._write_input_lammps(
-                                    mode1_path, seed, temperature, pressure, integrator
+                                    mode1_path,
+                                    seed,
+                                    temperature,
+                                    pressure,
+                                    integrator,
+                                    is_orthorhombic=dataset[selection].is_orthorhombic,
                                 )
                                 self._write_structure_lammps(
                                     path=mode1_path,
@@ -715,7 +753,8 @@ class ActiveLearning:
             print("Input was generated for {0} simulations.".format(n_simulations))
 
         self.data_controller._write_active_learning_lammps_script(
-            n_simulations=n_simulations
+            n_simulations=n_simulations,
+            **kwargs,
         )
 
     def _read_lammpstrj(
@@ -2450,17 +2489,28 @@ class ActiveLearning:
                     for v in val:
                         f.write("{0} {1}\n".format(s, v))
 
-    def prepare_data_new(self, nn_nodes: int = 1):
+    def prepare_data_new(self, **kwargs):
         """
         For all structures, determines which timesteps from the mode1 simulations should have
         energy calculations performed (based on the extrapolation and interpolation settings)
         and writes them to "input.data-new". If this file already exists, it is used to set
         variables that would otherwise be calculated from scratch.
 
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
-        nn_nodes: int = 1
-            How many nodes to use for evaluating the neural networks. Default is 1.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
         if not (self.dataset_new is None or len(self.dataset_new) == 0) or not (
             self.names is None or len(self.names) == 0
@@ -2481,6 +2531,11 @@ class ActiveLearning:
             )
             self.names = [frame.frame_file for frame in self.dataset_new]
             return
+        else:
+            if self.names is None:
+                self.names = []
+            if self.dataset_new is None:
+                self.dataset_new = Dataset(all_structures=self.all_structures)
 
         for name, structure in self.all_structures.items():
             # Acquire the extrapolation information from all simulations
@@ -2548,10 +2603,7 @@ class ActiveLearning:
             file_out=self.active_learning_directory + "/input.data-new",
         )
         self.dataset_new.change_units_all(new_units={"length": "Ang", "energy": "eV"})
-        self.data_controller._write_active_learning_nn_script(
-            n2p2_directories=self.data_controller.n2p2_directories,
-            nodes=nn_nodes,
-        )
+        self.data_controller._write_active_learning_nn_script(**kwargs)
 
     def prepare_data_add(self):
         """

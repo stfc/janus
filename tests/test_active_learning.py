@@ -534,6 +534,7 @@ def test_read_input_data_errors(
 # TEST WRITE INPUT LAMMPS
 
 
+@pytest.mark.parametrize("is_orthorhombic", [True, False])
 @pytest.mark.parametrize(
     "periodic, periodic_dump", [(True, " x y z"), (False, " xu yu zu")]
 )
@@ -544,6 +545,7 @@ def test_write_input_lammps(
     periodic_dump: str,
     atom_style: str,
     charge_dump: str,
+    is_orthorhombic: bool,
 ):
     """
     Test the `_input_write_lammps` function is successful for both `atom_style` values and
@@ -556,16 +558,25 @@ def test_write_input_lammps(
         f.write("run 5")
 
     active_learning._write_input_lammps(
-        path=output_directory, seed=1, temperature=1, pressure=1.0, integrator="npt"
+        path=output_directory,
+        seed=1,
+        temperature=1,
+        pressure=1.0,
+        integrator="npt",
+        is_orthorhombic=is_orthorhombic,
     )
 
     assert isfile(output_directory + "/input.lammps")
     with open(output_directory + "/input.lammps") as f:
-        lines = f.readlines()
+        text = f.read()
     assert (
-        "dump lammpstrj all custom 1 structure.lammpstrj id element{0}{1}\n"
+        "dump lammpstrj all custom 1 structure.lammpstrj id element{0}{1}"
         "".format(periodic_dump, charge_dump)
-    ) in lines
+    ) in text
+    if is_orthorhombic:
+        assert "fix z all npt temp 1 1 0.05 iso" in text
+    else:
+        assert "fix z all npt temp 1 1 0.05 tri" in text
 
 
 @pytest.mark.parametrize("periodic", [True, False])
@@ -1311,6 +1322,15 @@ def test_prepare_data_new(
 
     active_learning.dataset_new = Dataset()
     active_learning.names = []
+    active_learning.prepare_data_new()
+
+    assert capsys.readouterr().out == (
+        "input.data-new is already present and data will be read from there.\n"
+        "To regenerate input.data-new, delete existing file.\n"
+    )
+
+    active_learning.dataset_new = None
+    active_learning.names = None
     active_learning.prepare_data_new()
 
     assert capsys.readouterr().out == (

@@ -6,8 +6,7 @@ Utility functions for formatting a SLURM batch script.
 from typing import Iterable
 
 
-TEMPLATE = """
-#!/bin/bash
+TEMPLATE = """#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH -C {constraint}
 #SBATCH -N {nodes}

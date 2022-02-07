@@ -8,6 +8,7 @@ from copy import deepcopy
 from typing import Dict, Iterable, Iterator, List, Tuple
 
 from ase.atoms import Atoms
+from ase.geometry import is_orthorhombic
 from ase.io.formats import read, write
 import numpy as np
 
@@ -130,6 +131,17 @@ class Frame(Atoms):
         ndarray of float
         """
         return np.array(super().cell)
+
+    @property
+    def is_orthorhombic(self) -> bool:
+        """
+        Whether the lattice of the Frame is orthorhombic or not.
+
+        Returns
+        -------
+        bool
+        """
+        return is_orthorhombic(super().cell)
 
     @property
     def charges(self) -> np.ndarray:

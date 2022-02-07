@@ -6,8 +6,7 @@ Utility functions for formatting a LAMMPS input script.
 from typing import Iterable
 
 
-TEMPLATE = """
-###############################################################################
+TEMPLATE = """###############################################################################
 # MD simulation
 ###############################################################################
 
@@ -31,8 +30,7 @@ pair_coeff * * {pair_coeff}
 {integrator_commands}
 """  # noqa: E501
 
-INTEGRATOR_NVE = """
-###############################################################################
+INTEGRATOR_NVE = """###############################################################################
 # INTEGRATOR
 ###############################################################################
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
@@ -44,8 +42,7 @@ run {n_steps}
 unfix x
 """
 
-INTEGRATOR_NVT = """
-###############################################################################
+INTEGRATOR_NVT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
@@ -57,8 +54,7 @@ run {n_steps}
 unfix y
 """
 
-INTEGRATOR_NPT = """
-###############################################################################
+INTEGRATOR_NPT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
@@ -70,18 +66,15 @@ run {n_steps}
 unfix z
 """  # noqa: E501
 
-DUMP_CUSTOM = """
-dump            cust all custom 1 {dump_file} element x y z vx vy vz fx fy fz
+DUMP_CUSTOM = """dump            cust all custom 1 {dump_file} element x y z vx vy vz fx fy fz
 dump_modify     cust element {elements}
 """
 
-DUMP_XYZ = """
-dump            xyzmov all xyz {xyz_sampling} {dump_file}
+DUMP_XYZ = """dump            xyzmov all xyz {xyz_sampling} {dump_file}
 dump_modify     xyzmov element {elements}
 """
 
-DUMP_VEL = """
-dump            velmov all custom  1 {dump_file} element x y z vx vy vz
+DUMP_VEL = """dump            velmov all custom  1 {dump_file} element x y z vx vy vz
 dump_modify     velmov element {elements}
 dump_modify     velmov delay {vel_steps}
 dump_modify     velmov sort id
@@ -109,7 +102,7 @@ def format_lammps_input(
     integrators: Iterable[str] = ("nve",),
     temps: Iterable[str] = ("300",),
     tdamp: str = "10",
-    seed: str = "0",
+    seed: int = 1,
     barostat: str = "iso",
     pressure: str = "0",
     pdamp: str = "50",
@@ -194,8 +187,8 @@ def format_lammps_input(
     tdamp: str = "10"
         The timespan of temperature relaxations, in LAMMPS time units.
         Optional, default is "10".
-    seed: str = "0"
-        The seed to use for the velocity creation. Optional, default is "0".
+    seed: int = 1
+        The seed to use for the velocity creation. Optional, default is 1.
     barostat: str = "iso"
         The barostat option is only used when `integrator=="npt"` and should be one of
         "iso", "aniso", "tri". Optional, default is "iso".

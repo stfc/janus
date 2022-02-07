@@ -5,12 +5,14 @@ description = ""
 authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.7.0,<4"
+python = ">=3.8.0,<4"
 ase = "^3.22.0"
 ipykernel = "^6.0.3"
 matplotlib = "^3.4.2"
 aml = {path = "../aml", develop = true}
 sklearn = "^0.0"
+jupyter = "^1.0.0"
+notebook = "^6.4.6"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"

@@ -40,6 +40,10 @@ class Controller:
         Path of the LAMMPS executable.
     n2p2_bin : str
         Path to the n2p2 bin directory.
+    n2p2_module_commands: List[str] = None
+        Commands needed to load n2p2 for use in SLURM batch scripts. Each entry should be
+        a separate command, e.g. ("module use ...", "module load ..."). Optional, default
+        is None.
     cp2k_module_commands: List[str] = None
         Commands needed to load CP2K for use in SLURM batch scripts. Each entry should be
         a separate command, e.g. ("module use ...", "module load ..."). Optional, default
@@ -68,6 +72,7 @@ class Controller:
         main_directory: str,
         lammps_executable: str,
         n2p2_bin: str,
+        n2p2_module_commands: List[str] = None,
         cp2k_module_commands: List[str] = None,
         qe_module_commands: List[str] = None,
         scripts_sub_directory: str = "scripts",
@@ -79,15 +84,23 @@ class Controller:
         self.elements = structures.element_list
         self.main_directory = main_directory
         self.lammps_executable = lammps_executable
+        self.n2p2_bin = n2p2_bin
+
+        if n2p2_module_commands is not None:
+            self.n2p2_module_commands = n2p2_module_commands
+        else:
+            self.n2p2_module_commands = []
+
         if cp2k_module_commands is not None:
             self.cp2k_module_commands = cp2k_module_commands
         else:
             self.cp2k_module_commands = []
+
         if qe_module_commands is not None:
             self.qe_module_commands = qe_module_commands
         else:
             self.qe_module_commands = []
-        self.n2p2_bin = n2p2_bin
+
         self.scripts_directory = join_paths(main_directory, scripts_sub_directory)
         if isinstance(n2p2_sub_directories, str):
             n2p2_sub_directories = [n2p2_sub_directories]
@@ -433,8 +446,6 @@ class Controller:
             The number of configuration frames to use. If the number provided
             is greater than the length of `self.trajectory`, or `n_config` is
             `None` then the length is used instead. Default is `None`.
-        nodes: int, optional
-            Number of nodes to request for the batch job. Default is `1`.
         **kwargs:
             Arguments to be used in formatting the cp2k input file. The
             template provided should contain a formatable string at the
@@ -525,7 +536,7 @@ class Controller:
                                 cell_z=cell_z,
                                 cutoff=cutoff,
                                 relcutoff=relcutoff,
-                                file_xyz=file_xyz,
+                                file_xyz=file_xyz_i,
                             )
                         )
 
@@ -736,6 +747,7 @@ class Controller:
         pseudos: Dict[str, str],
         qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
+        **kwargs,
     ):
         """
         Prepare input and batch scripts needed for Quantum Espresso. Expects a trajectory file
@@ -758,6 +770,17 @@ class Controller:
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.
+        **kwargs:
+            Can be used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
         submit_all_text = ""
         for t in temperatures:
@@ -783,7 +806,9 @@ class Controller:
                             a, folder, structure=structure, pseudos=pseudos
                         )
                         self.write_qe_pp(folder, structure=structure)
-                        submit_all_text += self.write_qe_slurm(folder, structure)
+                        submit_all_text += self.write_qe_slurm(
+                            folder, structure, **kwargs
+                        )
 
         if submit_all_text:
             with open(join_paths(self.scripts_directory, "qe_all.sh"), "w") as f:
@@ -791,6 +816,7 @@ class Controller:
 
     def print_cp2k_table(
         self,
+        structure_name: str,
         file_output: str = "cp2k_output/{}.log",
         n_config: int = None,
         n_mpi: int = 1,
@@ -802,6 +828,9 @@ class Controller:
 
         Parameters
         ----------
+        structure_name : str
+            Name of the structure, used as part of the CP2K project name which in turn
+            determines file names.
         file_output : str, optional
             Formatable file name to read the cp2k output from. Will be
             formatted with the frame number and any other `**kwargs`, so should
@@ -820,7 +849,7 @@ class Controller:
               - relcutoff: tuple of float
         """
         n_config = self._min_n_config(n_config)
-        file_id_template = "n_{i}"
+        file_id_template = structure_name + "_n_{i}"
 
         header = "| "
         msg = "| "
@@ -1336,14 +1365,16 @@ class Controller:
         normalise: bool = False,
         n_scaling_bins: int = 500,
         range_threshold: float = 1e-4,
-        nodes: int = 1,
         file_prepare: str = "n2p2_prepare.sh",
         file_train: str = "n2p2_train.sh",
         file_nn: str = "input.nn",
+        **kwargs,
     ):
         """
         Write batch script for scaling and pruning symmetry functions, and for
         training the network. Returns the command to submit the scripts.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
 
         Parameters
         ----------
@@ -1354,8 +1385,6 @@ class Controller:
         range_threshold: float, optional
             Symmetry functions with ranges below this will be "pruned" and not
             used in the training. Default is `1e-4`.
-        nodes: int, optional
-            Number of nodes to request for the batch job. Default is `1`.
         file_prepare: str, optional
             File location to write scaling and pruning batch script to.
             Default is 'n2p2_prepare.sh'.
@@ -1365,10 +1394,21 @@ class Controller:
         file_nn: str, optional
             File location of n2p2 file defining the neural network. Default is
             "input.nn".
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
 
         n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
-        common_commands = [
+        common_commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
             "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
         ]
@@ -1404,7 +1444,7 @@ class Controller:
             commands=prepare_commands,
             job_name="n2p2_prepare",
             array=f"0-{len(self.n2p2_directories) - 1}",
-            nodes=nodes,
+            **kwargs,
         )
 
         train_commands = common_commands.copy()
@@ -1417,7 +1457,7 @@ class Controller:
             commands=train_commands,
             job_name="n2p2_train",
             array=f"0-{len(self.n2p2_directories) - 1}",
-            nodes=nodes,
+            **kwargs,
         )
 
         return f"sbatch {file_prepare}; sbatch {file_train}"
@@ -1455,24 +1495,35 @@ class Controller:
     def _write_active_learning_lammps_script(
         self,
         n_simulations: int,
-        nodes: int = 1,
         file_batch_out: str = "active_learning_lammps.sh",
+        **kwargs,
     ):
         """
         Write batch script for using LAMMPS to generate configurations for active learning.
 
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
-        nodes: int
+        n_simulations: int
             Number of simulations required. This is used to set the upper limit on the SLURM
             job array.
-        nodes: int, optional
-            Number of nodes to request for the batch job. Default is `1`.
         file_batch_out: str, optional
             File location to write the batch script relative to `scripts_sub_directory`.
             Default is 'scripts/active_learning_lammps.sh'.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
-        commands = [
+        commands = self.n2p2_module_commands + [
             "ulimit -s unlimited",
             (
                 "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
@@ -1503,35 +1554,39 @@ class Controller:
             formatted_file=join_paths(self.scripts_directory, file_batch_out),
             commands=commands,
             job_name="active_learning_LAMMPS",
-            array=f"0-{n_simulations - 1}",
-            nodes=nodes,
+            array=f"1-{n_simulations}",
+            **kwargs,
         )
 
         return f"sbatch {file_batch_out}"
 
     def _write_active_learning_nn_script(
         self,
-        n2p2_directories: List[str],
-        nodes: int = 1,
-        file_batch_template: str = "template.sh",
         file_batch_out: str = "active_learning_nn.sh",
+        **kwargs,
     ):
         """
         Write batch script for using the neural network to calculate energies for
         configurations as part of the active learning.
 
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
-        n2p2_directories : list of str
-            List of directories to compare. Should have exactly 2 entries.
-        nodes: int, optional
-            Number of nodes to request for the batch job. Default is `1`.
-        file_batch_template: str, optional
-            File location of template to use for batch scripts relative to
-            `scripts_sub_directory`. Default is 'template.sh'.
         file_batch_out: str, optional
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'active_learning_nn.sh'.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
         # Create directories if they don't exist
         mode2 = "{}/mode2".format(self.active_learning_directory)
@@ -1558,20 +1613,20 @@ class Controller:
         )
 
         n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
-        commands = [
+        commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
             (
-                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/input.nn "
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/input.nn "
                 f"{self.active_learning_directory}/mode2"
                 "/HDNNP_${SLURM_ARRAY_TASK_ID}"
             ),
             (
-                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/scaling.data "
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/scaling.data "
                 f"{self.active_learning_directory}/mode2"
                 "/HDNNP_${SLURM_ARRAY_TASK_ID}"
             ),
             (
-                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/weights.*.data "
+                "cp ${n2p2_directories[${SLURM_ARRAY_TASK_ID} - 1]}/weights.*.data "
                 f"{self.active_learning_directory}/mode2"
                 "/HDNNP_${SLURM_ARRAY_TASK_ID}"
             ),
@@ -1615,7 +1670,10 @@ class Controller:
                 f"{self.active_learning_directory}/mode2"
                 "/HDNNP_${SLURM_ARRAY_TASK_ID}/input.nn"
             ),
-            "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+            (
+                f"cd {self.active_learning_directory}/mode2"
+                "/HDNNP_${SLURM_ARRAY_TASK_ID}"
+            ),
             "mpirun -np ${SLURM_NTASKS} " + f"{self.n2p2_bin}/nnp-train > mode_2.out",
         ]
 
@@ -1623,8 +1681,8 @@ class Controller:
             formatted_file=join_paths(self.scripts_directory, file_batch_out),
             commands=commands,
             job_name="active_learning_NN",
-            array="0-1",
-            nodes=nodes,
+            array="1-2",
+            **kwargs,
         )
 
         return f"sbatch {file_batch_out}"
@@ -1724,10 +1782,13 @@ class Controller:
         temperatures: Iterable[int] = (300,),
         n_steps: Iterable[str] = (10000,),
         file_batch_out: str = "lammps_extrapolations.sh",
+        **kwargs,
     ):
         """
         Write batch script for using using LAMMPS to test the number of extrapolations that
         occur during simulation.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
 
         Parameters
         ----------
@@ -1749,6 +1810,17 @@ class Controller:
         file_batch_out: str, optional
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'lammps_extrapolations.sh'.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
         """
         file_id = ""
         for i, ensemble in enumerate(ensembles):
@@ -1765,7 +1837,7 @@ class Controller:
             temps=temperatures,
         )
 
-        commands = [
+        commands = self.n2p2_module_commands + [
             f"ln -s {self.n2p2_directories[n2p2_directory_index]} {self.lammps_directory}/nnp",
             f"\ncd {self.lammps_directory}",
             (
@@ -1779,11 +1851,12 @@ class Controller:
             formatted_file=join_paths(self.scripts_directory, file_batch_out),
             commands=commands,
             job_name="LAMMPS_extrapolations",
+            **kwargs,
         )
 
     def analyse_extrapolations(
         self,
-        log_file: str = "{ensemble}-t{t}.log",
+        log_file: str = "md-{ensemble}_t{t}.log",
         ensembles: Iterable[str] = ("nve", "nvt", "npt"),
         temperatures: Iterable[int] = (300,),
         temperature_range: Tuple[int, int] = (0, None),

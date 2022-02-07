@@ -20,9 +20,7 @@ pair_style nnp dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {rese
 pair_coeff * * {pair_coeff}
 
 {integrator_commands}
-"""  # noqa: E501
 
-INTEGRATOR_NVE = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
@@ -33,9 +31,7 @@ fix x all nve
 {dump_commands}
 run {n_steps}
 unfix x
-"""
 
-INTEGRATOR_NVT = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
@@ -46,9 +42,7 @@ fix y all nvt temp {temp} {temp} {tdamp}
 {dump_commands}
 run {n_steps}
 unfix y
-"""
 
-INTEGRATOR_NPT = """
 ###############################################################################
 # INTEGRATOR
 ###############################################################################
