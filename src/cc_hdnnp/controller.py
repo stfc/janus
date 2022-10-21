@@ -386,10 +386,12 @@ class Controller:
     def write_cp2k(
         self,
         structure_name: str,
-        basis_set_directory: str,
-        potential_directory: str,
-        basis_set_dict: Dict[str, str],
-        potential_dict: Dict[str, str],
+#        basis_set_directory: str,
+#        potential_directory: str,
+#        basis_set_dict: Dict[str, str],
+#        potential_dict: Dict[str, str],
+        param_file_path: str = "DFTB_param/scc ",
+        param_file_name: str = "scc_parameter ",
         file_bash: str = "all.sh",
         file_batch: str = "{}.sh",
         file_input: str = "cp2k_input/{}.inp",
@@ -476,13 +478,13 @@ class Controller:
             input_template = f_template.read()
 
         pseudos_text = ""
-        for e in self.elements:
-            pseudos_text += (
-                f"    &KIND {e}\n"
-                f"      BASIS_SET {basis_set_dict[e]}\n"
-                f"      POTENTIAL {potential_dict[e]}\n"
-                "    &END\n"
-            )
+#        for e in self.elements:
+#            pseudos_text += (
+#                f"    &KIND {e}\n"
+#                f"      BASIS_SET {basis_set_dict[e]}\n"
+#                f"      POTENTIAL {potential_dict[e]}\n"
+#                "    &END\n"
+#            )
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
@@ -528,14 +530,16 @@ class Controller:
                             input_template.format(
                                 file_id=file_id,
                                 structure_name=structure_name,
-                                basis_set=basis_set_directory,
-                                potential=potential_directory,
-                                pseudos_text=pseudos_text,
+                                #basis_set=basis_set_directory,
+                                #potential=potential_directory,
+                                #pseudos_text=pseudos_text,
                                 cell_x=cell_x,
                                 cell_y=cell_y,
                                 cell_z=cell_z,
-                                cutoff=cutoff,
-                                relcutoff=relcutoff,
+                                param_file_path=param_file_path,
+                                param_file_name=param_file_name,
+                                #cutoff=cutoff,
+                                #relcutoff=relcutoff,
                                 file_xyz=file_xyz_i,
                             )
                         )
@@ -1198,6 +1202,7 @@ class Controller:
             )
 
         text = ""
+        lattice_list = [0.,0.,0.,0.,0.,0.,0.,0.,0.]
         if n2p2_units is None:
             n2p2_units = {"length": "Bohr", "energy": "Ha", "force": "Ha / Bohr"}
         n = self._min_n_config(n_config)
@@ -1206,66 +1211,84 @@ class Controller:
                 xyz_lines = f.readlines()
                 n_atoms = int(xyz_lines[0].strip())
                 header_list = xyz_lines[1].split('"')
-                lattice_list = header_list[1].split()
-                if n2p2_units["length"] != "Ang":
-                    for j, lattice in enumerate(lattice_list):
-                        lattice_list[j] = float(lattice) / UNITS[n2p2_units["length"]]
-
+                if len(header_list) > 1:
+                    lattice_list = header_list[1].split()
+                    if n2p2_units["length"] != "Ang":
+                        for j, lattice in enumerate(lattice_list):
+                            lattice_list[j] = float(lattice) / UNITS[n2p2_units["length"]]
+                n_structures = int(len(xyz_lines)/ (n_atoms+ 2))
+                print(n_structures)
             with open(join_paths(self.main_directory, file_cp2k_forces.format(i))) as f:
                 force_lines = f.readlines()
 
             with open(join_paths(self.main_directory, file_cp2k_out.format(i))) as f:
-                energy = None
+                energy = []
+                total_charge = []
+                charge_lines = []
                 lines = f.readlines()
                 for j, line in enumerate(lines):
                     if re.search("^ ENERGY", line):
-                        energy = line.split()[-1]
+                        energy.append(float(line.split()[-1]))
                     if re.search("Hirshfeld Charges", line):
-                        charge_lines = lines[j + 3 : j + 3 + n_atoms]
-                        total_charge = lines[j + 3 + n_atoms + 1].split()[-1]
-
-            if energy is None:
+                        charge_lines.append(lines[j + 3 : j + 3 + n_atoms])
+                        total_charge.append(float(lines[j + 3 + n_atoms + 1].split()[-1]))
+                    elif re.search("Net charge", line): 
+                        charge_lines.append(lines[j + 1 : j + 1 + n_atoms])
+                        total_charge.append(float(lines[j + 1 + n_atoms ].split()[-1]))
+                    if len(header_list) <= 1:
+                        if "Cell lengths [ang]" in line:
+                            print(line.split()[-3],line.split()[-2],line.split()[-1])
+                            lattice_list = [float(line.split()[-3])/ UNITS[n2p2_units["length"]],0.,0.,0., float(line.split()[-2])/ UNITS[n2p2_units["length"]],0.,0.,0., float(line.split()[-1])/ UNITS[n2p2_units["length"]]]
+            if len(total_charge) == 0:
+                total_charge = np.zeros_like(energy)
+            if len(energy) == 0:
                 raise ValueError("Energy not found in {}".format(file_cp2k_out))
             if n2p2_units["energy"] != "Ha":
                 # cp2k output is in Ha
-                energy = float(energy) * UNITS["Ha"] / UNITS[n2p2_units["energy"]]
-
-            text += "begin\n"
-            text += "comment config_index={0} units={1}\n".format(i, n2p2_units)
-            text += "comment structure {}\n".format(structure_name)
-            text += "lattice {0} {1} {2}\n".format(
-                lattice_list[0], lattice_list[1], lattice_list[2]
-            )
-            text += "lattice {0} {1} {2}\n".format(
-                lattice_list[3], lattice_list[4], lattice_list[5]
-            )
-            text += "lattice {0} {1} {2}\n".format(
-                lattice_list[6], lattice_list[7], lattice_list[8]
-            )
-            for j in range(n_atoms):
-                atom_xyz = xyz_lines[j + 2].split()
-                for k, position in enumerate(atom_xyz[1:], 1):
-                    atom_xyz[k] = float(position) / UNITS[n2p2_units["length"]]
-
-                force = force_lines[j + 4].split()[-3:]
-                if n2p2_units["force"] != "Ha / Bohr":
-                    # cp2k output is in Ha / Bohr
-                    for i in range(len(force)):
-                        force[i] = (
-                            float(force[i])
-                            * UNITS["Ha"]
-                            / UNITS["Bohr"]
-                            / UNITS[n2p2_units["energy"]]
-                        )
-
-                charge = charge_lines[j].split()[-1]
-                text += "atom {1} {2} {3} {0} {4} 0.0 {5} {6} {7}\n".format(
-                    *atom_xyz + [charge] + force
+                energy = np.array(energy) * UNITS["Ha"] / UNITS[n2p2_units["energy"]]
+            for nstr in range(n_structures):
+                text += "begin\n"
+                text += "comment config_index={0} units={1}\n".format(i, n2p2_units)
+                text += "comment structure {}\n".format(structure_name)
+                text += "lattice {0} {1} {2}\n".format(
+                    lattice_list[-1], lattice_list[1], lattice_list[2]
                 )
+                text += "lattice {0} {1} {2}\n".format(
+                    lattice_list[3], lattice_list[4], lattice_list[5]
+                )
+                text += "lattice {0} {1} {2}\n".format(
+                    lattice_list[6], lattice_list[7], lattice_list[8]
+                )
+                for j in range(nstr*(n_atoms+2), (nstr+1)*(n_atoms + 2) - 2):
+                    atom_xyz = xyz_lines[j + 2].split()[:4]
+                    for k, position in enumerate(atom_xyz[1:], 1):
+                        atom_xyz[k] = float(position) / UNITS[n2p2_units["length"]]
+                    if(n_structures<= 1):
+                        force = force_lines[j + 4].split()[-4:]
+                    else:
+                        force = force_lines[j + 2].split()[-4:]
+                    if n2p2_units["force"] != "Ha / Bohr":
+                        # cp2k output is in Ha / Bohr
+                        for i in range(len(force)):
+                            force[i] = (
+                                float(force[i])
+                                * UNITS["Ha"]
+                                / UNITS["Bohr"]
+                                / UNITS[n2p2_units["energy"]]
+                            )  
+                   
+                    try: 
+                        charge = charge_lines[nstr][j].split()[-1]
+                    except:
+                        charge = "0."
+                    #print(j, len(atom_xyz), len(force))
+                    text += "atom {1} {2} {3} {0} {4} 0.0 {5} {6} {7}\n".format(
+                         *atom_xyz + [charge] + force
+                    )
 
-            text += "energy {}\n".format(energy)
-            text += "charge {}\n".format(total_charge)
-            text += "end\n"
+                text += "energy {}\n".format(energy[nstr])
+                text += "charge {}\n".format(total_charge[nstr])
+                text += "end\n"
 
         for n2p2_directory in self.n2p2_directories:
             if isfile(join_paths(n2p2_directory, file_n2p2_input)):
