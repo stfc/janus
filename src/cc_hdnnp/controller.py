@@ -1411,6 +1411,12 @@ class Controller:
         common_commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
             "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+            'for file in "input.nn" "input.data"; do',
+            '    if [[ ! -f ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/${file} ]] ; then',
+            '        echo "${file} must be present in ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}, aborting."',
+            '        exit',
+            '    fi',
+            'done'
         ]
 
         prepare_commands = common_commands.copy()
