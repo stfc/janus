@@ -576,6 +576,11 @@ class SymFuncParamGenerator:
             "#################\n"
         )
 
+        # Define symmetry function set, used to edit or delete functions
+        rule = self.radial_paramgen_settings["rule"]
+        mode = self.radial_paramgen_settings["mode"]
+        handle.write(f"# Set identifier = [{self.symfunc_type}, {rule}, {mode}]\n")
+
         handle.write(f"# r_cutoff       = {self.r_cutoff}\n")
 
         # depending on whether radial parameters were generated using the
