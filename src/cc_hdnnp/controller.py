@@ -1339,6 +1339,17 @@ class Controller:
         generator.symfunc_type = type
         generator.zetas = zetas
 
+        # Remove duplicate symmetry function sets
+        for n2p2_directory in self.n2p2_directories:
+            if isfile(join_paths(n2p2_directory, file_nn)):
+                with open(join_paths(n2p2_directory, file_nn), "r") as readfile:
+                    with open(join_paths(n2p2_directory, f"{file_nn}.temp"), "w") as writefile:
+                        generator.delete_duplicate_functions(
+                            readfile = readfile,
+                            writefile=writefile,
+                            identifier=f"[{type}, {rule}, {mode}]"
+                        )
+        
         generator.generate_radial_params(
             rule=rule,
             mode=mode,

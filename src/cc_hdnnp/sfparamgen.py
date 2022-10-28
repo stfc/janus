@@ -9,6 +9,7 @@ import itertools
 import sys
 from typing import List, Optional, TextIO
 import warnings
+import os
 
 import numpy as np
 
@@ -769,3 +770,48 @@ class SymFuncParamGenerator:
                                 f"{zeta:9.3E} {r_cutoff:9.3E}\n"
                             )
                 handle.write("\n")
+
+    def delete_duplicate_functions(
+        self,
+        readfile: TextIO,
+        writefile: TextIO,
+        identifier: str,
+    ):
+        """Delete duplicate sets of symmetry functions based on the type, rule and
+        mode of the set.
+
+        Parameters
+        ----------
+        readfile: TextIO
+            The file being appended with symmetry functions
+        writefile: TextIO
+            A temporary file to write to if duplicate symmetry functions are present
+        identifier: str
+            An identifier of symmetry function sets, based on the type, rule, mode
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        None
+        """
+        file_nn_lines = readfile.readlines()
+        symfunc_exists = False
+        for line_num, line_text in enumerate(file_nn_lines):
+            if identifier in line_text:
+                symfunc_exists = True
+                line_start = line_num - 3
+            if "#################" in line_text:
+                if symfunc_exists:
+                    line_end = line_num - 1
+                    break
+        if symfunc_exists:
+            for line_num, line_text in enumerate(file_nn_lines):
+                if line_num < line_start or line_num > line_end:
+                    writefile.write(line_text)
+            os.remove(readfile.name)
+            os.rename(writefile.name, readfile.name)
+        else:
+            os.remove(writefile.name)
