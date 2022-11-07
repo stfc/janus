@@ -20,15 +20,14 @@ read_data {read_data}
 {masses}
 timestep {timestep}
 thermo 1
-
 ###############################################################################
 # NN
 ###############################################################################
-pair_style hdnnp {pair_coeff}  dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {resetew} maxew {maxew} cflength {cflength} cfenergy {cfenergy}
-pair_coeff * * {elements}
-
+pair_style nnp dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {resetew} maxew {maxew} emap {emap} cflength {cflength} cfenergy {cfenergy}
+pair_coeff * * {pair_coeff}
 {integrator_commands}
-"""  # noqa: E501
+""" 
+
 
 INTEGRATOR_NVE = """###############################################################################
 # INTEGRATOR
@@ -110,6 +109,7 @@ def format_lammps_input(
     dump_commands: str = None,
     elements: str = None,
     dump_file: str = "dump.lammpstrj",
+    
 ):
     """
     Formats a LAMMPS input script with the provided arguments, either based on a provided
@@ -218,7 +218,7 @@ def format_lammps_input(
             template_text = f.read()
     else:
         template_text = TEMPLATE
-
+    
     if isinstance(n_steps, int):
         n_steps = [n_steps]
     if isinstance(integrators, str):

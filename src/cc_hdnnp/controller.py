@@ -1264,9 +1264,9 @@ class Controller:
                     for k, position in enumerate(atom_xyz[1:], 1):
                         atom_xyz[k] = float(position) / UNITS[n2p2_units["length"]]
                     if(n_structures<= 1):
-                        force = force_lines[j + 4].split()[-4:]
+                        force = force_lines[j + 4].split()[-3:]
                     else:
-                        force = force_lines[j + 2].split()[-4:]
+                        force = force_lines[j + 2].split()[-3:]
                     if n2p2_units["force"] != "Ha / Bohr":
                         # cp2k output is in Ha / Bohr
                         for i in range(len(force)):
@@ -1490,6 +1490,8 @@ class Controller:
         file_xyz: str,
         file_data: str = "lammps.data",
         lammps_unit_style: str = "electron",
+        with_mpi: bool = True,
+        with_scratch: bool = True,
     ):
         """
         Reads data from xyz format and writes it for LAMMPS.
@@ -1546,18 +1548,52 @@ class Controller:
               - exclusive
               - commands
         """
-        commands = self.n2p2_module_commands + [
-            "ulimit -s unlimited",
-            (
-                "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
-                f"{self.active_learning_directory}/joblist_mode1.dat)"
-            ),
-            "cd ../active_learning/mode1/$path",
-            (
-                "srun "
-                f"{self.lammps_executable} -in input.lammps -screen none"
-            )
-        ]
+ 
+        if with_mpi:
+            run_command = "mpirun -np ${SLURM_NTASKS} "
+        else:
+            run_command = "srun "
+        if with_scratch:
+            commands = self.n2p2_module_commands + [
+                "ulimit -s unlimited",
+                (
+                     "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
+                     f"{self.active_learning_directory}/joblist_mode1.dat)"
+                ),
+                "dir=$(date '+%Y%m%d_%H%M%S_%N')",
+                "mkdir -p /scratch/$(whoami)/${dir}",
+                (
+                    "rsync -a ${SLURM_SUBMIT_DIR}/"
+                    f"{self.active_learning_directory}"
+                    "/mode1/${path}/* /scratch/$(whoami)/${dir}/"
+                ),
+                "cd /scratch/$(whoami)/${dir}",
+                (
+                    run_command + 
+                    f"{self.lammps_executable} -in input.lammps -screen none"
+                ),
+                "rm -r /scratch/$(whoami)/${dir}/RuNNer",
+                (
+                    "rsync -a /scratch/$(whoami)/${dir}/* ${SLURM_SUBMIT_DIR}/"
+                    f"{self.active_learning_directory}"
+                    "/mode1/${path}/"
+                ),
+                "rm -r /scratch/$(whoami)/${dir}",
+            ]
+        else:
+            commands = self.n2p2_module_commands + [
+                "ulimit -s unlimited",
+                (
+                    "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
+                    f"{self.active_learning_directory}/joblist_mode1.dat)"
+                ),
+                "cd ../active_learning/mode1/$path",
+                (
+                    run_command + 
+                    f"{self.lammps_executable} -in input.lammps -screen none"
+                )
+            ]
+
 
         format_slurm_input(
             formatted_file=join_paths(self.scripts_directory, file_batch_out),
@@ -1791,6 +1827,7 @@ class Controller:
         temperatures: Iterable[int] = (300,),
         n_steps: Iterable[str] = (10000,),
         file_batch_out: str = "lammps_extrapolations.sh",
+        template_file: str = None,
         **kwargs,
     ):
         """
@@ -1844,6 +1881,7 @@ class Controller:
             elements=" ".join(self.all_structures.element_list_alphabetical),
             n_steps=n_steps,
             temps=temperatures,
+            template_file = template_file,
         )
 
         commands = self.n2p2_module_commands + [
