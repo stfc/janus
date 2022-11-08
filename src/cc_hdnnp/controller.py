@@ -386,10 +386,10 @@ class Controller:
     def write_cp2k(
         self,
         structure_name: str,
-#        basis_set_directory: str,
-#        potential_directory: str,
-#        basis_set_dict: Dict[str, str],
-#        potential_dict: Dict[str, str],
+        basis_set_directory: str,
+        potential_directory: str,
+        basis_set_dict: Dict[str, str],
+        potential_dict: Dict[str, str],
         param_file_path: str = "DFTB_param/scc ",
         param_file_name: str = "scc_parameter ",
         file_bash: str = "all.sh",
@@ -478,13 +478,13 @@ class Controller:
             input_template = f_template.read()
 
         pseudos_text = ""
-#        for e in self.elements:
-#            pseudos_text += (
-#                f"    &KIND {e}\n"
-#                f"      BASIS_SET {basis_set_dict[e]}\n"
-#                f"      POTENTIAL {potential_dict[e]}\n"
-#                "    &END\n"
-#            )
+        for e in self.elements:
+            pseudos_text += (
+                f"    &KIND {e}\n"
+                f"      BASIS_SET {basis_set_dict[e]}\n"
+                f"      POTENTIAL {potential_dict[e]}\n"
+                "    &END\n"
+            )
 
         n_config = self._min_n_config(n_config)
         file_id_template = "n_{i}"
@@ -530,16 +530,16 @@ class Controller:
                             input_template.format(
                                 file_id=file_id,
                                 structure_name=structure_name,
-                                #basis_set=basis_set_directory,
-                                #potential=potential_directory,
-                                #pseudos_text=pseudos_text,
+                                basis_set=basis_set_directory,
+                                potential=potential_directory,
+                                pseudos_text=pseudos_text,
                                 cell_x=cell_x,
                                 cell_y=cell_y,
                                 cell_z=cell_z,
                                 param_file_path=param_file_path,
                                 param_file_name=param_file_name,
-                                #cutoff=cutoff,
-                                #relcutoff=relcutoff,
+                                cutoff=cutoff,
+                                relcutoff=relcutoff,
                                 file_xyz=file_xyz_i,
                             )
                         )
