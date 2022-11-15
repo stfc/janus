@@ -569,16 +569,30 @@ class Dataset(List[Frame]):
                 for atoms in read(
                     filename=data_file, format=format, index=":", **kwargs
                 ):
-                    frames.append(
-                        Frame(
-                            pbc = atoms.get_pbc(),
-                            lattice=atoms.cell,
-                            symbols=atoms.symbols,
-                            positions=atoms.positions,
-                            charges=atoms.get_initial_charges(),
-                            name=structure_name,
+                    try:
+                        frames.append(
+                            Frame(
+                                pbc = atoms.get_pbc(),
+                                lattice=atoms.cell,
+                                symbols=atoms.symbols,
+                                positions=atoms.positions,
+                                charges=atoms.get_initial_charges(),
+                                name=structure_name,
+                                forces=atoms.get_forces(),
+                                energy=atoms.get_potential_energy(),
+                            )
                         )
-                    )
+                    except:
+                        frames.append(
+                            Frame(
+                                pbc = atoms.get_pbc(),
+                                lattice=atoms.cell,
+                                symbols=atoms.symbols,
+                                positions=atoms.positions,
+                                charges=atoms.get_initial_charges(),
+                                name=structure_name,                           
+                            )
+                        )
             super().__init__(frames)
 
     @property
@@ -846,6 +860,7 @@ class Dataset(List[Frame]):
         format: str = "n2p2",
         conditions: Iterable[bool] = None,
         append: bool = False,
+        units : Dict[str, str] = None,
         **kwargs,
     ) -> Tuple[List[int], List[int]]:
         """
@@ -873,6 +888,8 @@ class Dataset(List[Frame]):
             First entry is a list of the indices of Frames that were written to file.
             Second entry is a list of the indices of Frames that were NOT written to file.
         """
+        if units is not None:
+            self.change_units_all(units)
         if format == "n2p2":
             return self.write_data_file(
                 file_out=file_out, conditions=conditions, append=append
