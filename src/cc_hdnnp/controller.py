@@ -809,6 +809,7 @@ class Controller:
                         submit_all_text += self.write_qe_slurm(
                             folder, structure, **kwargs
                         )
+                        submit_all_text += "\n"
 
         if submit_all_text:
             with open(join_paths(self.scripts_directory, "qe_all.sh"), "w") as f:
