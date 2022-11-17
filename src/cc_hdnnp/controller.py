@@ -1464,6 +1464,7 @@ class Controller:
 
     def write_n2p2_predict_script(
         self,
+        shuffle: bool = False,
         file_predict: str = "n2p2_predict.sh",
         **kwargs,
     ):
@@ -1475,6 +1476,8 @@ class Controller:
 
         Parameters
         ----------
+        shuffle: bool, optional
+            Whether to randomly distribute the structures to MPI processes. Default is `False`)`.
         file_predict: str, optional
             File location to write training batch script to.
             Default is 'n2p2_predict.sh'.
@@ -1499,7 +1502,8 @@ class Controller:
 
         predict_commands = common_commands.copy()
         predict_commands += [
-            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-dataset")
+            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-dataset") + 
+            (" 1" if shuffle else " 0")
         ]
 
         format_slurm_input(
