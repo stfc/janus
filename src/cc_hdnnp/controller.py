@@ -715,7 +715,7 @@ class Controller:
               - exclusive
               - commands
         """
-        commands = self.qe_module_commands
+        commands = self.qe_module_commands.copy()
         commands += [
             "n=$SLURM_NTASKS",
             "export OMP_NUM_THREADS=1",
