@@ -675,7 +675,8 @@ def plot_data_histogram(
     energy_scale: str = "linear",
     force_scale: str = "linear",
     superimpose: bool = True,
-    alpha=1.0,
+    alpha: float = 1.0,
+    density: bool = False,
 ):
     """
     Plots the energy and force values present in a series of reference datasets. This can be
@@ -698,8 +699,10 @@ def plot_data_histogram(
         or not. If `True`, then the first entry in `data_files` should contain all points to be
         plotted, with subsequent entries being subsets to ensure full visibility.
         Optional, default is `True`.
-    alpha=1.0
+    alpha: float = 1.0
         Sets the transparency of the plotted bars. `1.0` is opaque. Optional, default is `1.0`.
+    density: bool = False
+        Whether to plot the probability density. Optional, default is `False`.
     """
     n_rows = 1 if superimpose else len(data_files)
     energies = []
@@ -731,14 +734,14 @@ def plot_data_histogram(
             force_position = 2 * i + 2
 
         plt.subplot(n_rows, 2, energy_position)
-        plt.hist(energies[i], bins=bins, range=(energy_min, energy_max), alpha=alpha)
+        plt.hist(energies[i], bins=bins, range=(energy_min, energy_max), alpha=alpha, density=density)
         plt.xlabel("Energy")
         plt.yscale(energy_scale)
         plt.title("Reference Energies ({})".format(data_file))
         plt.legend(data_files)
 
         plt.subplot(n_rows, 2, force_position)
-        plt.hist(forces[i], bins=bins, range=(force_min, force_max), alpha=alpha)
+        plt.hist(forces[i], bins=bins, range=(force_min, force_max), alpha=alpha, density=density)
         plt.xlabel("Force")
         plt.yscale(force_scale)
         plt.title("Reference Forces ({})".format(data_file))
