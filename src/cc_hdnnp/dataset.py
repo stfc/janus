@@ -948,3 +948,14 @@ class Dataset(List[Frame]):
         """
         for frame in self:
             frame.change_units(new_units=new_units)
+    def compare_structure(self, frame, permute=True):
+        compare_atms = Atoms(positions=frame.get_positions(),symbols=frame.get_chemical_symbols(),cell=frame.get_cell(), pbc = [True,True,True]);
+        dist = np.zeros(len(self))
+        txt = ""
+        for i, s1 in enumerate(self):
+            self_atms = Atoms(positions=s1.get_positions(),symbols=s1.get_chemical_symbols(),cell=s1.get_cell(), pbc = [True,True,True]);
+            dist[i] = distance(self_atms, compare_atms, permute)
+            txt += str(dist[i]) + " "
+        txt += '\n'
+        print(txt)
+        return dist
