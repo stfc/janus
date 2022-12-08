@@ -948,3 +948,48 @@ class Dataset(List[Frame]):
         """
         for frame in self:
             frame.change_units(new_units=new_units)
+
+    def filter_energies(
+        self,
+        bins: int = 8,
+        samples: int = 25,
+    ):
+        """
+        Returns a filter to reduce the number of frames, while ensuring a spread of energies.
+
+        Parameters
+        ----------
+        bins: int
+            Number of bins to divide the range of energies into. Default is 8.
+        samples: int
+            Estimated number of samples to take from each bin. Default is 25.
+        """
+        
+        energies = np.zeros([len(self)])
+        bin_edges = []
+
+        for i, frame in enumerate(self):
+            energies[i] = frame.energy
+
+        E_min = np.min(energies)
+        E_max = np.max(energies)
+
+        for i in range(bins + 1):
+            bin_edges.append(E_min + (i * (E_max - E_min) / bins))
+
+        sample_indicies = np.empty([0], dtype=int)
+
+        for i in range(bins):
+            energy_mask = np.logical_and(energies >= bin_edges[i], energies <= bin_edges[i+1])
+            bin_indicies = np.where(energy_mask)[0]
+
+            if len(bin_indicies) > samples:
+                bin_num = len(bin_indicies)
+                bin_mask = np.arange(bin_num)
+                bin_mask = np.where(bin_mask % (bin_num // samples) == 0, True, False)
+                bin_indicies = bin_indicies[bin_mask]
+            
+            sample_indicies = np.append(sample_indicies, bin_indicies)
+
+        conditions=(i in sample_indicies for i, _ in enumerate(self))
+        return conditions
