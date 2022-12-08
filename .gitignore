@@ -5,3 +5,6 @@ examples/m_cresol/
 examples/MOF/
 .coverage
 tests/data/tests_output/
+build/
+dist/
+src/CC_HDNNP.egg-info/

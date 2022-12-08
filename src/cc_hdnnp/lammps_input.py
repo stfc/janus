@@ -24,8 +24,8 @@ thermo 1
 ###############################################################################
 # NN
 ###############################################################################
-pair_style nnp dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {resetew} maxew {maxew} emap {emap} cflength {cflength} cfenergy {cfenergy}
-pair_coeff * * {pair_coeff}
+pair_style hdnnp {pair_coeff}  dir {nnp_dir} showew {showew} showewsum {showewsum} resetew {resetew} maxew {maxew} cflength {cflength} cfenergy {cfenergy}
+pair_coeff * * {elements}
 
 {integrator_commands}
 """  # noqa: E501
@@ -225,7 +225,6 @@ def format_lammps_input(
         integrators = [integrators]
     if isinstance(temps, str):
         temps = [temps]
-
     dump = ""
     integrator_commands = ""
     for i, integrator in enumerate(integrators):
@@ -249,7 +248,6 @@ def format_lammps_input(
                     vel_steps=max(n_step_i - 10000, 0),
                 )
             dump = dump_commands
-
         if integrator == "nve":
             integrator_commands += INTEGRATOR_NVE.format(
                 seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
@@ -276,7 +274,6 @@ def format_lammps_input(
             raise ValueError(
                 f"`integrator` must be one of 'nve', 'nvt' or 'npt', but was '{integrator}'"
             )
-
     output_text = template_text.format(**locals())
 
     with open(formatted_file, "w") as f:

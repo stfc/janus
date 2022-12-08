@@ -466,7 +466,7 @@ class ActiveLearning:
             atom_style=self.atom_style,
             read_data="structure.lammps",
             timestep=self.timestep,
-            nnp_dir="RuNNer",
+            nnp_dir="RuNNer/",
             showew="yes",
             showewsum="0",
             maxew="750",
@@ -481,6 +481,7 @@ class ActiveLearning:
             pdamp=self.timestep * 1000,
             npt_other=npt_other,
             dump_commands=dump_command,
+            elements=" ".join(self.all_structures.element_list_alphabetical),
         )
 
     def _write_structure_lammps(
@@ -1010,6 +1011,8 @@ class ActiveLearning:
                 counter + 5
             ].startswith("n²p² version  (from git): v2.1.4"):
                 extrapolation_format = "v2.1.1"
+            elif data[counter + 6].startswith("             (version.h): v2.1.4"):
+                    extrapolation_format = "v2.1.4"
             else:
                 raise IOError(
                     "n2p2 extrapolation warning format cannot be identified in the file "
@@ -1091,7 +1094,7 @@ class ActiveLearning:
                         if line.startswith("thermo") or line.startswith("### NNP")
                     ]
                 )
-            elif extrapolation_format == "v2.1.1":
+            elif (extrapolation_format == "v2.1.1") or (extrapolation_format == "v2.1.4"):
                 data = np.array(
                     [
                         # "thermo" marks a timestep, which is taken as the first element.

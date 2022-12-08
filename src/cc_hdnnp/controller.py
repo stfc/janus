@@ -1529,25 +1529,11 @@ class Controller:
                 "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
                 f"{self.active_learning_directory}/joblist_mode1.dat)"
             ),
-            "dir=$(date '+%Y%m%d_%H%M%S_%N')",
-            "mkdir -p /scratch/$(whoami)/${dir}",
+            "cd ../active_learning/mode1/$path",
             (
-                "rsync -a ${SLURM_SUBMIT_DIR}/"
-                f"{self.active_learning_directory}"
-                "/mode1/${path}/* /scratch/$(whoami)/${dir}/"
-            ),
-            "cd /scratch/$(whoami)/${dir}",
-            (
-                "mpirun -np ${SLURM_NTASKS} "
+                "srun "
                 f"{self.lammps_executable} -in input.lammps -screen none"
-            ),
-            "rm -r /scratch/$(whoami)/${dir}/RuNNer",
-            (
-                "rsync -a /scratch/$(whoami)/${dir}/* ${SLURM_SUBMIT_DIR}/"
-                f"{self.active_learning_directory}"
-                "/mode1/${path}/"
-            ),
-            "rm -r /scratch/$(whoami)/${dir}",
+            )
         ]
 
         format_slurm_input(
