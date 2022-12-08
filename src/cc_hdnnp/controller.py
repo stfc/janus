@@ -1529,9 +1529,9 @@ class Controller:
                 "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
                 f"{self.active_learning_directory}/joblist_mode1.dat)"
             ),
-            "cd ../active_learning/mode1/$path",
+            f"cd ../{self.active_learning_directory}/mode1/$path",
             (
-                "srun "
+                "mpirun -np ${SLURM_NTASKS} "
                 f"{self.lammps_executable} -in input.lammps -screen none"
             )
         ]
