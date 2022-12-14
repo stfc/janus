@@ -8,10 +8,12 @@ from copy import deepcopy
 from typing import Dict, Iterable, Iterator, List, Tuple
 
 from ase.atoms import Atoms
-from ase.geometry import is_orthorhombic
+from ase.geometry import is_orthorhombic, distance
 from ase.io.formats import read, write
 import numpy as np
 import warnings
+from mpi4py import MPI
+import itertools
 
 from cc_hdnnp.structure import AllStructures, Structure
 from .units import UNITS
@@ -1103,15 +1105,67 @@ class Dataset(List[Frame]):
         conditions=[i in sample_indicies for i, _ in enumerate(self)]
         return conditions
 
-    def compare_structure(self, frame, permute=True):
-        compare_atms = Atoms(positions=frame.get_positions(),symbols=frame.get_chemical_symbols(),cell=frame.get_cell(), pbc = [True,True,True]);
-        dist = np.zeros(len(self))
-        txt = ""
-        for i, s1 in enumerate(self):
-            self_atms = Atoms(positions=s1.get_positions(),symbols=s1.get_chemical_symbols(),cell=s1.get_cell(), pbc = [True,True,True]);
-            dist[i] = distance(self_atms, compare_atms, permute)
-            txt += str(dist[i]) + " "
-        txt += '\n'
-        print(txt)
-        return dist
+    def compare_structure(
+        self,
+        frame: Frame,
+        file_out: str = "../distances.csv",
+        permute: bool = True,
+        verbose: bool = True,
+    ):
+        """
+        Compares the distance of a list  of structures to a single structure.
 
+        Parameters
+        ----------
+        frame: Frame
+            Frame to compare list of frames in self to.
+        file_out: str, optional
+            The complete filepath to write the dataset to. Default is "../distances.csv".
+        permute: bool, optional
+            Whether to minimise the distance by permuting same elements. Default is True.
+        verbose: bool, optional
+            Whether to save distances to a text file. Default is True.
+        """
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        
+        compare_atms = Atoms(
+            positions = frame.get_positions(),
+            symbols = frame.get_chemical_symbols(),
+            cell = frame.get_cell(),
+            pbc = frame.get_pbc()
+        )
+
+        num_struct = len(self)
+        dist = np.zeros(num_struct)
+
+        indicies = np.array_split(range(num_struct), size)
+        init_idx = indicies[rank][0]
+        final_idx = indicies[rank][-1] + 1
+    
+        for i, s1 in enumerate(itertools.islice(self, init_idx, final_idx)):
+            self_atms = Atoms(
+                positions = s1.get_positions(),
+                symbols = s1.get_chemical_symbols(),
+                cell = s1.get_cell(),
+                pbc = s1.get_pbc()
+            )
+            dist[i + init_idx] = distance(self_atms, compare_atms, permute)
+            
+        if rank == 0:
+            for i in range(1, size):
+                init_idx = indicies[i][0]
+                final_idx = indicies[i][-1] + 1
+                comm.Recv(dist[init_idx:final_idx], i, 0)
+        else:
+            comm.Ssend(dist[init_idx:final_idx], 0, 0)
+
+        comm.barrier()
+
+        if verbose and rank==0:
+            f = open(file_out, 'a')
+            np.savetxt(f, dist, delimiter=",")
+            f.close()
+
+        return dist
