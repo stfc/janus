@@ -2209,3 +2209,70 @@ class Controller:
                 join_paths(n2p2_directory, "evsv.dat"),
             )
 
+<<<<<<< HEAD
+=======
+    def write_distance_script(
+        self,
+        files_in: List[str],
+        num_structures: int = 1,
+        file_shell: str = "calc_distances.sh",
+        file_out: str = None,
+        permute: bool = None,
+        verbose: bool = None,
+        **kwargs,
+    ):
+        """
+        Write batch script for calculating distances
+        network. Returns the command to submit the script.
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+        Parameters
+        ----------
+        files_in: List[str]
+            File locations of structures to be compared.
+        num_structures: int, optional
+            Number of structures to compare from the first input file. Default is 1.
+        file_shell: str, optional
+            File location to write batch script to. Default is 'calc_distances.sh'.
+        file_out: str, optional
+            The complete filepath to write the dataset to.
+        permute: bool, optional
+            Whether to minimise the distance by permuting same elements.
+        verbose: bool, optional
+            Whether to save distances to a csv file. Default is True.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
+        """
+
+        common_commands = self.n2p2_module_commands
+        distance_commands = common_commands.copy()
+        distance_commands += [
+            "srun python3 calc_distances.py " + 
+            "${SLURM_ARRAY_TASK_ID} " +
+            files_in[0] + " " + files_in[1]
+        ]
+        if file_out is not None:
+            distance_commands[-1] += " " + file_out
+        if permute is not None:
+            distance_commands[-1] += " -p " + str(permute)
+        if verbose is not None:
+            distance_commands[-1] += " -v " + str(verbose)
+
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_shell),
+            commands=distance_commands,
+            job_name="calc_dist",
+            array=f"0-{num_structures - 1}",
+            **kwargs,
+        )
+
+        return f"sbatch {file_shell};"
+>>>>>>> Write script to compare distances
