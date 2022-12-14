@@ -17,6 +17,7 @@ TEMPLATE = """#!/bin/bash
 {account_command}
 {reservation_command}
 {exclusive_command}
+{export_command}
 
 module purge
 
@@ -38,6 +39,7 @@ def format_slurm_input(
     account: str = None,
     reservation: str = None,
     exclusive: bool = False,
+    export: str = None,
 ):
     """
     Formats a SLURM batch script with the provided arguments, either based on a provided
@@ -82,6 +84,9 @@ def format_slurm_input(
     exclusive: bool = False
         If not True, then the argument `--exclusive` is passed.
         Optional, default is False.
+    export: str = None
+        Environment variables exported.
+        Optional, default is None.
     """
     if template_file is not None:
         with open(template_file) as f:
@@ -105,6 +110,10 @@ def format_slurm_input(
         exclusive_command = "#SBATCH --exclusive"
     else:
         exclusive_command = ""
+    if export:
+        export_command = f"#SBATCH --export={export}"
+    else:
+        export_command = ""
 
     main_commands = "\n".join(commands)
 
