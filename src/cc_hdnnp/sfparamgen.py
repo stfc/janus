@@ -799,6 +799,7 @@ class SymFuncParamGenerator:
         """
         file_nn_lines = readfile.readlines()
         symfunc_exists = False
+        line_end = None
         for line_num, line_text in enumerate(file_nn_lines):
             if identifier in line_text:
                 symfunc_exists = True
@@ -807,6 +808,8 @@ class SymFuncParamGenerator:
                 if symfunc_exists:
                     line_end = line_num - 1
                     break
+        if line_end is None:
+            line_end = line_num
         if symfunc_exists:
             for line_num, line_text in enumerate(file_nn_lines):
                 if line_num < line_start or line_num > line_end:
