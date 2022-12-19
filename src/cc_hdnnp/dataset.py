@@ -11,6 +11,7 @@ from ase.atoms import Atoms
 from ase.geometry import is_orthorhombic
 from ase.io.formats import read, write
 import numpy as np
+import warnings
 
 from cc_hdnnp.structure import AllStructures, Structure
 from .units import UNITS
@@ -761,9 +762,25 @@ class Dataset(List[Frame]):
                     name = words[2]
 
                 if len(words) >= 3 and words[1] == "units":
-                    units = literal_eval("".join(words[2:]))
+                    if units is None:
+                        units = literal_eval("".join(words[2:]))
+                    elif literal_eval("".join(words[2:])) != units:
+                        warnings.warn(
+                            f"The units {units} were given when initialising the "
+                            f'dataset, but units {literal_eval("".join(words[2:]))} '
+                            f"are specified in comments in the datafile. "
+                            f"Using units: {units}. Please ensure these are correct."
+                        )
                 elif len(words) >= 4 and words[3].startswith("units="):
-                    units = literal_eval(words[3][6:])
+                    if units is None:
+                        units = literal_eval(words[3][6:])
+                    elif literal_eval(words[3][6:]) != units:
+                        warnings.warn(
+                            f"The units {units} were given when initialising the "
+                            f'dataset, but units {literal_eval(words[3][6:])} '
+                            f"are specified in comments in the datafile. "
+                            f"Using units: {units}. Please ensure these are correct."
+                        )
 
                 if len(words) >= 3 and words[1] == "statistics":
                     statistics_text = " ".join(words[2:])
