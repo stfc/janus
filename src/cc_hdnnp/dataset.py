@@ -586,6 +586,7 @@ class Dataset(List[Frame]):
                                 name=structure_name,
                                 forces=atoms.get_forces(),
                                 energy=atoms.get_potential_energy(),
+                                units=units,
                             )
                         )
                     except:
@@ -597,6 +598,7 @@ class Dataset(List[Frame]):
                                 positions=atoms.positions,
                                 charges=atoms.get_initial_charges(),
                                 name=structure_name,
+                                units=units,
                             )
                         )
             super().__init__(frames)
