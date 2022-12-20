@@ -1129,7 +1129,7 @@ class Dataset(List[Frame]):
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
-        
+
         compare_atms = Atoms(
             positions = frame.get_positions(),
             symbols = frame.get_chemical_symbols(),
@@ -1143,7 +1143,7 @@ class Dataset(List[Frame]):
         indicies = np.array_split(range(num_struct), size)
         init_idx = indicies[rank][0]
         final_idx = indicies[rank][-1] + 1
-    
+
         for i, s1 in enumerate(itertools.islice(self, init_idx, final_idx)):
             self_atms = Atoms(
                 positions = s1.get_positions(),
@@ -1152,7 +1152,7 @@ class Dataset(List[Frame]):
                 pbc = s1.get_pbc()
             )
             dist[i + init_idx] = distance(self_atms, compare_atms, permute)
-            
+
         if rank == 0:
             for i in range(1, size):
                 init_idx = indicies[i][0]

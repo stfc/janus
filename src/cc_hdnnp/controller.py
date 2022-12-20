@@ -2209,12 +2209,10 @@ class Controller:
                 join_paths(n2p2_directory, "evsv.dat"),
             )
 
-<<<<<<< HEAD
-=======
     def write_distance_script(
         self,
         files_in: List[str],
-        num_structures: int = 1,
+        structure_indicies: List[int] = [0],
         file_shell: str = "calc_distances.sh",
         file_out: str = None,
         permute: bool = None,
@@ -2225,12 +2223,14 @@ class Controller:
         Write batch script for calculating distances
         network. Returns the command to submit the script.
         Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
         files_in: List[str]
             File locations of structures to be compared.
-        num_structures: int, optional
-            Number of structures to compare from the first input file. Default is 1.
+        structure_indicies: List[int], optional
+            First (and last indicies) of structures to compare from second input file.
+            Optional, default is [0].
         file_shell: str, optional
             File location to write batch script to. Default is 'calc_distances.sh'.
         file_out: str, optional
@@ -2251,7 +2251,6 @@ class Controller:
               - exclusive
               - commands
         """
-
         common_commands = self.n2p2_module_commands
         distance_commands = common_commands.copy()
         distance_commands += [
@@ -2262,17 +2261,26 @@ class Controller:
         if file_out is not None:
             distance_commands[-1] += " " + file_out
         if permute is not None:
-            distance_commands[-1] += " -p " + str(permute)
+            distance_commands[-1] += " -p " + str(int(permute))
         if verbose is not None:
-            distance_commands[-1] += " -v " + str(verbose)
+            distance_commands[-1] += " -v " + str(int(verbose))
+
+        if isinstance(structure_indicies, int):
+            array=f"{structure_indicies}-{structure_indicies}"
+        else:
+            if len(structure_indicies) > 2:
+                raise IOError("structure_indicies cannot contain more than two indicies.")
+            if len(structure_indicies) == 1:
+                array=f"{structure_indicies[0]}-{structure_indicies[0]}"
+            else:
+                array=f"{structure_indicies[0]}-{structure_indicies[1]}"
 
         format_slurm_input(
             formatted_file=join_paths(self.scripts_directory, file_shell),
             commands=distance_commands,
             job_name="calc_dist",
-            array=f"0-{num_structures - 1}",
+            array=array,
             **kwargs,
         )
 
-        return f"sbatch {file_shell};"
->>>>>>> Write script to compare distances
+        return f"sbatch {file_shell}"
