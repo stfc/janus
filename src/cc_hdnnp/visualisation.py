@@ -983,7 +983,7 @@ def plot_energy_percentage_diff(
         density=density,
         range=range,
     )
-    plt.xlabel('$100 * (E_{ref} - E_{n2p2}) / E_{ref}$')
+    plt.xlabel('$E_{n2p2}$ error (%)')
     plt.show()
 
 
@@ -1099,5 +1099,5 @@ def plot_force_percentage_diff(
         bins=bins, density=density,
         range=range
     )
-    plt.xlabel('$100 * (F_{ref} - F_{n2p2}) / F_{ref}$')
+    plt.xlabel('$F_{n2p2}$ error (%)')
     plt.show()
