@@ -571,6 +571,7 @@ class Dataset(List[Frame]):
                 ):
                     frames.append(
                         Frame(
+                            pbc = atoms.get_pbc(),
                             lattice=atoms.cell,
                             symbols=atoms.symbols,
                             positions=atoms.positions,
