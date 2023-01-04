@@ -282,7 +282,7 @@ def plot_epoch_histogram_2D(
     energy_log: bool = True,
 ):
     """
-    For `n2p2_directory`, load the files corresponding to `epoch` and histogrsm plot the
+    For `n2p2_directory`, load the files corresponding to `epoch` and histogram plot the
     reference values against the network predictions.
 
     Parameters
