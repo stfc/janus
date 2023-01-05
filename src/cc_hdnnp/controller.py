@@ -1546,6 +1546,8 @@ class Controller:
         """
         submit_all_text = ""
 
+        if n_simulations < 1:
+            raise ValueError("`n_simulations` must be at least 1.")
         if n_simulations % 1000 == 0:
             num_scripts = n_simulations // 1000
         else:
@@ -1588,8 +1590,9 @@ class Controller:
         if num_scripts > 1:
             with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
                 f.write(submit_all_text)
-
-        return f"sbatch {file_batch_out}"
+            return f"bash {file_batch_out}"
+        else:
+            return f"sbatch {file_batch_out}"
 
     def _write_active_learning_nn_script(
         self,
