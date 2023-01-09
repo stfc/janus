@@ -60,6 +60,7 @@ class Frame(Atoms):
         frame_file: str = None,
         units: Dict[str, str] = None,
         statistics: List[str] = None,
+        pbc: List[bool] = [True,True,True],
     ):
         super().__init__(
             symbols=symbols, positions=positions, cell=lattice, charges=charges
@@ -72,7 +73,7 @@ class Frame(Atoms):
         self.name = name
         self.frame_file = frame_file
         self.statistics = statistics
-
+        self.set_pbc(pbc)
         self._units = {"energy": "eV", "length": "Ang"}
         if units is not None:
             self._set_units(units=units)
@@ -570,6 +571,7 @@ class Dataset(List[Frame]):
                 ):
                     frames.append(
                         Frame(
+                            pbc = atoms.get_pbc(),
                             lattice=atoms.cell,
                             symbols=atoms.symbols,
                             positions=atoms.positions,
