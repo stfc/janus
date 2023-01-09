@@ -715,7 +715,7 @@ class Controller:
               - exclusive
               - commands
         """
-        commands = self.qe_module_commands
+        commands = self.qe_module_commands.copy()
         commands += [
             "n=$SLURM_NTASKS",
             "export OMP_NUM_THREADS=1",
@@ -809,6 +809,7 @@ class Controller:
                         submit_all_text += self.write_qe_slurm(
                             folder, structure, **kwargs
                         )
+                        submit_all_text += "\n"
 
         if submit_all_text:
             with open(join_paths(self.scripts_directory, "qe_all.sh"), "w") as f:
