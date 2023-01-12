@@ -5,7 +5,7 @@ description = ""
 authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.8.0,<4"
+python = "~3.8.0"
 ase = "^3.22.0"
 ipykernel = "^6.0.3"
 matplotlib = "^3.4.2"
