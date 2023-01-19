@@ -747,6 +747,7 @@ class Controller:
         pseudos: Dict[str, str],
         qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
+        qe_kwargs: dict = None,
         **kwargs,
     ):
         """
@@ -770,6 +771,8 @@ class Controller:
         selection: tuple of int
             Allows for subsampling of the trajectory files. First entry is the index of the
             first frame to use, second allows for every nth frame to be selected.
+        qe_kwargs: Dict
+            Dictionary of keyword arguments to be passed to `write_qe_input`.
         **kwargs:
             Can be used to set optional str arguments for the batch script:
               - constraint
@@ -803,7 +806,7 @@ class Controller:
                         if not exists(folder):
                             mkdir(folder)
                         self.write_qe_input(
-                            a, folder, structure=structure, pseudos=pseudos
+                            a, folder, structure=structure, pseudos=pseudos, **qe_kwargs
                         )
                         self.write_qe_pp(folder, structure=structure)
                         submit_all_text += self.write_qe_slurm(
