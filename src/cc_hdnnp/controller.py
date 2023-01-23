@@ -747,7 +747,7 @@ class Controller:
         pseudos: Dict[str, str],
         qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
-        qe_kwargs: dict = None,
+        qe_kwargs: dict = {},
         **kwargs,
     ):
         """
