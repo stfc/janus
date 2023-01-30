@@ -914,6 +914,8 @@ class Dataset(List[Frame]):
             First entry is a list of the indices of Frames that were written to file.
             Second entry is a list of the indices of Frames that were NOT written to file.
         """
+        if units is None and format != "n2p2":
+            units = {"energy": "eV", "length": "Ang"}
         if units is not None:
             self.change_units_all(units)
         if format == "n2p2":
