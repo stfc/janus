@@ -750,10 +750,6 @@ class Dataset(List[Frame]):
                 charges = []
                 statistics = []
                 energy = None
-                # Assume the n2p2 data file uses Ha and Bohr,
-                # given these are the RuNNer defaults
-                if units is None:
-                    units = {"energy": "Ha", "length": "Bohr"}
                 if self.all_structures is not None and len(self.all_structures) == 1:
                     name = list(self.all_structures)[0]
                 else:
@@ -826,6 +822,10 @@ class Dataset(List[Frame]):
                     lattice = None
                 else:
                     lattice = np.array(lattice)
+                # Assume the n2p2 data file uses Ha and Bohr,
+                # given these are the RuNNer defaults
+                if units is None:
+                    units = {"energy": "Ha", "length": "Bohr"}
                 frames.append(
                     Frame(
                         lattice=lattice,
