@@ -11,6 +11,7 @@ from ase.atoms import Atoms
 from ase.geometry import is_orthorhombic
 from ase.io.formats import read, write
 import numpy as np
+import warnings
 
 from cc_hdnnp.structure import AllStructures, Structure
 from .units import UNITS
@@ -193,7 +194,7 @@ class Frame(Atoms):
 
         Parameters
         ----------
-        units: Dict[str, str]
+        new_units: Dict[str, str]
             The new units to convert the frame to. Supports keys of "length" and "energy".
         """
         length_conversion = UNITS[self.units["length"]] / UNITS[new_units["length"]]
@@ -527,6 +528,10 @@ class Dataset(List[Frame]):
     verbosity: int = 0,
         How much information to print during reading. 0 will result in no printing,
         1 prints warnings. Optional, default is 0.
+    units: Dict[str, str]
+        The units to assign to the values given. Supports keys of "length" and "energy".
+        Unused if `format` is not "n2p2", or if file contains comments with "units".
+        Optional, default is None.
     **kwargs
         If `format` is not "n2p2", any other keyword arguments will be passed to the ASE
         read function.
@@ -539,6 +544,7 @@ class Dataset(List[Frame]):
         all_structures: AllStructures = None,
         format: str = "n2p2",
         verbosity: int = 0,
+        units: Dict[str, str] = None,
         **kwargs,
     ):
         self.all_structures = all_structures
@@ -559,7 +565,7 @@ class Dataset(List[Frame]):
         else:
             # Load from file
             if format == "n2p2":
-                for frame in self.read_data_file(data_file=data_file):
+                for frame in self.read_data_file(data_file=data_file, units=units):
                     frames.append(frame)
             else:
                 if all_structures is not None and len(all_structures) == 1:
@@ -569,16 +575,32 @@ class Dataset(List[Frame]):
                 for atoms in read(
                     filename=data_file, format=format, index=":", **kwargs
                 ):
-                    frames.append(
-                        Frame(
-                            pbc = atoms.get_pbc(),
-                            lattice=atoms.cell,
-                            symbols=atoms.symbols,
-                            positions=atoms.positions,
-                            charges=atoms.get_initial_charges(),
-                            name=structure_name,
+                    try:
+                        frames.append(
+                            Frame(
+                                pbc = atoms.get_pbc(),
+                                lattice=atoms.cell,
+                                symbols=atoms.symbols,
+                                positions=atoms.positions,
+                                charges=atoms.get_initial_charges(),
+                                name=structure_name,
+                                forces=atoms.get_forces(),
+                                energy=atoms.get_potential_energy(),
+                                units=units,
+                            )
                         )
-                    )
+                    except:
+                        frames.append(
+                            Frame(
+                                pbc = atoms.get_pbc(),
+                                lattice=atoms.cell,
+                                symbols=atoms.symbols,
+                                positions=atoms.positions,
+                                charges=atoms.get_initial_charges(),
+                                name=structure_name,
+                                units=units,
+                            )
+                        )
             super().__init__(frames)
 
     @property
@@ -691,6 +713,7 @@ class Dataset(List[Frame]):
     def read_data_file(
         self,
         data_file: str,
+        units: Dict[str, str] = None,
     ) -> List[Frame]:
         """
         Read n2p2 structure file and return the data as a list of Frames.
@@ -727,9 +750,6 @@ class Dataset(List[Frame]):
                 charges = []
                 statistics = []
                 energy = None
-                # Assume the n2p2 data file uses Ha and Bohr,
-                # given these are the RuNNer defaults
-                units = {"energy": "Ha", "length": "Bohr"}
                 if self.all_structures is not None and len(self.all_structures) == 1:
                     name = list(self.all_structures)[0]
                 else:
@@ -740,9 +760,25 @@ class Dataset(List[Frame]):
                     name = words[2]
 
                 if len(words) >= 3 and words[1] == "units":
-                    units = literal_eval("".join(words[2:]))
+                    if units is None:
+                        units = literal_eval("".join(words[2:]))
+                    elif literal_eval("".join(words[2:])) != units:
+                        warnings.warn(
+                            f"The units {units} were given when initialising the "
+                            f'dataset, but units {literal_eval("".join(words[2:]))} '
+                            f"are specified in comments in the datafile. "
+                            f"Using units: {units}. Please ensure these are correct."
+                        )
                 elif len(words) >= 4 and words[3].startswith("units="):
-                    units = literal_eval(words[3][6:])
+                    if units is None:
+                        units = literal_eval(words[3][6:])
+                    elif literal_eval(words[3][6:]) != units:
+                        warnings.warn(
+                            f"The units {units} were given when initialising the "
+                            f'dataset, but units {literal_eval(words[3][6:])} '
+                            f"are specified in comments in the datafile. "
+                            f"Using units: {units}. Please ensure these are correct."
+                        )
 
                 if len(words) >= 3 and words[1] == "statistics":
                     statistics_text = " ".join(words[2:])
@@ -786,6 +822,10 @@ class Dataset(List[Frame]):
                     lattice = None
                 else:
                     lattice = np.array(lattice)
+                # Assume the n2p2 data file uses Ha and Bohr,
+                # given these are the RuNNer defaults
+                if units is None:
+                    units = {"energy": "Ha", "length": "Bohr"}
                 frames.append(
                     Frame(
                         lattice=lattice,
@@ -817,7 +857,7 @@ class Dataset(List[Frame]):
             An iterable object of bool, if True then the corresponding Frame in the Dataset
             will be written to file, else it will be omitted (but still be present in `self`).
         append: bool = False
-            Wether to overwrite or append to `file_out`. Optional, default is False.
+            Whether to overwrite or append to `file_out`. Optional, default is False.
 
         Returns
         -------
@@ -846,6 +886,7 @@ class Dataset(List[Frame]):
         format: str = "n2p2",
         conditions: Iterable[bool] = None,
         append: bool = False,
+        units : Dict[str, str] = None,
         **kwargs,
     ) -> Tuple[List[int], List[int]]:
         """
@@ -862,7 +903,7 @@ class Dataset(List[Frame]):
             An iterable object of bool, if True then the corresponding Frame in the Dataset
             will be written to file, else it will be omitted (but still be present in `self`).
         append: bool = False
-            Wether to overwrite or append to `file_out`. Optional, default is False.
+            Whether to overwrite or append to `file_out`. Optional, default is False.
         **kwargs
             If `format` is not "n2p2", any other keyword arguments will be passed to the ASE
             read function.
@@ -873,6 +914,10 @@ class Dataset(List[Frame]):
             First entry is a list of the indices of Frames that were written to file.
             Second entry is a list of the indices of Frames that were NOT written to file.
         """
+        if units is None and format != "n2p2":
+            units = {"energy": "eV", "length": "Ang"}
+        if units is not None:
+            self.change_units_all(units)
         if format == "n2p2":
             return self.write_data_file(
                 file_out=file_out, conditions=conditions, append=append
@@ -945,7 +990,7 @@ class Dataset(List[Frame]):
 
         Parameters
         ----------
-        units: Dict[str, str]
+        new_units: Dict[str, str]
             The new units to convert the Dataset to. Supports keys of "length" and "energy".
         """
         for frame in self:
