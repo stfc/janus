@@ -1569,3 +1569,83 @@ def calc_ADF_errors(
 
     print(f"Mean      | {np.average(accuracies)}")
     print("==============================")
+
+
+class Symmetry_functions():
+    def __init__(self,filename):
+        E = []; Type = []; eta = []; rshift = []; rcutoff = []; lmbda = []; zeta = [];
+        cutoff_type = 0
+        with open(filename, "r") as file:
+            for line in file.readlines():
+                if (line[0] != '#'):
+                    if ("cutoff_type" in line):
+                        cutoff_type = float(line.split()[1])
+                        alpha = float(line.split()[2])
+                    if("symfunction_short" in line):
+                        if(int(line.split()[2]) == 2):
+                            E.append([line.split()[1], line.split()[3]])
+                            Type.append(2)
+                            eta.append(float(line.split()[4]))
+                            rshift.append(float(line.split()[5]))
+                            rcutoff.append(float(line.split()[6]))
+                            lmbda.append( 0)
+                            zeta.append(0)
+                        if(int(line.split()[2]) == 3):
+                            E.append([line.split()[1], line.split()[3],  line.split()[4]])
+                            Type.append(3)
+                            eta.append(float(line.split()[5]))
+                            lmbda.append(float(line.split()[6]))
+                            zeta.append(float(line.split()[7]))
+                            rshift.append(float(line.split()[9]))
+                            rcutoff.append(float(line.split()[8]))
+        self.sym_functions = pd.DataFrame({'E' : E, 'Type' : Type, 'eta' : eta, 'rshift':rshift, 'rcutoff':rcutoff, 'lambda':lmbda, 'zeta': zeta, 'alpha':alpha * np.ones_like(Type), 'cutoff_type':cutoff_type * np.ones_like(Type)})
+        self.r = np.linspace(self.sym_functions['rcutoff'].max(),0,100, endpoint = False)
+        self.theta = np.linspace(0,np.pi*2,100)
+
+    def cutoff_function(self, i , r=[]):
+        if not isinstance(r, np.ndarray):
+            if not r: r = self.r
+        x = (r - (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha'])) /  (self.sym_functions.iloc[i]['rcutoff'] - (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha']))
+        if self.sym_functions.iloc[i]['cutoff_type'] == 6:
+            return ((((15 - 6*x)*x - 10)*(x**3) + 1)*(r < self.sym_functions.iloc[i]['rcutoff'])* (r >= (self.sym_functions.iloc[i]['rcutoff']* self.sym_functions.iloc[i]['alpha']))) + ((r < (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha']))* (r >=0))
+
+
+    def activation_function_radial(self, i):
+        if self.sym_functions.iloc[i]['Type'] == 2:
+            return np.exp(-self.sym_functions.iloc[i]['eta']*((self.r - self.sym_functions.iloc[i]['rshift'])** 2)) * self.cutoff_function(i)
+        else:
+            return np.nan*np.ones_like(self.r)
+    
+    def activation_function_theta(self, i, r_ij = 1, r_jk = 1):
+        r_ik = ((r_ij**2.) +  (r_jk**2.) - (2.*r_ij*r_jk*np.cos(self.theta))) ** 0.5
+        if self.sym_functions.iloc[i]['Type'] == 3:
+            return  (2**(1 - self.sym_functions.iloc[i]['zeta'])) * ((1 + self.sym_functions.iloc[i]['lambda'] * np.cos(self.theta))**self.sym_functions.iloc[i]['zeta']) * np.exp(-self.sym_functions.iloc[i]['eta'] * (((r_ij - self.sym_functions.iloc[i]['rshift'])**2) + ((r_jk - self.sym_functions.iloc[i]['rshift'])**2) + ((r_ik - self.sym_functions.iloc[i]['rshift'])**2))) * self.cutoff_function(i , r_ij)  * self.cutoff_function(i , r_jk)  * self.cutoff_function(i , r_ik)
+        elif self.sym_functions.iloc[i]['Type'] == 9:
+            return (2**(1 - self.sym_functions.iloc[i]['zeta'])) * ((1 + self.sym_functions.iloc[i]['lambda'] * np.cos(self.theta))**self.sym_functions.iloc[i]['zeta']) *  np.exp(-self.sym_functions.iloc[i]['eta'] * (((r_ij - self.sym_functions.iloc[i]['rshift'])**2) + (r_jk - self.sym_functions.iloc[i]['rshift'])**2)) * self.cutoff_function(i , r_ij)  * self.cutoff_function(i , r_jk)
+        else:
+            return np.nan*np.ones_like(self.theta)
+
+    def plot_radial(self):
+        for i in range(len(self.sym_functions)):
+            plt.plot(self.r, self.activation_function_radial(i))
+            plt.xlabel('r (Bohr)')
+            plt.ylabel('$G(r)$')
+        plt.show()
+
+    def plot_angular(self):
+        for i in range(len(self.sym_functions)):
+            plt.plot(self.theta, self.activation_function_theta(i))
+            plt.xlabel('$\\theta$')
+            plt.ylabel('$G(\\theta)$')
+        plt.show()
+
+    def plot_3d_theta(self,i):
+        G = np.zeros((len(self.r), len(self.theta)))
+        X = np.zeros((len(self.r), len(self.theta))); Y = np.zeros((len(self.r), len(self.theta)))
+        for m, r in enumerate(self.r):
+            G[m, :] = self.activation_function_theta(i, r_ij = r, r_jk = r)
+            X[m,:] = r*np.cos(self.theta); Y[m,:] = r*np.sin(self.theta);
+        plt.pcolor(X, Y, G)
+        plt.xlabel('x (Bohr)')
+        plt.ylabel('y (Bohr)')
+        plt.show()
