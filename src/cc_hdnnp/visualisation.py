@@ -716,7 +716,7 @@ def plot_data_histogram(
     for i, data_file in enumerate(data_files):
         data = Dataset(data_file=data_file)
         energy = data.all_energies
-        force = data.all_forces.flatten()
+        force = np.concatenate(data.all_forces, axis=0).flatten()
         if i == 0:
             energy_min = min(energy)
             energy_max = max(energy)
