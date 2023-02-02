@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 
+import pandas as pd
+
 from .dataset import Dataset
 from .file_readers import read_lammps_log, read_nn_settings
 
@@ -1605,38 +1607,66 @@ class Symmetry_functions():
     def cutoff_function(self, i , r=[]):
         if not isinstance(r, np.ndarray):
             if not r: r = self.r
-        x = (r - (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha'])) /  (self.sym_functions.iloc[i]['rcutoff'] - (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha']))
+        rc = self.sym_functions.iloc[i]['rcutoff']; a = self.sym_functions.iloc[i]['alpha']
+        x = (r - (rc * a)) /  (rc - (rc * a))
         if self.sym_functions.iloc[i]['cutoff_type'] == 6:
-            return ((((15 - 6*x)*x - 10)*(x**3) + 1)*(r < self.sym_functions.iloc[i]['rcutoff'])* (r >= (self.sym_functions.iloc[i]['rcutoff']* self.sym_functions.iloc[i]['alpha']))) + ((r < (self.sym_functions.iloc[i]['rcutoff'] * self.sym_functions.iloc[i]['alpha']))* (r >=0))
-
+            return ((((15 - 6*x)*x - 10)*(x**3) + 1)*(r < rc) * (r >= (rc* a)))  + ((r < (rc * a))* (r >=0))
 
     def activation_function_radial(self, i):
+        n = self.sym_functions.iloc[i]['eta'];
+        r = self.r; rs = self.sym_functions.iloc[i]['rshift'];
+        fc = self.cutoff_function(i);
         if self.sym_functions.iloc[i]['Type'] == 2:
-            return np.exp(-self.sym_functions.iloc[i]['eta']*((self.r - self.sym_functions.iloc[i]['rshift'])** 2)) * self.cutoff_function(i)
+            return np.exp(-n*((r - rs)** 2)) * fc
         else:
-            return np.nan*np.ones_like(self.r)
+            return np.nan*np.ones_like(r)
     
     def activation_function_theta(self, i, r_ij = 1, r_jk = 1):
-        r_ik = ((r_ij**2.) +  (r_jk**2.) - (2.*r_ij*r_jk*np.cos(self.theta))) ** 0.5
+        O = self.theta; n = self.sym_functions.iloc[i]['eta'];
+        rs = self.sym_functions.iloc[i]['rshift'];
+        z = self.sym_functions.iloc[i]['zeta']; lbda = self.sym_functions.iloc[i]['lambda']
+        r_ik = ((r_ij**2.) +  (r_jk**2.) - (2.*r_ij*r_jk*np.cos(O))) ** 0.5
+        fc_rij = self.cutoff_function(i , r_ij); fc_rjk = self.cutoff_function(i , r_jk); fc_rik = self.cutoff_function(i , r_ik);
         if self.sym_functions.iloc[i]['Type'] == 3:
-            return  (2**(1 - self.sym_functions.iloc[i]['zeta'])) * ((1 + self.sym_functions.iloc[i]['lambda'] * np.cos(self.theta))**self.sym_functions.iloc[i]['zeta']) * np.exp(-self.sym_functions.iloc[i]['eta'] * (((r_ij - self.sym_functions.iloc[i]['rshift'])**2) + ((r_jk - self.sym_functions.iloc[i]['rshift'])**2) + ((r_ik - self.sym_functions.iloc[i]['rshift'])**2))) * self.cutoff_function(i , r_ij)  * self.cutoff_function(i , r_jk)  * self.cutoff_function(i , r_ik)
+            return  (2**(1 - z)) * ((1 + lbda * np.cos(O))**z) * np.exp(- n * (((r_ij - rs)**2) + ((r_jk - rs)**2) + ((r_ik - rs)**2))) * fc_rij  * fc_rjk  * fc_rik
         elif self.sym_functions.iloc[i]['Type'] == 9:
-            return (2**(1 - self.sym_functions.iloc[i]['zeta'])) * ((1 + self.sym_functions.iloc[i]['lambda'] * np.cos(self.theta))**self.sym_functions.iloc[i]['zeta']) *  np.exp(-self.sym_functions.iloc[i]['eta'] * (((r_ij - self.sym_functions.iloc[i]['rshift'])**2) + (r_jk - self.sym_functions.iloc[i]['rshift'])**2)) * self.cutoff_function(i , r_ij)  * self.cutoff_function(i , r_jk)
+            return  (2**(1 - z)) * ((1 + lbda * np.cos(O))**z) * np.exp(- n * (((r_ij - rs)**2) + ((r_jk - rs)**2))) * fc_rij  * fc_rjk
         else:
             return np.nan*np.ones_like(self.theta)
 
-    def plot_radial(self):
+    def plot_radial(self,elements = []):
         for i in range(len(self.sym_functions)):
-            plt.plot(self.r, self.activation_function_radial(i))
-            plt.xlabel('r (Bohr)')
-            plt.ylabel('$G(r)$')
+            plot = True
+            if (len(self.sym_functions.iloc[i]['E']) == 2):
+               for j in range(0,2):
+                  if(len(elements) >=j+1):
+                      if(elements[j]!=self.sym_functions.iloc[i]['E'][j]):
+                          plot=False
+            else: plot = False
+            if plot:plt.plot(self.r, self.activation_function_radial(i))
+        plt.xlabel('r (Bohr)')
+        plt.ylabel('$G(r)$')
         plt.show()
 
-    def plot_angular(self):
+    def plot_angular(self, elements = [], polar = False):
+        if polar:
+            fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        else:
+            fig, ax = plt.subplots()
         for i in range(len(self.sym_functions)):
-            plt.plot(self.theta, self.activation_function_theta(i))
-            plt.xlabel('$\\theta$')
-            plt.ylabel('$G(\\theta)$')
+            plot = True
+            if (len(self.sym_functions.iloc[i]['E']) == 3):
+               for j in range(0,3):
+                  if(len(elements) >=j+1):
+                      if(elements[j]!=self.sym_functions.iloc[i]['E'][j]):
+                          plot=False
+            else: plot = False
+            if plot: ax.plot(self.theta, self.activation_function_theta(i))
+        if polar:
+            ax.set_rticks([])
+        else:
+            ax.set_xlabel('$\\theta$')
+            ax.set_ylabel('$G(\\theta)$')
         plt.show()
 
     def plot_3d_theta(self,i):
