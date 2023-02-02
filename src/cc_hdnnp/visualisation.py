@@ -1592,9 +1592,9 @@ class Symmetry_functions():
                             rcutoff.append(float(line.split()[6]))
                             lmbda.append( 0)
                             zeta.append(0)
-                        if(int(line.split()[2]) == 3):
+                        if(int(line.split()[2]) == 3 or int(line.split()[2]) == 9):
                             E.append([line.split()[1], line.split()[3],  line.split()[4]])
-                            Type.append(3)
+                            Type.append(int(line.split()[2]))
                             eta.append(float(line.split()[5]))
                             lmbda.append(float(line.split()[6]))
                             zeta.append(float(line.split()[7]))
@@ -1669,13 +1669,24 @@ class Symmetry_functions():
             ax.set_ylabel('$G(\\theta)$')
         plt.show()
 
-    def plot_3d_theta(self,i):
+    def plot_2d(self,i):
         G = np.zeros((len(self.r), len(self.theta)))
-        X = np.zeros((len(self.r), len(self.theta))); Y = np.zeros((len(self.r), len(self.theta)))
+        R = np.zeros((len(self.r), len(self.theta))); Theta = np.zeros((len(self.r), len(self.theta)))
         for m, r in enumerate(self.r):
             G[m, :] = self.activation_function_theta(i, r_ij = r, r_jk = r)
-            X[m,:] = r*np.cos(self.theta); Y[m,:] = r*np.sin(self.theta);
-        plt.pcolor(X, Y, G)
-        plt.xlabel('x (Bohr)')
-        plt.ylabel('y (Bohr)')
+            R[m,:] = r*np.ones_like(self.theta); Theta[m,:] = self.theta
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        ax.pcolor(Theta, R, G)
+        ax.set_rticks([])
         plt.show()
+
+    def plot_2d_all(self, elements = [], polar = False):
+        for i in range(len(self.sym_functions)):
+            plot = True
+            if (len(self.sym_functions.iloc[i]['E']) == 3):
+               for j in range(0,3):
+                  if(len(elements) >=j+1):
+                      if(elements[j]!=self.sym_functions.iloc[i]['E'][j]):
+                          plot=False
+            else: plot = False
+            if plot: self.plot_2d(i)
