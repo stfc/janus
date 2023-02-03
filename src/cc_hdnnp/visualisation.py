@@ -3,6 +3,7 @@ Utility functions for reading from file and plotting the performance of the netw
 """
 
 from os.path import join
+from os import listdir
 from typing import Iterable, List, Tuple, Union
 
 from matplotlib.colors import LogNorm
@@ -1690,3 +1691,44 @@ class Symmetry_functions():
                           plot=False
             else: plot = False
             if plot: self.plot_2d(i)
+
+
+def check_float(potential_float):
+    try:
+        float(potential_float)
+        return True
+    except ValueError:
+        return False
+
+def plot_sf_hist(folder, sf_type = 2, elements = []):
+    files = listdir(folder); filenames = []
+    for f in files:
+        if (".histo" in f) and ("sf" in f): filenames.append(f)
+    for filename in filenames:
+        with open(folder + filename, "r") as file:
+            edges = np.array([])
+            values = np.array([])
+            max_value = 0.
+            srinfo = {'Filename' : filename}
+            for line in file:
+                splt = line.split()
+                if(splt[0] == "#SFINFO"):
+                    if check_float(splt[2]):
+                        srinfo[splt[1]] = float(splt[2])
+                    else:
+                        srinfo[splt[1]] = splt[2]
+                if(line.startswith(" ")):
+                    edges = np.append(edges, float(splt[0]) + float(splt[1]) / 2)
+                    values = np.append(values, float(splt[2]))
+            plot = True
+            if(srinfo['type'] != sf_type):plot=False
+            if 'e2' in srinfo:
+                if len(elements)==3:
+                    if srinfo['ec']!=elements[0] or srinfo['e1']!=elements[1] or srinfo['e2']!=elements[2]: plot=False
+            else:
+                if len(elements)==2:
+                    if srinfo['ec']!=elements[0] or srinfo['e1']!=elements[1]: plot=False
+            if plot: plt.plot(edges,values/ max(values))
+    plt.xlabel('G')
+    plt.ylabel('Distribution')
+    plt.show()
