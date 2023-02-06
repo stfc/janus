@@ -2055,9 +2055,10 @@ class Controller:
             for t in temperatures:
                 log_file_formatted = log_file.format(ensemble=ensemble, t=t)
                 log_file_complete = f"{self.lammps_directory}/{log_file_formatted}"
-                timesteps, _, _, lammps_temperatures = read_lammps_log(
+                timesteps, _, _, lammps_dataset = read_lammps_log(
                     dump_lammpstrj=1, log_lammps_file=log_file_complete
                 )
+                lammps_temperatures = lammps_dataset["Temp"]
                 temp_mean = np.mean(
                     lammps_temperatures[temperature_range[0] : temperature_range[1]]
                 )
