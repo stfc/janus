@@ -17,6 +17,7 @@ def plot_lammps_data(
     lammps_directory: str,
     log_file: str,
     timesteps_range: Tuple[int, int] = (0, None),
+    output_headers= ["Temp"]
 ):
     """
     Plots temperatures from a single LAMMPS log file.
@@ -34,6 +35,7 @@ def plot_lammps_data(
     _, _, _, dataset = read_lammps_log(
         dump_lammpstrj=1,
         log_lammps_file=join(lammps_directory, log_file),
+        output_headers = output_headers
     )
     for key in dataset.keys():
         ds = dataset[key]
