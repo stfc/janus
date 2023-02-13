@@ -8,6 +8,7 @@ from typing import Iterable, List, Tuple
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 
 from .dataset import Dataset
 from .file_readers import read_lammps_log, read_nn_settings
@@ -969,3 +970,85 @@ def plot_dataset_predictions(
         else:
             plt.ylabel('Count')
         plt.show()
+
+
+def plot_all_RDFs(
+    file_in: str,
+    dist_range: Tuple[float, float] = None
+):
+    """
+    Plots RDFs
+
+    Parameters
+    ----------
+    file_in: str
+        The filepath to the .pkl files containing the RDF data.
+    dist_range: Tuple[float, float]
+        Range of interatomic distances to plot. Default is None.
+    """
+    with open(file_in, 'rb') as f:
+        data = pickle.load(f)
+
+    for name, ref_data in data['ref_rdf'].items():
+        plot_RDF(
+            ref_data,
+            data['test_rdf'][name],
+            data['rdf_errors'][name],
+            name,
+            dist_range,
+        )
+
+
+def plot_RDF(
+    ref,
+    test,
+    error,
+    name,
+    dist_range: Tuple[float, float] = None,
+):
+    """
+    Plots single RDF
+
+    Parameters
+    ----------
+    ref: tuple
+        A
+    test: tuple
+        A
+    error: tuple
+        A
+    dist_range: Tuple[float, float] = None
+    """
+    # Plot settings
+    cm2in = 1/2.54
+    fig = plt.figure(figsize=(8*cm2in, 12*cm2in), constrained_layout=True)
+    gs = fig.add_gridspec(ncols=1, nrows=2, height_ratios=[2., 1.])
+
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[1, 0])
+
+    # Plot reference and test property
+    ax0.plot(ref[0], ref[1], color='black',
+                label="Reference RDF", lw=2)
+    ax0.plot(test[0], test[1], color='red', dashes=(0.5, 1.5), dash_capstyle='round',
+                label="Test RDF", lw=2)
+
+    # Plot error
+    ax1.plot(error[0], error[1], color='black', lw=2)
+
+    # Formatting
+    ax0.set_ylabel("RDF")
+    ax1.set_ylabel("Absolute Error")
+    ax1.set_xlabel(r'Distance (nm)')
+    if dist_range is not None:
+        ax0.set_xlim(dist_range)
+        ax1.set_xlim(dist_range)
+        ticks = np.linspace(dist_range[0], dist_range[1], 5)
+    else:
+        ax0.set_xlim([ref[0].min(), ref[0].max()])
+        ax1.set_xlim([ref[0].min(), ref[0].max()])
+        ticks = np.linspace(ref[0].min(), ref[0].max(), 5)
+    ax0.set_title(f"Species: {name}")
+    ax0.set_xticks(ticks)
+    ax1.set_xticks(ticks)
+    ax0.set_xticklabels([])
