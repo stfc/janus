@@ -13,6 +13,7 @@ aml = {path = "../aml", develop = true}
 sklearn = "^0.0"
 jupyter = "^1.0.0"
 notebook = "^6.4.6"
+joblib = "1.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
