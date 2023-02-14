@@ -12,7 +12,7 @@ matplotlib = "^3.4.2"
 aml = {path = "../aml", develop = true}
 sklearn = "^0.0"
 jupyter = "^1.0.0"
-notebook = "^6.4.6"
+notebook = "6.4.10"
 joblib = "1.2"
 pillow = "9.2"
 ipython = "8.1"
