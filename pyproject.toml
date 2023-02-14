@@ -16,6 +16,7 @@ notebook = "^6.4.6"
 joblib = "1.2"
 pillow = "9.2"
 ipython = "8.1"
+jupyter-core = "4.11.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
