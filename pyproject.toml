@@ -18,6 +18,7 @@ pillow = "9.2"
 ipython = "8.1"
 jupyter-core = "4.11.2"
 gitpython = "3.1.30"
+nbconvert = "6.5.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
