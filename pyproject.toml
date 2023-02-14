@@ -14,16 +14,17 @@ sklearn = "^0.0"
 jupyter = "^1.0.0"
 notebook = "6.4.12"
 joblib = "1.2"
-pillow = "9.2"
+pillow = "9.3"
 ipython = "8.10"
 jupyter-core = "4.11.2"
 nbconvert = "6.5.1"
+pyzmq = "25"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.2.4"
 coverage = {extras = ["toml"], version = "5.5"}
 pytest-cov = "^2.12.1"
-nox = "^2021.6.12"
+nox = "^2022.11.21"
 black = "^21.7b0"
 flake8 = "^3.9.2"
 flake8-bandit = "^2.1.2"
@@ -35,6 +36,7 @@ pytest-mock = "^3.6.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.2.0"
+nox = "2022.11.21"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
