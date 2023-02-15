@@ -867,8 +867,8 @@ def _read_predict_file(file: str) -> Tuple[np.ndarray]:
         ref = np.zeros(len(lines))
         n2p2 = np.zeros(len(lines))
         for i, line in enumerate(lines):
-            ref[i] = float(line.split()[-2])
-            n2p2[i] = float(line.split()[-1])
+            ref[i] = float(line.split()[2])
+            n2p2[i] = float(line.split()[3])
     return ref, n2p2
 
 
