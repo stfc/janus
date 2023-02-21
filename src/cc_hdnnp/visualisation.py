@@ -1029,6 +1029,9 @@ def plot_RDF(
         mask_num = np.sum(test[0] < ref[0].max()) + 1
         dist_masked = test[0][:mask_num]
         test_masked = test[1][:mask_num]
+    else:
+        dist_masked = test[0][:]
+        test_masked = test[1][:]
 
     # Plot reference and test property
     ax0.plot(ref[0], ref[1], color='black',
