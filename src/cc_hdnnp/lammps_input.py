@@ -31,6 +31,7 @@ pair_coeff * * {elements}
 INTEGRATOR_NVE = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -43,6 +44,7 @@ unfix x
 INTEGRATOR_NVT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -55,6 +57,7 @@ unfix y
 INTEGRATOR_NPT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -96,6 +99,7 @@ def format_lammps_input(
     cflength: str = "1.889726125836928",
     cfenergy: str = "0.03674932247495664",
     pair_coeff: str = "6.351",
+    replicate: List[int] = None,
     n_steps: List[str] = ["50000"],
     integrators: List[str] = ["nve"],
     temps: List[str] = ["300"],
@@ -170,6 +174,8 @@ def format_lammps_input(
         the factor to convert from a network using Ha to LAMMPS using eV.
     pair_coeff: str = "6.351"
         Radial cutoff, in LAMMPS length units. Optional, default is "6.351".
+    replicate: List[int] = None
+        Replicates the current simulation one or more times in each dimension.
     n_steps: List[str] = (50000,)
         Number of steps to take in the simulation. If multiple arguments are provided,
         each will be used for a simulation in turn with the relevant entry in
@@ -252,6 +258,11 @@ def format_lammps_input(
         pressure = pressures[i]
         pdamp = pdamps[i]
         npt_other = npt_others[i]
+
+        replicate_commands = ""
+        if i == 0 and replicate is not None:
+            replicate_commands = f"replicate {replicate[0]} {replicate[1]} {replicate[2]}"
+
         if i == len(integrators) - 1:
             if dump_commands is None and elements is None:
                 raise ValueError(
@@ -272,11 +283,21 @@ def format_lammps_input(
             dump = dump_commands
         if integrator == "nve":
             integrator_commands += INTEGRATOR_NVE.format(
-                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed,
+                temp=temp,
+                tdamp=tdamp,
+                dump_commands=dump,
+                n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         elif integrator == "nvt":
             integrator_commands += INTEGRATOR_NVT.format(
-                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed,
+                temp=temp,
+                tdamp=tdamp,
+                dump_commands=dump,
+                n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         elif integrator == "npt":
             if barostat not in ("iso", "aniso", "tri"):
@@ -291,6 +312,7 @@ def format_lammps_input(
                 npt_other=npt_other,
                 dump_commands=dump,
                 n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         else:
             raise ValueError(
