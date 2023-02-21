@@ -3,7 +3,7 @@ Utility functions for reading from file and plotting the performance of the netw
 """
 
 from os.path import join
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, Union
 
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
@@ -974,6 +974,8 @@ def plot_dataset_predictions(
 
 def plot_all_RDFs(
     file_in: str,
+    units: str = "nm",
+    dir_out: str = None,
 ):
     """
     Plots reference and predicted RDFs, and the associated errors
@@ -983,24 +985,37 @@ def plot_all_RDFs(
     ----------
     file_in: str
         The filepath of the .pkl files containing RDF data to be plotted.
+    units: str = "nm"
+        Units of distance being plotted
+    dir_out: str = None
+        Directory to save plots
     """
     with open(file_in, 'rb') as f:
         data = pickle.load(f)
 
+    file_out = None
+
     for name, ref_data in data['ref_rdf'].items():
+        if dir_out is not None:
+            file_out = f"{dir_out}/{name}_RDF.pdf"
+
         plot_RDF(
             ref_data,
             data['test_rdf'][name],
             data['rdf_errors'][name],
             name,
+            units=units,
+            file_out=file_out,
         )
 
 
 def plot_RDF(
-    ref,
-    test,
-    error,
-    name,
+    ref: Tuple[np.ndarray, np.ndarray],
+    test: Tuple[np.ndarray, np.ndarray],
+    error: List[Union[np.ndarray, np.float64]],
+    name: str,
+    units: str = "nm",
+    file_out: str = None,
 ):
     """
     Plots the reference and predicted RDF, and the associated error,
@@ -1008,14 +1023,18 @@ def plot_RDF(
 
     Parameters
     ----------
-    ref: tuple
+    ref: Tuple
         Reference RDF data
-    test: tuple
+    test: Tuple
         Predicted RDF data
-    error: tuple
+    error: Tuple
         Mean absolute error data between the reference and predicted RDFs
     name: str
         Name of species pair RDF data refers to
+    units: str = "nm"
+        Units of distance being plotted
+    file_out: str = None
+        Name of file to save RDF plot as
     """
     # Plot settings
     cm2in = 1/2.54
@@ -1045,6 +1064,14 @@ def plot_RDF(
     # Formatting
     ax0.set_ylabel("RDF")
     ax1.set_ylabel("Absolute Error")
-    ax1.set_xlabel(r'Distance (nm)')
+    ax1.set_xlabel(f"Distance ({units})")
     ax0.set_title(f"Species: {name}")
     ax0.set_xticklabels([])
+    plt.show()
+
+    if file_out is not None:
+        plt.savefig(
+            fname=file_out,
+            format="pdf",
+            dpi=300,
+        )
