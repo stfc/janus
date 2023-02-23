@@ -1038,7 +1038,10 @@ def plot_RDF(
     """
     # Plot settings
     cm2in = 1/2.54
-    fig = plt.figure(figsize=(8*cm2in, 12*cm2in), constrained_layout=True)
+    fig = plt.figure(
+        figsize=(20*cm2in, 20*cm2in),
+        constrained_layout=True,
+    )
     gs = fig.add_gridspec(ncols=1, nrows=2, height_ratios=[2., 1.])
 
     ax0 = fig.add_subplot(gs[0, 0])
