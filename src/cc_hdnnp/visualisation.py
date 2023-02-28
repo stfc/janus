@@ -1298,3 +1298,98 @@ def print_RDF_accuracies(file_in: str):
         print(f"{name.ljust(7)}| {accuracy}")
     print(f"Mean   | {np.average(accuracies)}")
     print("==========================")
+
+
+def _read_DF_file(
+        file: str,
+        max_1: bool = False,
+    ) -> Tuple[List, List]:
+    """
+    Read `file` and return RDFs or ADFs from nnp-dist.
+    Parameters
+    ----------
+    file : str
+        File to read.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`
+    Returns
+    -------
+    tuple of lists
+        The first entry is the list of distances or angles, the second is the list of RDFs or ADFs.
+    """
+    with open(file, "r") as file:
+        dist = []
+        df = []
+        for line in file.readlines():
+            if not line.startswith("#"):
+                dist.append(
+                    0.5 * (float(line.split()[0]) + float(line.split()[1]))
+                )
+                if max_1:
+                    df.append(float(line.split()[3]))
+                else:
+                    df.append(float(line.split()[2]))
+    return dist, df
+
+
+def plot_nnp_RDFs(
+    n2p2_directory: str,
+    elements: List[str],
+    max_1: bool = False,
+    
+):
+    """
+     For `n2p2_directory`, load the files corresponding to RDFs calculated
+     using nnp-dist and plot these values for each element pair.
+    Parameters
+    ----------
+    n2p2_directory: str
+        Directory to find RDF data in.
+    elements: List[str]
+        List of elements to determine pairs for RDF plots.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`
+    """
+    for i in range(len(elements)):
+        for j in range(i, len(elements)):
+            dist, rdf = _read_DF_file(
+                file=f"{n2p2_directory}/rdf_{elements[i]}_{elements[j]}.out",
+                max_1=max_1,
+            )
+            plt.plot(dist, rdf)
+            plt.title(f"RDF: {elements[i]}-{elements[j]}")
+            plt.xlabel("Distance (Bohr)")
+            plt.ylabel("RDF")
+            plt.show()
+
+
+def plot_nnp_ADFs(
+    n2p2_directory: str,
+    elements: List[str],
+    max_1: bool = False,
+):
+    """
+     For `n2p2_directory`, load the files corresponding to ADFs calculated
+     using nnp-dist and plot these values for each set of three elements.
+    Parameters
+    ----------
+    n2p2_directory: str
+        Directory to find ADF data in.
+    elements: List[str]
+        List of elements to determine pairs for ADF plots.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`
+    """
+    for i in range(len(elements)):
+        for j in range(len(elements)):
+            for k in range(j, len(elements)):
+                angle, adf = _read_DF_file(
+                    file=f"{n2p2_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                    max_1=max_1,
+                )
+                angle = np.multiply(angle, np.pi / 180)
+                plt.plot(angle, adf)
+                plt.title(f"ADF: {elements[i]}-{elements[j]}-{elements[k]}")
+                plt.xlabel("Angle")
+                plt.ylabel("ADF")
+                plt.show()
