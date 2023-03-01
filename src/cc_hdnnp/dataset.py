@@ -1032,3 +1032,25 @@ class Dataset(List[Frame]):
 
         conditions=[i in sample_indicies for i, _ in enumerate(self)]
         return conditions
+
+    def write_extxyz(self, file_out,new_units = {"energy": "eV", "length": "Ang"}, mode = "a", conditions:Iterable[bool] = None):
+        output = ""
+        self.change_units_all(new_units)
+        selected = []; removed = []
+        if conditions is None:
+                conditions = (True for _ in self)
+        i = 0
+        for frame, cond in zip(self, conditions):
+            if cond:
+                selected.append(i)
+                output += f'{len(frame)}\n'
+                output += f'Lattice="{frame.lattice[0,0]} {frame.lattice[0,1]} {frame.lattice[0,2]} {frame.lattice[1,0]} {frame.lattice[1,1]} {frame.lattice[1,2]} {frame.lattice[2,0]} {frame.lattice[2,1]} {frame.lattice[2,2]}" '
+                output += f'Properties=species:S:1:pos:R:3:forces:R:3 energy={frame.energy} pbc="{frame.pbc[0]} {frame.pbc[1]} {frame.pbc[2]}"\n'
+                for s, X, F in zip(frame.symbols, frame.positions, frame.forces):
+                    output += f'{s}    {X[0]}    {X[1]}    {X[2]}    {F[0]}    {F[1]}    {F[2]}\n'
+            else:
+                removed.append(i)
+            i+=1
+        with open(file_out, mode=mode) as f:
+            f.write(output)
+        return selected, removed
