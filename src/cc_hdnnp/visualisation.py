@@ -1393,3 +1393,43 @@ def plot_nnp_ADFs(
                 plt.xlabel("Angle")
                 plt.ylabel("ADF")
                 plt.show()
+
+def calc_ADF_errors(
+    n2p2_directory: str,
+    ref_directory: str,
+    elements: List[str],
+    max_1: bool = False,
+):
+    """
+    For `n2p2_directory` and `ref_directory`, load the files corresponding
+    to ADFs calculated using nnp-dist and calculate the mean absolute error
+    for each set of three elements.
+    Parameters
+    ----------
+    n2p2_directory: str
+        Directory to find predicted ADF data in.
+    n2p2_directory: str
+        Directory to find reference ADF data in.
+    elements: List[str]
+        List of elements to determine pairs for ADF errors.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`
+    """
+    av_acc = []
+    for i in range(len(elements)):
+        for j in range(len(elements)):
+            for k in range(j, len(elements)):
+                _, ref_adf = _read_DF_file(
+                    file=f"{ref_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                    max_1=max_1,
+                )
+                _, n2p2_adf = _read_DF_file(
+                    file=f"{n2p2_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                    max_1=max_1,
+                )
+                diff = np.subtract(ref_adf, n2p2_adf)
+                mae = np.sum(np.absolute(diff)) / (np.sum(ref_adf) + np.sum(n2p2_adf))
+                accuracy = (1 - mae) * 100
+                av_acc.append(accuracy)
+                print(f"{elements[i]}_{elements[j]}_{elements[k]}: {accuracy}")
+    print(f"Average accuracy: {np.average(av_acc)}")
