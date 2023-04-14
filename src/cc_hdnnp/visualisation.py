@@ -846,11 +846,12 @@ def plot_environments_histogram_2D(
 
 def _read_predict_file(file: str) -> Tuple[np.ndarray]:
     """
-    Read `file` and return the reference and network predicted values from nnp-dataset.
+    Return the reference and network predicted values from nnp-dataset stored in `file`.
+
     Parameters
     ----------
     file : str
-        File to read.
+        File containing energy or force outputs from nnp-dataset to read.
     Returns
     -------
     tuple of ndarray
@@ -872,232 +873,99 @@ def _read_predict_file(file: str) -> Tuple[np.ndarray]:
     return ref, n2p2
 
 
-def plot_energy_predictions(
+def plot_dataset_predictions(
     n2p2_directory: str,
     bins: int = 50,
     density: bool = True,
     range: List[float] = None,
+    alpha: float = 0.5,
+    ec: str = 'k',
+    histtype: str = "stepfilled",
+    quantities: dict = {"energy": "Ha"},
+    plot_type: str = "raw",
 ):
     """
-    For `n2p2_directory`, load the files corresponding to energies predicted using
+    For `n2p2_directory`, load the files corresponding to energies or forces predicted by
     nnp-dataset and histogram plot the reference values against the network predictions.
 
     Parameters
     ----------
     n2p2_directory: str
-        Directory to find training/testing files in.
+        Directory containing energy.comp and forces.comp created by nnp-dataset.
     bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
+        The number of energy or force bins. Optional, default is 50.
     density: bool = True
         Whether to plot the probability density. Optional, default is `True`.
     range: List[float] = None
         Histogram x-axis range. Optional, default is `None`.
+    alpha: float = 0.5
+        Sets the transparency of the plotted bars. `1.0` is opaque. Optional, default is `0.5`.
+    ec: str = 'k'
+        Edge colour of histogram. Optional, default is `k`.
+    histtype: str = "stepfilled"
+        Type of histogram to draw. Optional, default is "stepfilled".
     """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/energy.comp')
-    plt.figure(figsize=(12, 6))
-    plt.hist(
-        ref,
-        histtype='step',
-        bins=bins,
-        label='Reference',
-        density=density,
-        range=range,
-    )
-    plt.hist(
-        n2p2,
-        histtype='step',
-        bins=bins,
-        label='NNP',
-        density=density,
-        range=range,
-    )
-    plt.legend()
-    plt.xlabel('$E$')
-    plt.show()
+    for quantity, unit in quantities.items():
 
+        if quantity.lower() == "energy":
+            comp_file = "energy.comp"
+        elif quantity.lower() == "force":
+            comp_file = "forces.comp"
+        else:
+            raise ValueError(
+                f"{quantity} is not a valid quantity. Options: 'energy', 'force'"
+        )
+        ref, n2p2 = _read_predict_file(f'{n2p2_directory}/{comp_file}')
+        plt.figure(figsize=(8, 6))
+        plt.rcParams.update({'font.size': 14})
+        label = None
 
-def plot_energy_diff(
-    n2p2_directory: str,
-    bins: int = 50,
-    density: bool = True,
-    range: List[float] = None,
-):
-    """
-    For `n2p2_directory`, load the files corresponding to energies predicted using
-    nnp-dataset and histogram plot the difference between reference values
-    and the network predictions.
+        if plot_type == "raw":
+            plt.hist(
+                ref,
+                bins=bins,
+                label='Reference',
+                density=density,
+                range=range,
+                alpha=alpha,
+                ec=ec,
+                histtype=histtype,
+            )
+            data = n2p2
+            label = "Prediction"
+            xlabel = f'{quantity} / {unit}'
 
-    Parameters
-    ----------
-    n2p2_directory: str
-        Directory to find training/testing files in.
-    bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
-    density: bool = True
-        Whether to plot the probability density. Optional, default is `True`.
-    range: List[float] = None
-        Histogram x-axis range. Optional, default is `None`.
-    """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/energy.comp')
+        elif plot_type == "diff":
+            data = np.abs(ref - n2p2)
+            symbol = quantity.upper()[0]
+            xlabel= "$|" + symbol + "_{ref} - " + symbol + "_{n2p2}|$"
 
-    plt.figure(figsize=(12, 6))
-    plt.hist(
-        np.abs(ref - n2p2),
-        histtype='step',
-        bins=bins,
-        density=density,
-        range=range,
-    )
-    plt.xlabel('$|E_{ref} - E_{n2p2}|$')
-    plt.show()
+        elif plot_type == "percentage_diff":
+            data = np.where(ref==0, np.nan, 100 * (ref - n2p2) / ref)
+            symbol = quantity.upper()[0]
+            xlabel = "$" + symbol + "_{n2p2}$ error / %"
 
+        else:
+            raise ValueError(
+                f"{plot_type} is not a valid plot type. "
+                "Options: 'raw', 'diff', 'percentage_diff"
+        )
 
-def plot_energy_percentage_diff(
-    n2p2_directory: str,
-    bins: int = 50,
-    density: bool = True,
-    range: List[float] = None,
-):
-    """
-    For `n2p2_directory`, load the files corresponding to energies predicted using
-    nnp-dataset and histogram plot the percentage difference between reference values
-    and the network predictions.
-
-    Parameters
-    ----------
-    n2p2_directory: str
-        Directory to find training/testing files in.
-    bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
-    density: bool = True
-        Whether to plot the probability density. Optional, default is `True`.
-    range: List[float] = None
-        Histogram x-axis range. Optional, default is `None`.
-    """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/energy.comp')
-    plt.figure(figsize=(12, 6))
-    plt.hist(
-        100 * (ref - n2p2) / ref,
-        histtype='step',
-        bins=bins,
-        density=density,
-        range=range,
-    )
-    plt.xlabel('$E_{n2p2}$ error (%)')
-    plt.show()
-
-
-def plot_force_predictions(
-    n2p2_directory: str,
-    bins: int = 50,
-    density: bool = True,
-    range: List[float] = None,
-):
-    """
-    For `n2p2_directory`, load the files corresponding to forces predicted using
-    nnp-dataset and histogram plot the reference values against the network predictions.
-
-    Parameters
-    ----------
-    n2p2_directory: str
-        Directory to find training/testing files in.
-    bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
-    density: bool = True
-        Whether to plot the probability density. Optional, default is `True`.
-    range: List[float] = None
-        Histogram x-axis range. Optional, default is `None`.
-    """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/forces.comp')
-    plt.figure(figsize=(12, 6))
-    F_min = min(min(ref), min(n2p2))
-    F_max = max(max(ref), max(n2p2))
-    plt.hist(
-        ref,
-        histtype='step',
-        bins=bins,
-        label='Reference',
-        density=density,
-        range=range,
-    )
-
-    plt.hist(
-        n2p2,
-        histtype='step',
-        bins=bins,
-        label='NNP',
-        density=density,
-        range=range,
-    )
-    plt.legend()
-    plt.xlabel('$F$')
-    plt.show()
-
-
-def plot_force_diff(
-    n2p2_directory: str,
-    bins: int = 50,
-    density: bool = True,
-    range: List[float] = None,
-):
-    """
-    For `n2p2_directory`, load the files corresponding to forces predicted using
-    nnp-dataset and histogram plot the difference between reference values
-    and the network predictions.
-
-    Parameters
-    ----------
-    n2p2_directory: str
-        Directory to find training/testing files in.
-    bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
-    density: bool = True
-        Whether to plot the probability density. Optional, default is `True`.
-    range: List[float] = None
-        Histogram x-axis range. Optional, default is `None`.
-    """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/forces.comp')
-    plt.figure(figsize=(12, 6))
-    plt.hist(
-        np.abs(ref - n2p2),
-        histtype='step',
-        bins=bins,
-        density=density,
-        range=range,
-    )
-    plt.xlabel('$|F_{ref} - F_{n2p2}|$')
-    plt.show()
-
-
-def plot_force_percentage_diff(
-    n2p2_directory: str,
-    bins: int = 50,
-    density: bool = True,
-    range: List[float] = None,
-):
-    """
-    For `n2p2_directory`, load the files corresponding to forces predicted using
-    nnp-dataset and histogram plot the percentage difference between reference values
-    and the network predictions.
-
-    Parameters
-    ----------
-    n2p2_directory: str
-        Directory to find training/testing files in.
-    bins: int = 50
-        The number of bins along each axis. Optional, default is 50.
-    density: bool = True
-        Whether to plot the probability density. Optional, default is `True`.
-    range: List[float] = None
-        Histogram x-axis range. Optional, default is `None`.
-    """
-    ref, n2p2 = _read_predict_file(f'{n2p2_directory}/forces.comp')
-    plt.figure(figsize=(12, 6))
-    plt.hist(
-        100 * (ref - n2p2) / ref,
-        histtype='step',
-        bins=bins, density=density,
-        range=range
-    )
-    plt.xlabel('$F_{n2p2}$ error (%)')
-    plt.show()
+        plt.hist(
+            data,
+            bins=bins,
+            label=label,
+            density=density,
+            range=range,
+            alpha=alpha,
+            ec=ec,
+            histtype=histtype,
+        )
+        if plot_type == "raw":
+            plt.legend()
+        plt.xlabel(xlabel)
+        if density:
+            plt.ylabel('Density')
+        else:
+            plt.ylabel('Count')
+        plt.show()
