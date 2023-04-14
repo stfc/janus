@@ -134,7 +134,8 @@ def plot_learning_curve(
                 content.append(line.split())
                 epochs.append(epoch)
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(8, 6))
+    plt.rcParams.update({'font.size': 14})
     for key in keys:
         try:
             index = headers.index(key)
@@ -972,35 +973,35 @@ def plot_dataset_predictions(
         plt.show()
 
 
-def plot_all_RDFs(
+def plot_all_RDFs_with_errors(
     file_in: str,
     units: str = "nm",
     dir_out: str = None,
 ):
     """
     Plots reference and predicted RDFs, and the associated errors
-    for all species pairs saved in a .pkl file.
+    for each species pair saved in a .pkl file.
 
     Parameters
     ----------
     file_in: str
         The filepath of the .pkl files containing RDF data to be plotted.
     units: str = "nm"
-        Units of distance being plotted
+        Units of distance being plotted. Default is `nm`.
     dir_out: str = None
-        Directory to save plots
+        Directory to save plots. Default is `None`.
     """
     with open(file_in, 'rb') as f:
         data = pickle.load(f)
 
     file_out = None
 
-    for name, ref_data in data['ref_rdf'].items():
+    for name, ref in data['ref_rdf'].items():
         if dir_out is not None:
             file_out = f"{dir_out}/{name}_RDF.pdf"
 
-        plot_RDF(
-            ref_data,
+        plot_RDF_with_error(
+            ref,
             data['test_rdf'][name],
             data['rdf_errors'][name],
             name,
@@ -1009,7 +1010,37 @@ def plot_all_RDFs(
         )
 
 
-def plot_RDF(
+def _truncate_data(
+    ref: Tuple[np.ndarray, np.ndarray],
+    test: Tuple[np.ndarray, np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Truncates predicted data to match the length of reference data.
+
+    Parameters
+    ----------
+    ref: Tuple
+        Reference RDF data.
+    test: Tuple
+        Predicted RDF data.
+
+    Returns
+    -------
+    tuple of ndarray
+        The first entry is the array of truncated distances, and
+        the second is the array of truncated prediction data.
+    """
+    if test[0].max() > ref[0].max():
+        mask_num = np.sum(test[0] < ref[0].max()) + 1
+        dist_masked = test[0][:mask_num]
+        test_masked = test[1][:mask_num]
+    else:
+        dist_masked = test[0][:]
+        test_masked = test[1][:]
+    return dist_masked, test_masked
+
+
+def plot_RDF_with_error(
     ref: Tuple[np.ndarray, np.ndarray],
     test: Tuple[np.ndarray, np.ndarray],
     error: List[Union[np.ndarray, np.float64]],
@@ -1024,17 +1055,17 @@ def plot_RDF(
     Parameters
     ----------
     ref: Tuple
-        Reference RDF data
+        Reference RDF data.
     test: Tuple
-        Predicted RDF data
+        Predicted RDF data.
     error: Tuple
-        Mean absolute error data between the reference and predicted RDFs
+        Mean absolute error data between the reference and predicted RDFs.
     name: str
-        Name of species pair RDF data refers to
+        Name of species pair RDF data refers to.
     units: str = "nm"
-        Units of distance being plotted
+        Units of distance being plotted. Default is `nm`.
     file_out: str = None
-        Name of file to save RDF plot as
+        File to save plots. Default is `None`.
     """
     # Plot settings
     cm2in = 1/2.54
@@ -1042,20 +1073,15 @@ def plot_RDF(
         figsize=(20*cm2in, 20*cm2in),
         constrained_layout=True,
     )
+    plt.rcParams.update({'font.size': 14})
     gs = fig.add_gridspec(ncols=1, nrows=2, height_ratios=[2., 1.])
 
     ax0 = fig.add_subplot(gs[0, 0])
     ax1 = fig.add_subplot(gs[1, 0])
 
-    if test[0].max() > ref[0].max():
-        mask_num = np.sum(test[0] < ref[0].max()) + 1
-        dist_masked = test[0][:mask_num]
-        test_masked = test[1][:mask_num]
-    else:
-        dist_masked = test[0][:]
-        test_masked = test[1][:]
+    dist_masked, test_masked = _truncate_data(ref, test)
 
-    # Plot reference and test property
+    # Plot reference and predicted RDF
     ax0.plot(ref[0], ref[1], color='black',
                 label="Reference RDF", lw=2)
     ax0.plot(dist_masked, test_masked, color='red', dashes=(0.5, 1.5), dash_capstyle='round',
@@ -1067,7 +1093,7 @@ def plot_RDF(
     # Formatting
     ax0.set_ylabel("RDF")
     ax1.set_ylabel("Absolute Error")
-    ax1.set_xlabel(f"Distance ({units})")
+    ax1.set_xlabel(f"Distance / {units}")
     ax0.set_title(f"Species: {name}")
     ax0.set_xticklabels([])
     plt.show()
@@ -1078,3 +1104,197 @@ def plot_RDF(
             format="pdf",
             dpi=300,
         )
+
+
+def plot_all_RDFs_combined(
+    files_in: List[str],
+    labels: List[str] = None,
+    units: str = "nm",
+    file_out: str = None,
+):
+    """
+    Plots comparisons of RDFs saved in different .pkl files for all species pairs.
+
+    Parameters
+    ----------
+    files_in: List[str]
+        The filepath of the .pkl files containing predicted RDF data to be plotted.
+    labels: List[str]
+        Labels for plot legend, with the reference label first,
+        followed by the labels for the files listed in `files_in`. Default is `None`.
+    units: str = "nm"
+        Units of distance being plotted. Default is `nm`.
+    file_out: str = None
+        File to save plots. Default is `None`.
+    """
+    label = None
+    #Plot reference from first file
+    with open(files_in[0], 'rb') as f:
+                data = pickle.load(f)
+
+    for name, ref in data['ref_rdf'].items():
+        plt.figure(figsize=(8, 6))
+        plt.rcParams.update({'font.size': 14})
+
+        # Plot reference data
+        if labels is not None:
+            label = labels[0]
+        plt.plot(
+            ref[0],
+            ref[1],
+            color='black',
+            label=label,
+            lw=1,
+        )
+
+        for i, file_in in enumerate(files_in):
+            with open(file_in, 'rb') as f:
+                data = pickle.load(f)
+                try:
+                    test = data['test_rdf'][name]
+                    error = data['rdf_errors'][name]
+                except KeyError:
+                    swap_name = name.rsplit('-')[1] + "-" + name.rsplit('-')[0]
+                    test = data['test_rdf'][swap_name]
+                    error = data['rdf_errors'][swap_name]
+
+            dist_masked, test_masked = _truncate_data(ref, test)
+
+            if labels is not None:
+                label = labels[i+1]
+            plt.plot(
+                dist_masked,
+                test_masked,
+                linestyle="--",
+                lw=1.5,
+                label=label,
+            )
+
+        # Formatting
+        plt.ylabel("RDF")
+        plt.xlabel(f"Distance / {units}")
+        plt.title(f"{name}")
+        if labels is not None:
+            plt.legend()
+
+        if file_out is not None:
+            plt.savefig(
+                fname=f"{file_out}_{name}.pdf",
+                format="pdf",
+                dpi=300,
+                bbox_inches = "tight",
+            )
+        plt.show()
+
+
+def plot_average_RDFs(
+    files_in: List[str],
+    labels: List[str] = None,
+    units: str = "nm",
+    file_out: str = None,
+):
+    """
+    Plots comparisons of the average RDFs across all atom pairs
+    saved in different .pkl files.
+
+    Parameters
+    ----------
+    files_in: List[str]
+        The filepath of the .pkl files containing predicted RDF data to be plotted.
+    labels: List[str]
+        Labels for plot legend, with the reference label first,
+        followed by the labels for the files listed in `files_in`. Default is `None`.
+    units: str = "nm"
+        Units of distance being plotted. Default is `nm`.
+    file_out: str = None
+        File to save plots. Default is `None`.
+    """
+    plt.figure(figsize=(8, 6))
+    plt.rcParams.update({'font.size': 14})
+    with open(files_in[0], 'rb') as f:
+            data = pickle.load(f)
+
+    # Plot reference data
+    ref_sum = None
+    for name, ref in data['ref_rdf'].items():
+        if ref_sum is None:
+            ref_sum = np.zeros(len(ref[1]))
+        ref_sum = np.add(ref_sum, ref[1])
+
+    if labels is not None:
+        label = labels[0]
+    plt.plot(
+        ref[0],
+        ref_sum,
+        color='black',
+        label=label,
+        lw=1,
+    )
+
+    # Plot prediction data
+    for i, file_in in enumerate(files_in):
+
+        with open(file_in, 'rb') as f:
+            data = pickle.load(f)
+
+        test_data_sum = None
+        for name, ref in data['ref_rdf'].items():
+            try:
+                test = data['test_rdf'][name]
+            except KeyError:
+                swap_name = name.rsplit('-')[1] + "-" + name.rsplit('-')[0]
+                test = data['test_rdf'][swap_name]
+
+            dist_masked, test_masked = _truncate_data(ref, test)
+
+            if test_data_sum is None:
+                test_data_sum = np.zeros(len(test_masked))
+            test_data_sum = np.add(test_data_sum, test_masked)
+
+        if labels is not None:
+            label = labels[i+1]
+        plt.plot(
+            dist_masked,
+            test_data_sum,
+            linestyle="--",
+            lw=1.5,
+            label=label,
+        )
+
+    # Formatting
+    plt.ylabel("RDF")
+    plt.xlabel(f"Distance / {units}")
+    if labels is not None:
+        plt.legend()
+
+    if file_out is not None:
+        plt.savefig(
+            fname=f"{file_out}_sum.pdf",
+            format="pdf",
+            dpi=300,
+            bbox_inches = "tight",
+        )
+    plt.show()
+
+
+def print_RDF_accuracies(file_in: str):
+    """
+    Prints a table of RDF accuracies from a .pkl file.
+
+    Parameters
+    ----------
+    file_in: List[str]
+        The filepath of the .pkl file containing predicted and reference RDF data.
+    """
+    with open(file_in, 'rb') as f:
+        data = pickle.load(f)
+    accuracies = []
+    print("Label  | Accuracy / %")
+    print("==========================")
+    for name, ref_data in data['ref_rdf'].items():
+        error = data['rdf_errors'][name]
+        accuracy = float(100 * (1 - np.average(error[2])))
+        accuracies.append(accuracy)
+        print(f"{name.ljust(7)}| {accuracy}")
+    print(f"Mean   | {np.average(accuracies)}")
+    print("==========================")
