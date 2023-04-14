@@ -1508,7 +1508,9 @@ class Controller:
         """
         Write batch script for predicting energies and forces using a trained
         network. Returns the command to submit the script.
+
         Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
         shuffle: bool, optional
@@ -1560,7 +1562,9 @@ class Controller:
         """
         Write batch script for creating atomic environment data files.
         Returns the command to submit the script.
+
         Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
         n_bins: int, optional
@@ -1623,7 +1627,9 @@ class Controller:
         """
         Write batch script for calculating RDFs and ADFs using nnp-dist.
         Returns the command to submit the script.
+
         Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
         Parameters
         ----------
         cutoff: float, optional

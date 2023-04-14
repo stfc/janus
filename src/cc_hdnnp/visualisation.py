@@ -199,7 +199,6 @@ def plot_epoch_scatter(n2p2_directory: str, epoch: int, subsample_forces: int = 
         Only selects every nth value for the forces. Default is 512.
 
     """
-
     energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
     energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
     force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(epoch)
@@ -300,7 +299,6 @@ def plot_epoch_histogram_2D(
     energy_log:bool = True
         Whether to use a log scale when plotting the energy. Optional, default is True.
     """
-
     energy_train_file = join(n2p2_directory, "trainpoints.{:06d}.out").format(epoch)
     energy_test_file = join(n2p2_directory, "testpoints.{:06d}.out").format(epoch)
     force_train_file = join(n2p2_directory, "trainforces.{:06d}.out").format(epoch)
@@ -1306,12 +1304,14 @@ def _read_DF_file(
     ) -> Tuple[List, List]:
     """
     Read `file` and return RDFs or ADFs from nnp-dist.
+
     Parameters
     ----------
     file : str
         File to read.
-    max_1: bool = False,
-        Whether to normalise maximum to 1. Default is `False`
+    max_1: bool = False
+        Whether to normalise maximum to 1. Default is `False`.
+
     Returns
     -------
     tuple of lists
@@ -1336,11 +1336,13 @@ def plot_nnp_RDFs(
     n2p2_directory: str,
     elements: List[str],
     max_1: bool = False,
-    
+    file_out: str = None,
+    units: str = "Bohr",
 ):
     """
      For `n2p2_directory`, load the files corresponding to RDFs calculated
      using nnp-dist and plot these values for each element pair.
+
     Parameters
     ----------
     n2p2_directory: str
@@ -1348,7 +1350,11 @@ def plot_nnp_RDFs(
     elements: List[str]
         List of elements to determine pairs for RDF plots.
     max_1: bool = False,
-        Whether to normalise maximum to 1. Default is `False`
+        Whether to normalise maximum to 1. Default is `False`.
+    file_out: str = None
+        File to save plots. Default is `False`.
+    units: str = "Bohr"
+        Units of distance being plotted. Default is `Bohr`.
     """
     for i in range(len(elements)):
         for j in range(i, len(elements)):
@@ -1356,21 +1362,48 @@ def plot_nnp_RDFs(
                 file=f"{n2p2_directory}/rdf_{elements[i]}_{elements[j]}.out",
                 max_1=max_1,
             )
+            if i==0 and j==0:
+                rdf_sum = np.zeros(len(rdf))
+            rdf_sum = np.add(rdf_sum, rdf)
+            plt.figure(figsize=(8, 6))
+            plt.rcParams.update({'font.size': 14})
             plt.plot(dist, rdf)
-            plt.title(f"RDF: {elements[i]}-{elements[j]}")
-            plt.xlabel("Distance (Bohr)")
+            plt.title(f"{elements[i]}-{elements[j]}")
+            plt.xlabel(f"Distance / {units}")
             plt.ylabel("RDF")
+            if file_out is not None:
+                plt.savefig(
+                    fname=f"{file_out}_{elements[i]}-{elements[j]}.pdf",
+                    format="pdf",
+                    dpi=300,
+                    bbox_inches = "tight",
+                )
             plt.show()
+    plt.figure(figsize=(8, 6))
+    plt.rcParams.update({'font.size': 14})
+    plt.plot(dist, rdf_sum)
+    plt.xlabel(f"Distance / {units}")
+    plt.ylabel("RDF")
+    if file_out is not None:
+        plt.savefig(
+            fname=f"{file_out}_average.pdf",
+            format="pdf",
+            dpi=300,
+            bbox_inches = "tight",
+        )
+    plt.show()
 
 
 def plot_nnp_ADFs(
     n2p2_directory: str,
     elements: List[str],
     max_1: bool = False,
+    file_out: str = None
 ):
     """
      For `n2p2_directory`, load the files corresponding to ADFs calculated
      using nnp-dist and plot these values for each set of three elements.
+
     Parameters
     ----------
     n2p2_directory: str
@@ -1378,7 +1411,9 @@ def plot_nnp_ADFs(
     elements: List[str]
         List of elements to determine pairs for ADF plots.
     max_1: bool = False,
-        Whether to normalise maximum to 1. Default is `False`
+        Whether to normalise maximum to 1. Default is `False`.
+    file_out: str = None
+        File to save plots. Default is `None`.
     """
     for i in range(len(elements)):
         for j in range(len(elements)):
@@ -1387,12 +1422,107 @@ def plot_nnp_ADFs(
                     file=f"{n2p2_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
                     max_1=max_1,
                 )
-                angle = np.multiply(angle, np.pi / 180)
+                if i==0 and j==0 and k==0:
+                    adf_sum = np.zeros(len(adf))
+                adf_sum = np.add(adf_sum, adf)
+                plt.figure(figsize=(8, 6))
+                plt.rcParams.update({'font.size': 14})
                 plt.plot(angle, adf)
-                plt.title(f"ADF: {elements[i]}-{elements[j]}-{elements[k]}")
-                plt.xlabel("Angle")
+                plt.title(f"{elements[i]}-{elements[j]}-{elements[k]}")
+                plt.xlabel("Angle / $^\circ$")
                 plt.ylabel("ADF")
+                if file_out is not None:
+                    plt.savefig(
+                        fname=f"{file_out}_{elements[i]}-{elements[j]}-{elements[k]}.pdf",
+                        format="pdf",
+                        dpi=300,
+                        bbox_inches = "tight",
+                    )
                 plt.show()
+
+    plt.figure(figsize=(8, 6))
+    plt.rcParams.update({'font.size': 14})
+    plt.plot(angle, adf_sum)
+    plt.xlabel("Angle / $^\circ$")
+    plt.ylabel("ADF")
+    if file_out is not None:
+        plt.savefig(
+            fname=f"{file_out}_average.pdf",
+            format="pdf",
+            dpi=300,
+            bbox_inches = "tight",
+        )
+    plt.show()
+
+
+def plot_all_ADFs_combined(
+    n2p2_directories: List[str],
+    ref_directory: str,
+    elements: List[str],
+    max_1: bool = False,
+    labels: List[str] = None,
+    file_out: str = None,
+):
+    """
+    For `n2p2_directory` and `ref_directory`, load the files corresponding
+    to ADFs calculated using nnp-dist and calculate the mean absolute error
+    for each set of three elements.
+
+    Parameters
+    ----------
+    n2p2_directory: str
+        Directory to find predicted ADF data in.
+    ref_directory: str
+        Directory to find reference ADF data in.
+    elements: List[str]
+        List of elements to determine pairs for ADF errors.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`.
+    labels: List[str]
+        Labels for plot legend. Default is `None`.
+    file_out: str = None
+        File to save plots. Default is is `None`.
+    """
+    for i in range(len(elements)):
+        for j in range(len(elements)):
+            for k in range(j, len(elements)):
+                angle, ref_adf = _read_DF_file(
+                    file=f"{ref_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                    max_1=max_1,
+                )
+                plt.figure(figsize=(8, 6))
+                plt.rcParams.update({'font.size': 14})
+                if labels is not None:
+                    label = labels[0]
+                plt.plot(angle, ref_adf, label=label)
+                for idx, n2p2_directory in enumerate(n2p2_directories):
+                    angle, n2p2_adf = _read_DF_file(
+                        file=f"{n2p2_directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                        max_1=max_1,
+                    )
+                    if labels is not None:
+                        label = labels[idx+1]
+                    plt.plot(
+                        angle,
+                        n2p2_adf,
+                        label=label,
+                        linestyle="--",
+                    )
+                plt.title(f"{elements[i]}-{elements[j]}-{elements[k]}")
+                plt.xlabel("Angle / $^\circ$")
+                plt.ylabel("ADF")
+                plt.xticks(range(0, 210, 30))
+                if labels is not None:
+                    plt.legend(loc='upper right')
+                if file_out is not None:
+                    plt.savefig(
+                        fname=f"{file_out}_{elements[i]}-{elements[j]}-{elements[k]}.pdf",
+                        format="pdf",
+                        dpi=300,
+                        bbox_inches = "tight",
+                    )
+                plt.show()
+
 
 def calc_ADF_errors(
     n2p2_directory: str,
@@ -1403,19 +1533,22 @@ def calc_ADF_errors(
     """
     For `n2p2_directory` and `ref_directory`, load the files corresponding
     to ADFs calculated using nnp-dist and calculate the mean absolute error
-    for each set of three elements.
+    for each set of three elements and the average across all combinations.
+
     Parameters
     ----------
     n2p2_directory: str
         Directory to find predicted ADF data in.
-    n2p2_directory: str
+    ref_directory: str
         Directory to find reference ADF data in.
     elements: List[str]
         List of elements to determine pairs for ADF errors.
     max_1: bool = False,
-        Whether to normalise maximum to 1. Default is `False`
+        Whether to normalise maximum to 1. Default is `False`.
     """
-    av_acc = []
+    accuracies = []
+    print("Label     | Accuracy / %")
+    print("==============================")
     for i in range(len(elements)):
         for j in range(len(elements)):
             for k in range(j, len(elements)):
@@ -1430,6 +1563,9 @@ def calc_ADF_errors(
                 diff = np.subtract(ref_adf, n2p2_adf)
                 mae = np.sum(np.absolute(diff)) / (np.sum(ref_adf) + np.sum(n2p2_adf))
                 accuracy = (1 - mae) * 100
-                av_acc.append(accuracy)
-                print(f"{elements[i]}_{elements[j]}_{elements[k]}: {accuracy}")
-    print(f"Average accuracy: {np.average(av_acc)}")
+                accuracies.append(accuracy)
+                label = f"{elements[i]}-{elements[j]}-{elements[k]}"
+                print(f"{label.ljust(10)}| {accuracy}")
+
+    print(f"Mean      | {np.average(accuracies)}")
+    print("==============================")
