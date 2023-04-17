@@ -19,6 +19,7 @@ ipython = "8.10"
 jupyter-core = "4.11.2"
 nbconvert = "6.5.1"
 pyzmq = "25"
+pandas = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.2.4"
