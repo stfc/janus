@@ -48,6 +48,9 @@ For the functional details, see the notebooks in `examples/example_directory/scr
   - `poetry install`
     - If you are already in a virtual environment, packages will be installed in this environment
     - Otherwise, a new virtual environment will be created, which you must then activate
+    - If you encounter installation errors, ensure:
+      - poetry and pip are updated
+      - Python headers are updated (e.g. python3.9-dev for Python 3.9 on Ubuntu)
 - Build and install:
   - `python3 setup.py build && python3 setup.py install`
 
