@@ -2,9 +2,7 @@
 Utility functions for formatting a LAMMPS input script.
 """
 
-
-from typing import Iterable
-
+from typing import List
 
 TEMPLATE = """###############################################################################
 # MD simulation
@@ -33,6 +31,7 @@ pair_coeff * * {elements}
 INTEGRATOR_NVE = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -45,6 +44,7 @@ unfix x
 INTEGRATOR_NVT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -57,6 +57,7 @@ unfix y
 INTEGRATOR_NPT = """###############################################################################
 # INTEGRATOR
 ###############################################################################
+{replicate_commands}
 velocity     all create {temp} {seed} mom yes rot yes dist gaussian
 velocity all zero angular
 velocity all zero linear
@@ -98,15 +99,16 @@ def format_lammps_input(
     cflength: str = "1.889726125836928",
     cfenergy: str = "0.03674932247495664",
     pair_coeff: str = "6.351",
-    n_steps: Iterable[str] = (50000,),
-    integrators: Iterable[str] = ("nve",),
-    temps: Iterable[str] = ("300",),
-    tdamp: str = "10",
-    seed: int = 1,
-    barostat: str = "iso",
-    pressure: str = "0",
-    pdamp: str = "50",
-    npt_other: str = "tchain 3",
+    replicate: List[int] = None,
+    n_steps: List[str] = ["50000"],
+    integrators: List[str] = ["nve"],
+    temps: List[str] = ["300"],
+    tdamps: List[str] = "10",
+    seeds: List[str] = "1",
+    barostats: List[str] = "iso",
+    pressures: List[str] = "0",
+    pdamps: List[str] = "50",
+    npt_others: List[str] = "tchain 3",
     dump_commands: str = None,
     elements: str = None,
     dump_file: str = "dump.lammpstrj",
@@ -172,33 +174,35 @@ def format_lammps_input(
         the factor to convert from a network using Ha to LAMMPS using eV.
     pair_coeff: str = "6.351"
         Radial cutoff, in LAMMPS length units. Optional, default is "6.351".
-    n_steps: Iterable[str] = (50000,)
+    replicate: List[int] = None
+        Replicates the current simulation one or more times in each dimension.
+    n_steps: List[str] = (50000,)
         Number of steps to take in the simulation. If multiple arguments are provided,
         each will be used for a simulation in turn with the relevant entry in
         `integrators` and `temps`. Optional, default is ("50000",).
-    integrator: Iterable[str] = ("nve",)
+    integrator: List[str] = ("nve",)
         Ensemble to use, should be one of "nve", "nvt" or "npt". If multiple arguments
         are provided, each will be used for a simulation in turn with the relevant entry in
         `temps` and `n_steps`. Optional, default is ("nve",).
-    temps: Iterable[str] = ("300",)
+    temps: List[str] = ("300",)
         Temperature to use for the simulation. If multiple arguments are provided,
         each will be used for a simulation in turn with the relevant entry in
         `integrators` and `n_steps`. Optional, default is ("300",).
-    tdamp: str = "10"
+    tdamps: List[str] = "10"
         The timespan of temperature relaxations, in LAMMPS time units.
         Optional, default is "10".
-    seed: int = 1
+    seeds: List[str] = "1"
         The seed to use for the velocity creation. Optional, default is 1.
-    barostat: str = "iso"
+    barostats: List[str] = "iso"
         The barostat option is only used when `integrator=="npt"` and should be one of
         "iso", "aniso", "tri". Optional, default is "iso".
-    pressure: str = "0"
+    pressures: List[str] = "0"
         Pressure to use for the simulation. Not used if `integrator` is "nve" or "npt".
         Optional, default is "0".
-    pdamp: str = "50"
+    pdamps: List[str] = "50"
         The timespan of pressure relaxations, in LAMMPS time units.
         Optional, default is "50".
-    npt_other: str = "tchain 3"
+    npt_others: List[str] = "tchain 3"
         Additional keyword commands to include when using the "npt" ensemble.
         Only used `integrator=="npt"`. For possible values refer to LAMMPS documentation.
         Optional, default is "tchain 3".
@@ -219,17 +223,46 @@ def format_lammps_input(
     else:
         template_text = TEMPLATE
 
-    if isinstance(n_steps, int):
+    if isinstance(n_steps, (str, int)):
         n_steps = [n_steps]
     if isinstance(integrators, str):
         integrators = [integrators]
-    if isinstance(temps, str):
+    if isinstance(temps, (str, int, float)):
         temps = [temps]
+
+    num_integrators = len(integrators)
+    if len(n_steps) != num_integrators or len(temps) != num_integrators:
+        raise ValueError("`n_steps`, `temps` and `integrators` must have the same length")
+
+    if isinstance(tdamps, (str, int, float)):
+        tdamps = [tdamps] * num_integrators
+    if isinstance(seeds, (str, int)):
+        seeds = [seeds] * num_integrators
+    if isinstance(barostats, str):
+        barostats = [barostats] * num_integrators
+    if isinstance(pressures, (str, int, float)):
+        pressures = [pressures] * num_integrators
+    if isinstance(pdamps, (str, int, float)):
+        pdamps = [pdamps] * num_integrators
+    if isinstance(npt_others, str):
+        npt_others = [npt_others] * num_integrators
+
     dump = ""
     integrator_commands = ""
     for i, integrator in enumerate(integrators):
         temp = temps[i]
         n_step_i = n_steps[i]
+        tdamp = tdamps[i]
+        seed = seeds[i]
+        barostat = barostats[i]
+        pressure = pressures[i]
+        pdamp = pdamps[i]
+        npt_other = npt_others[i]
+
+        replicate_commands = ""
+        if i == 0 and replicate is not None:
+            replicate_commands = f"replicate {replicate[0]} {replicate[1]} {replicate[2]}"
+
         if i == len(integrators) - 1:
             if dump_commands is None and elements is None:
                 raise ValueError(
@@ -250,11 +283,21 @@ def format_lammps_input(
             dump = dump_commands
         if integrator == "nve":
             integrator_commands += INTEGRATOR_NVE.format(
-                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed,
+                temp=temp,
+                tdamp=tdamp,
+                dump_commands=dump,
+                n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         elif integrator == "nvt":
             integrator_commands += INTEGRATOR_NVT.format(
-                seed=seed, temp=temp, tdamp=tdamp, dump_commands=dump, n_steps=n_step_i
+                seed=seed,
+                temp=temp,
+                tdamp=tdamp,
+                dump_commands=dump,
+                n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         elif integrator == "npt":
             if barostat not in ("iso", "aniso", "tri"):
@@ -269,6 +312,7 @@ def format_lammps_input(
                 npt_other=npt_other,
                 dump_commands=dump,
                 n_steps=n_step_i,
+                replicate_commands=replicate_commands,
             )
         else:
             raise ValueError(
