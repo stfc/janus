@@ -747,7 +747,7 @@ class Controller:
         pseudos: Dict[str, str],
         qe_directory: str = "qe",
         selection: Tuple[int, int] = (0, 1),
-        qe_kwargs: dict = None,
+        qe_kwargs: dict = {},
         **kwargs,
     ):
         """
@@ -1882,6 +1882,7 @@ class Controller:
         temperatures: Iterable[int] = (300,),
         n_steps: Iterable[str] = (10000,),
         file_batch_out: str = "lammps_extrapolations.sh",
+        lammps_kwargs: Dict = {},
         **kwargs,
     ):
         """
@@ -1910,6 +1911,8 @@ class Controller:
         file_batch_out: str, optional
             File location to write the batch script to relative to
             `scripts_sub_directory`. Default is 'lammps_extrapolations.sh'.
+        lammps_kwargs: Dict
+            Dictionary of keyword arguments to be passed to `format_lammps_input`.
         **kwargs:
             Used to set optional str arguments for the batch script:
               - constraint
@@ -1935,6 +1938,7 @@ class Controller:
             elements=" ".join(self.all_structures.element_list_alphabetical),
             n_steps=n_steps,
             temps=temperatures,
+            **lammps_kwargs,
         )
 
         commands = self.n2p2_module_commands + [
