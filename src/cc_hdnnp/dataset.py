@@ -843,8 +843,11 @@ class Dataset(List[Frame]):
 
         return frames
 
-    def write_data_file(
-        self, file_out: str, conditions: Iterable[bool] = None, append: bool = False
+    def write_n2p2_file(
+        self,
+        file_out: str,
+        conditions: Iterable[bool] = None,
+        append: bool = False,
     ) -> Tuple[List[int], List[int]]:
         """
         Write the Dataset to file in the n2p2 format.
@@ -877,6 +880,69 @@ class Dataset(List[Frame]):
                     selected.append(i)
                 else:
                     removed.append(i)
+
+        return selected, removed
+
+    def write_extxyz_file(
+        self,
+        file_out: str,
+        conditions:Iterable[bool] = None,
+        append: bool = False,
+        units: Dict[str, str] = {"energy": "eV", "length": "Ang"},
+    ):
+        """
+        Write the Dataset to file in the extxyz format.
+
+        Parameters
+        ----------
+        file_out: str
+            The complete filepath to write the dataset to.
+        units: Dict[str, str] = None
+            The units to assign to the values given. Supports keys of "length" and "energy".
+            Default is `{"energy": "eV", "length": "Ang"}`
+        conditions: Iterable[bool] = None
+            An iterable object of bool, if True then the corresponding Frame in the Dataset
+            will be written to file, else it will be omitted (but still be present in `self`).
+        append: bool = False
+            Whether to overwrite or append to `file_out`. Optional, default is False.
+
+        Returns
+        -------
+        Tuple[List[int], List[int]]
+            First entry is a list of the indices of Frames that were written to file.
+            Second entry is a list of the indices of Frames that were NOT written to file.
+        """
+        output = ""
+        self.change_units_all(units)
+        selected = []
+        removed = []
+        if conditions is None:
+            conditions = (True for _ in self)
+        for i, condition in enumerate(conditions):
+            if condition:
+                selected.append(i)
+                output += (
+                    f'{len(self[i])}\n'
+
+                    f'Lattice="{self[i].lattice[0,0]} {self[i].lattice[0,1]} '
+                    f'{self[i].lattice[0,2]} {self[i].lattice[1,0]} {self[i].lattice[1,1]} '
+                    f'{self[i].lattice[1,2]} {self[i].lattice[2,0]} {self[i].lattice[2,1]} '
+                    f'{self[i].lattice[2,2]}" '
+
+                    f'Properties=species:S:1:pos:R:3:forces:R:3 '
+                    f'energy={self[i].energy} pbc="{self[i].pbc[0]} '
+                    f'{self[i].pbc[1]} {self[i].pbc[2]}"\n'
+                )
+                for s, X, F in zip(self[i].symbols, self[i].positions, self[i].forces):
+                    output += (
+                        f'{s}    {X[0]}    {X[1]}    {X[2]}    '
+                        f'{F[0]}    {F[1]}    {F[2]}\n'
+                    )
+            else:
+                removed.append(i)
+        mode = "a" if append else "w"
+        with open(file_out, mode=mode) as f:
+            f.write(output)
 
         return selected, removed
 
@@ -919,7 +985,11 @@ class Dataset(List[Frame]):
         if units is not None:
             self.change_units_all(units)
         if format == "n2p2":
-            return self.write_data_file(
+            return self.write_n2p2_file(
+                file_out=file_out, conditions=conditions, append=append
+            )
+        elif format == "extxyz":
+            return self.write_extxyz_file(
                 file_out=file_out, conditions=conditions, append=append
             )
         else:
@@ -1032,25 +1102,3 @@ class Dataset(List[Frame]):
 
         conditions=[i in sample_indicies for i, _ in enumerate(self)]
         return conditions
-
-    def write_extxyz(self, file_out,new_units = {"energy": "eV", "length": "Ang"}, mode = "a", conditions:Iterable[bool] = None):
-        output = ""
-        self.change_units_all(new_units)
-        selected = []; removed = []
-        if conditions is None:
-                conditions = (True for _ in self)
-        i = 0
-        for frame, cond in zip(self, conditions):
-            if cond:
-                selected.append(i)
-                output += f'{len(frame)}\n'
-                output += f'Lattice="{frame.lattice[0,0]} {frame.lattice[0,1]} {frame.lattice[0,2]} {frame.lattice[1,0]} {frame.lattice[1,1]} {frame.lattice[1,2]} {frame.lattice[2,0]} {frame.lattice[2,1]} {frame.lattice[2,2]}" '
-                output += f'Properties=species:S:1:pos:R:3:forces:R:3 energy={frame.energy} pbc="{frame.pbc[0]} {frame.pbc[1]} {frame.pbc[2]}"\n'
-                for s, X, F in zip(frame.symbols, frame.positions, frame.forces):
-                    output += f'{s}    {X[0]}    {X[1]}    {X[2]}    {F[0]}    {F[1]}    {F[2]}\n'
-            else:
-                removed.append(i)
-            i+=1
-        with open(file_out, mode=mode) as f:
-            f.write(output)
-        return selected, removed
