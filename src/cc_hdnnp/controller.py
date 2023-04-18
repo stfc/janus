@@ -1483,6 +1483,60 @@ class Controller:
 
         return f"sbatch {file_prepare}; sbatch {file_train}"
 
+    def write_n2p2_predict_script(
+        self,
+        shuffle: bool = False,
+        file_predict: str = "n2p2_predict.sh",
+        **kwargs,
+    ):
+        """
+        Write batch script for predicting energies and forces using a trained
+        network. Returns the command to submit the script.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
+        Parameters
+        ----------
+        shuffle: bool, optional
+            Whether to randomly distribute the structures to MPI processes. Default is `False`)`.
+        file_predict: str, optional
+            File location to write training batch script to.
+            Default is 'n2p2_predict.sh'.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
+        """
+
+        n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
+        common_commands = self.n2p2_module_commands + [
+            f"n2p2_directories=({n2p2_directory_str})",
+            "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+        ]
+
+        predict_commands = common_commands.copy()
+        predict_commands += [
+            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-dataset") + 
+            (" 1" if shuffle else " 0")
+        ]
+
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_predict),
+            commands=predict_commands,
+            job_name="n2p2_predict",
+            array=f"0-{len(self.n2p2_directories) - 1}",
+            **kwargs,
+        )
+
+        return f"sbatch {file_predict}"
+
     def write_lammps_data(
         self,
         file_xyz: str,
