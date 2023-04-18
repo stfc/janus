@@ -202,6 +202,8 @@ class SymFuncParamGenerator:
         nb_param_pairs: int,
         r_lower: float = None,
         r_upper: float = None,
+        custom_eta_grid: List[float] = None,
+        custom_r_shift_grid: List[float] = None,
     ):
         """Generate a set of values for r_shift and eta.
 
@@ -221,10 +223,11 @@ class SymFuncParamGenerator:
 
         Parameters
         ----------
-        rule : {'gastegger2018', 'imbalzano2018'}
+        rule : {'gastegger2018', 'imbalzano2018', 'custom'}
             If rule=='gastegger2018' use the parameter generation rules
             presented in [1]_. If rule=='imbalzano2018' use the parameter
-            generation rules presented in [2]_.
+            generation rules presented in [2]_. If rule=='custom' use
+            grids entered manually.
         mode : {'center', 'shift'}
             Selects which parameter generation procedure to use, on top of the
             rule argument, since there are again two different varieties
@@ -239,13 +242,21 @@ class SymFuncParamGenerator:
             lowest value in the radial grid from which r_shift and eta values
             are computed.
             required if rule=='gastegger2018'.
-            ignored if rule=='imbalzano2018'.
+            ignored if rule=='imbalzano2018' or rule=='custom'.
         r_upper : float, optional
             Largest value in the radial grid from which r_shift and eta
             values are computed.
             Optional if rule=='gastegger2018', defaults to cutoff radius if not
             given.
-            Ignored if rule=='imbalzano2018'.
+            Ignored if rule=='imbalzano2018' or rule=='custom'.
+        custom_eta_grid : List[float], optional
+            Values to manually set eta_grid.
+            Required if rule=='custom'.
+            Ignored if rule=='gastegger2018' or rule=='imbalzano2018'.
+        custom_r_shift_grid : List[float], optional
+            Values to manually set r_shift_grid.
+            Required if rule=='custom' and mode=='shift'.
+            Ignored if rule=='gastegger2018' or rule=='imbalzano2018' or mode=='center'.
 
         Returns
         -------
@@ -254,13 +265,23 @@ class SymFuncParamGenerator:
         Raises
         ------
         ValueError
-            If nb_param_pairs is not two or greater.
+            If nb_param_pairs is not one or greater when using rule 'custom',
+            or two or greater when using rule 'gastegger2018' or 'imbalzano2018'.
         TypeError
             If parameter r_lower is not given, when using rule 'gastegger2018'.
         ValueError
             If illegal relation between r_lower, r_upper, r_cutoff.
         ValueError
             If invalid argument for parameters rule or mode.
+        TypeError
+            If parameter custom_eta_grid is not given, when using rule 'custom'.
+        TypeError
+            If parameter custom_r_shift_grid is not given, when using rule 'custom'
+            and mode 'shift'.
+        ValueError
+            If parameter custom_eta_grid is not of length nb_param_pairs.
+        ValueError
+            If parameter custom_r_shift_grid is not of length nb_param_pairs.
 
         Notes
         -----
@@ -290,8 +311,10 @@ class SymFuncParamGenerator:
         .. [1] https://doi.org/10.1063/1.5019667
         .. [2] https://doi.org/10.1063/1.5024611
         """
-        if not nb_param_pairs >= 2:
-            raise ValueError("nb_param_pairs must be two or greater.")
+        if not nb_param_pairs >= 1:
+            raise ValueError("nb_param_pairs must be one or greater.")
+        if (rule == "gastegger2018" or rule == "imbalzano2018") and not nb_param_pairs >= 2:
+            raise ValueError(f"nb_param_pairs must be two or greater for rule = {rule:s}.")
 
         # store those infos on radial parameter generation settings that are
         # independent of the rule argument
@@ -398,6 +421,51 @@ class SymFuncParamGenerator:
                 eta_grid = np.flip(eta_grid)
             else:
                 raise ValueError('invalid argument for "mode"')
+
+        elif rule == "custom":
+            if r_lower is not None:
+                this_method_name = inspect.currentframe().f_code.co_name
+                warnings.warn(
+                    f"The argument r_lower to method"
+                    f" {this_method_name} will be ignored,"
+                    f" since it is unused when calling the method"
+                    f' with rule="custom".'
+                )
+            if r_upper is not None:
+                this_method_name = inspect.currentframe().f_code.co_name
+                warnings.warn(
+                    f"The argument r_upper to method"
+                    f" {this_method_name} will be ignored,"
+                    f" since it is unused when calling the method"
+                    f' with rule="custom".'
+                )
+            if mode == "center":
+                if custom_r_shift_grid is not None:
+                    this_method_name = inspect.currentframe().f_code.co_name
+                    warnings.warn(
+                        f"The argument custom_r_shift_grid to method"
+                        f" {this_method_name} will be ignored,"
+                        f" since it is unused when calling the method"
+                        f' with mode="center".'
+                    )
+                r_shift_grid = np.zeros(nb_param_pairs)
+            elif mode == "shift":
+                if custom_r_shift_grid is None:
+                    raise TypeError('Argument custom_r_shift_grid is required for rule "custom" with mode "shift"')
+                else:
+                    r_shift_grid = np.array(custom_r_shift_grid)
+            else:
+                raise ValueError('invalid argument for "mode"')
+
+            if custom_eta_grid is None:
+                raise TypeError('Argument custom_eta_grid is required for rule "custom"')
+            eta_grid = np.array(custom_eta_grid)
+
+            if len(eta_grid) != nb_param_pairs:
+                raise ValueError('custom_eta_grid must be of length nb_param_pairs')
+            if len(r_shift_grid) != nb_param_pairs:
+                raise ValueError('custom_r_shift_grid must be of length nb_param_pairs')
+
         else:
             raise ValueError('invalid argument for "rule"')
 

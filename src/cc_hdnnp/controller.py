@@ -1291,6 +1291,8 @@ class Controller:
         r_upper: float = None,
         file_nn_template: str = "input.nn.template",
         file_nn: str = "input.nn",
+        custom_eta_grid: List[float] = None,
+        custom_r_shift_grid: List[float] = None,
     ):
         """
         Based on `file_template`, write the input.nn file for n2p2 with
@@ -1325,6 +1327,14 @@ class Controller:
             Not used for the 'imbalzano2018' ruleset. For 'gastegger2018', this
             sets either the maximum r_shift value or the minimum eta value for
             modes 'shift' and 'center' respectively. Default is `None`.
+        custom_eta_grid: List[float], optional
+            Not used for the 'imbalzano2018' or 'gastegger2018' ruleset.
+            For the 'custom' ruleset this defines the eta_grid. Default is `None`.
+            modes 'shift' and 'center' respectively. Default is `None`.
+        custom_r_shift_grid: List[float], optional
+            Not used for the 'imbalzano2018' or 'gastegger2018' ruleset, or 'center' mode.
+            For the 'custom' ruleset and 'shifted' mode this defines the r_shift_grid.
+            Default is `None`.
         file_nn_template : str, optional
             The file to read the general network architecture from (i.e.
             everything except the symmetry functions). Default is
@@ -1353,13 +1363,15 @@ class Controller:
                             writefile=writefile,
                             identifier=f"[{type}, {rule}, {mode}]"
                         )
-        
+
         generator.generate_radial_params(
             rule=rule,
             mode=mode,
             nb_param_pairs=n_pairs,
             r_lower=r_lower,
             r_upper=r_upper,
+            custom_eta_grid=custom_eta_grid,
+            custom_r_shift_grid=custom_r_shift_grid,
         )
 
         for n2p2_directory in self.n2p2_directories:
