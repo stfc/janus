@@ -1610,28 +1610,55 @@ class Controller:
               - exclusive
               - commands
         """
-        commands = self.n2p2_module_commands + [
-            "ulimit -s unlimited",
-            (
-                "path=$(sed -n ${SLURM_ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
-                f"{self.active_learning_directory}/joblist_mode1.dat)"
-            ),
-            f"cd {self.active_learning_directory}/mode1/$path",
-            (
-                "mpirun -np ${SLURM_NTASKS} "
-                f"{self.lammps_executable} -in input.lammps -screen none"
+        submit_all_text = ""
+
+        if n_simulations < 1:
+            raise ValueError("`n_simulations` must be at least 1.")
+        if n_simulations % 1000 == 0:
+            num_scripts = n_simulations // 1000
+        else:
+            num_scripts = 1 + (n_simulations // 1000)
+
+        for i in range(num_scripts):
+            commands = self.n2p2_module_commands + [
+                "ulimit -s unlimited",
+                f"ARRAY_TASK_ID=$((SLURM_ARRAY_TASK_ID+{int(1000*i)}))",
+                (
+                    "path=$(sed -n ${ARRAY_TASK_ID}p ${SLURM_SUBMIT_DIR}/"
+                    f"{self.active_learning_directory}/joblist_mode1.dat)"
+                ),
+                f"cd {self.active_learning_directory}/mode1/$path",
+                (
+                    "mpirun -np ${SLURM_NTASKS} "
+                    f"{self.lammps_executable} -in input.lammps -screen none"
+                )
+            ]
+
+            if num_scripts == 1:
+                batch_out = file_batch_out
+            else:
+                batch_out = f"{file_batch_out[:-3]}_{i}.sh"
+                submit_all_text += f'sbatch {batch_out} \n'
+
+            if (i + 1) == num_scripts:
+                array_max = int(n_simulations - 1000 * i)
+            else:
+                array_max = int(1000)
+
+            format_slurm_input(
+                formatted_file=join_paths(self.scripts_directory, batch_out),
+                commands=commands,
+                job_name="active_learning_LAMMPS",
+                array=f"1-{array_max}",
+                **kwargs,
             )
-        ]
 
-        format_slurm_input(
-            formatted_file=join_paths(self.scripts_directory, file_batch_out),
-            commands=commands,
-            job_name="active_learning_LAMMPS",
-            array=f"1-{n_simulations}",
-            **kwargs,
-        )
-
-        return f"sbatch {file_batch_out}"
+        if num_scripts > 1:
+            with open(join_paths(self.scripts_directory, file_batch_out), "w") as f:
+                f.write(submit_all_text)
+            return f"bash {file_batch_out}"
+        else:
+            return f"sbatch {file_batch_out}"
 
     def _write_active_learning_nn_script(
         self,
