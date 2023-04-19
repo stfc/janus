@@ -3,14 +3,19 @@ Utility functions for reading from file and plotting the performance of the netw
 """
 
 from os.path import join
+from os import listdir
 from typing import Iterable, List, Tuple, Union
 
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tick
+
 import numpy as np
 import pickle
 
+
 from .dataset import Dataset
+from .sfcalc import SymFuncCalculator
 from .file_readers import read_lammps_log, read_nn_settings
 
 
@@ -1569,3 +1574,341 @@ def calc_ADF_errors(
 
     print(f"Mean      | {np.average(accuracies)}")
     print("==============================")
+
+
+def plot_sf_hist(
+    hist_dir: str,
+    sf_type: int = 2,
+    elements: List[str] = []
+):
+    """
+    Plots symmetry functions data saved in .histo files
+
+    Parameters
+    ----------
+    hist_dir: str
+        Directory containing .histo to be be plotted
+    sf_type: int = 2
+        The symmetry function type to be plotted. Default is 2
+    elements: List[str] = []
+        The elements of symmetry functions to be plotted. Default is [],
+        which will plot all combinations of elements.
+    """
+    if len(elements) > 0:
+        if sf_type == 2 and len(elements) != 2 :
+            raise ValueError(
+                f"Please specify two elements for type {sf_type} symmetry functions"
+            )
+        if (sf_type == 3 or sf_type == 9) and len(elements) != 3:
+            raise ValueError(
+                f"Please specify three elements for type {sf_type} symmetry functions"
+            )
+
+    files = listdir(hist_dir)
+    filenames = []
+    for f in files:
+        if (".histo" in f) and ("sf" in f):
+            filenames.append(f)
+    for filename in filenames:
+        with open(hist_dir + filename, "r") as file:
+            edges = np.array([])
+            values = np.array([])
+            max_value = 0.
+            sf_info = {}
+            for line in file:
+                data = line.split()
+                if(data[0] == "#SFINFO"):
+                    try:
+                        sf_info[data[1]] = float(data[2])
+                    except ValueError:
+                        sf_info[data[1]] = data[2]
+                if(line.startswith(" ")):
+                    edges = np.append(edges, float(data[0]) + float(data[1]) / 2)
+                    values = np.append(values, float(data[2]))
+            if(sf_info['type'] != sf_type):
+                continue
+            if 'e2' in sf_info:
+                if len(elements) == 3:
+                    if (
+                        sf_info['ec'] != elements[0] or
+                        sf_info['e1'] != elements[1] or
+                        sf_info['e2'] != elements[2]
+                    ):
+                        continue
+            elif 'e1' in sf_info:
+                if len(elements) == 2:
+                    if (
+                        sf_info['ec'] != elements[0] or
+                        sf_info['e1'] != elements[1]
+                    ):
+                        continue
+            plt.plot(edges, values / max(values))
+    plt.xlabel('G')
+    plt.ylabel('Distribution')
+    plt.show()
+
+
+def plot_radial_sfs(
+        filename: str,
+        num_coords: int = 100,
+        elements: List[str] = [],
+        sf_type: int = 2,
+        r_jk: np.ndarray = 1.,
+        theta: np.ndarray = 0.,
+    ):
+    """
+    Plots radial symmetry functions using parameters from an input.nn file
+
+    Parameters
+    ----------
+    filename: str
+        input.nn filename containing parameters defining the symmetry function
+        to be plotted
+    num_coords: int = 100
+        The number of r coordinates to be plotted. Default is 100
+    elements: List[str] = []
+        The elements of symmetry functions to be plotted. Default is [],
+        which will plot symmetry functions for all elements
+    sf_type: int = 2
+        The symmetry function type to be plotted. Default is 2
+    r_jk: np.ndarray = 1.,
+        r_jk values at which to evaluate the symmetry functions. Default is 1.
+    theta: np.ndarray = 0.,
+        theta values at which to evaluate the symmetry functions. Default is 0.
+    """
+    if len(elements) > 0:
+        if sf_type == 2 and len(elements) != 2 :
+            raise ValueError(
+                f"Please specify two elements for type {sf_type} symmetry functions"
+            )
+        if (sf_type == 3 or sf_type == 9) and len(elements) != 3:
+            raise ValueError(
+                f"Please specify three elements for type {sf_type} symmetry functions"
+            )
+
+    calc = SymFuncCalculator(filename, num_coords)
+    for i in range(len(calc.params)):
+        plot = True
+
+        if sf_type == 2:
+            if (len(calc.params.iloc[i]['elements']) == 2):
+                for j in range(0, 2):
+                    if(len(elements) >=j+1):
+                        if(elements[j] != calc.params.iloc[i]['elements'][j]):
+                            plot=False
+                if plot:
+                    plt.plot(calc.r, calc.full_sym_func(i, calc.r))
+        elif sf_type == 3 or sf_type == 9:
+            if (len(calc.params.iloc[i]['elements']) == 3):
+                for j in range(0, 3):
+                    if(len(elements) >= j + 1):
+                        if(elements[j] != calc.params.iloc[i]['elements'][j]):
+                            plot = False
+                if plot:
+                    plt.plot(calc.r, calc.full_sym_func(i, calc.r, r_jk, theta))
+    plt.xlabel('r (Bohr)')
+    plt.ylabel('$G(r)$')
+    plt.show()
+
+
+def plot_angular_sfs(
+    filename: str,
+    num_coords: int = 100,
+    elements = [],
+    polar: bool = False,
+    sf_type: int = 3,
+    r_ij: np.ndarray = 1.,
+    r_jk: np.ndarray = 1.,
+):
+    """
+    Plots angular symmetry functions using parameters from an input.nn file
+
+    Parameters
+    ----------
+    filename: str
+        input.nn filename containing parameters defining the symmetry function
+        to be plotted
+    num_coords: int = 100
+        The number of theta coordinates to be plotted. Default is 100
+    elements: List[str] = []
+        The elements of symmetry functions to be plotted. Default is [],
+        which will plot symmetry functions for all elements
+    polar: bool = False
+        Whether to plot the symmetry functions using polar coordinates.
+        Default is False
+    sf_type: int = 3
+        The symmetry function type to be plotted. Default is 3
+    r_ij: np.ndarray = 1.,
+        r_ij values at which to evaluate the symmetry functions. Default is 1.
+    r_jk: np.ndarray = 1.,
+        r_jk values at which to evaluate the symmetry functions. Default is 1.
+    """
+    if sf_type == 2:
+        raise ValueError(
+            f"Type {sf_type} symmetry functions have no angular dependence"
+        )
+    if sf_type != 3 and sf_type != 9:
+        raise ValueError(
+            f"Type {sf_type} symmetry functions not yet implemented"
+        )
+
+    if len(elements) > 0:
+        if sf_type == 2 and len(elements) != 2 :
+            raise ValueError(
+                f"Please specify two elements for type {sf_type} symmetry functions"
+            )
+        if (sf_type == 3 or sf_type == 9) and len(elements) != 3:
+            raise ValueError(
+                f"Please specify three elements for type {sf_type} symmetry functions"
+            )
+
+    calc = SymFuncCalculator(filename, num_coords)
+    if polar:
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    else:
+        fig, ax = plt.subplots()
+
+    for i in range(len(calc.params)):
+        plot = True
+
+        if sf_type == 3 or sf_type == 9:
+            if (len(calc.params.iloc[i]['elements']) == 3):
+                for j in range(0, 3):
+                    if(len(elements) >= j + 1):
+                        if(elements[j] != calc.params.iloc[i]['elements'][j]):
+                            plot = False
+                if plot:
+                    ax.plot(calc.theta, calc.full_sym_func(i, r_ij, r_jk, calc.theta))
+
+    if polar:
+        ax.set_rticks([])
+    else:
+        ax.set_xlabel('$\\theta$')
+        ax.set_ylabel('$G(\\theta)$')
+    plt.show()
+
+
+def plot_sf_2D(
+    i: int,
+    filename: str,
+    calc: SymFuncCalculator = None,
+    num_coords: int = 100,
+    contour: bool = False,
+    r_range: List[float] = None,
+    r_jk: np.ndarray = 1.,
+):
+    """
+    Plots an angular symmetry functions in 2D using parameters from an input.nn file
+
+    Parameters
+    ----------
+    i: int
+        Index of symmetry function to be plotted
+    filename: str
+        input.nn filename containing parameters defining the symmetry function
+        to be plotted
+    calc: SymFuncCalculator
+        Symmetry function calculator. Default is None
+    num_coords: int = 100
+        The number of theta coordinates to be plotted. Default is 100
+    contour: bool = False
+        Whether to plot the symmetry functions using polar coordinates.
+        Default is False
+    r_range: List[float] = None
+        Range of r coordinates to be plotted. Default is None
+    r_jk: np.ndarray = 1.,
+        r_jk values at which to evaluate the symmetry functions. Default is 1.
+    """
+    if calc is None:
+        calc = SymFuncCalculator(filename, num_coords)
+    G = np.zeros((len(calc.r), len(calc.theta)))
+    R = np.zeros((len(calc.r), len(calc.theta)))
+    theta = np.zeros((len(calc.r), len(calc.theta)))
+    for m, r in enumerate(calc.r):
+        G[m, :] = calc.full_sym_func(i, r_ij=r, r_jk=r_jk, theta=calc.theta)
+        R[m, :] = r * np.ones_like(calc.theta)
+        theta[m, :] = calc.theta
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+    if contour:
+        cmap = plt.cm.Blues
+        levels = np.linspace(0, 2, 25)
+        ctf = ax.contourf(theta, R, G, levels=levels, cmap=cmap)
+        cbar = plt.colorbar(ctf)
+        cbar.set_ticks(np.linspace(0, 2, 6))
+        cbar.set_ticklabels(np.linspace(0, 2, 6))
+        cbar.ax.yaxis.set_major_formatter(tick.FormatStrFormatter('%.2f'))
+        ax.grid(axis='y', linestyle='-', color='black', linewidth=0)
+    else:
+        ax.pcolor(theta, R, G)
+    ax.set_rticks([])
+    ax.set_ylim(r_range)
+    plt.show()
+
+
+def plot_all_sfs_2D(
+    filename: str,
+    num_coords: int = 100,
+    elements: List[str] = [],
+    contour: bool = False,
+    r_range: List[float] = None,
+    sf_type: int = 3,
+    r_jk: np.ndarray = 1.,
+):
+    """
+    Plots all angular symmetry functions in 2D using parameters from an input.nn file
+
+    Parameters
+    ----------
+    filename: str
+        input.nn filename containing parameters defining the symmetry function
+        to be plotted
+    num_coords: int = 100
+        The number of theta coordinates to be plotted. Default is 100
+    elements: List[str] = []
+        The elements of symmetry functions to be plotted. Default is [],
+        which will plot symmetry functions for all elements
+    contour: bool = False
+        Whether to plot the symmetry functions using polar coordinates.
+        Default is False
+    r_range: List[float] = None
+        Range of r coordinates to be plotted. Default is None
+    sf_type: int = 3
+        The symmetry function type to be plotted. Default is 3
+    r_jk: np.ndarray = 1.,
+        r_jk values at which to evaluate the symmetry functions. Default is 1.
+    """
+    if len(elements) > 0:
+        if sf_type == 2 and len(elements) != 2 :
+            raise ValueError(
+                f"Please specify two elements for type {sf_type} symmetry functions"
+            )
+        if (sf_type == 3 or sf_type == 9) and len(elements) != 3:
+            raise ValueError(
+                f"Please specify three elements for type {sf_type} symmetry functions"
+            )
+
+    calc = SymFuncCalculator(filename, num_coords)
+    for i in range(len(calc.params)):
+        plot = True
+
+        if sf_type == 2:
+            if (len(calc.params.iloc[i]['elements']) == 2):
+                for j in range(0, 2):
+                    if(len(elements) >=j+1):
+                        if(elements[j] != calc.params.iloc[i]['elements'][j]):
+                            plot=False
+            else:
+                plot = False
+        elif sf_type == 3 or sf_type == 9:
+            if (len(calc.params.iloc[i]['elements']) == 3):
+                for j in range(0, 3):
+                    if(len(elements) >= j + 1):
+                        if(elements[j] != calc.params.iloc[i]['elements'][j]):
+                            plot = False
+            else:
+                plot = False
+        else:
+            plot = False
+
+        if plot:
+            plot_sf_2D(i, filename, calc, num_coords, contour, r_range, r_jk)
