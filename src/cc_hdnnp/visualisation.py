@@ -282,7 +282,7 @@ def plot_epoch_histogram_2D(
     energy_log: bool = True,
 ):
     """
-    For `n2p2_directory`, load the files corresponding to `epoch` and histogrsm plot the
+    For `n2p2_directory`, load the files corresponding to `epoch` and histogram plot the
     reference values against the network predictions.
 
     Parameters
@@ -842,3 +842,130 @@ def plot_environments_histogram_2D(
         plt.ylabel("Symmetry Function 2")
         plt.title(element)
         plt.colorbar()
+
+
+def _read_predict_file(file: str) -> Tuple[np.ndarray]:
+    """
+    Return the reference and network predicted values from nnp-dataset stored in `file`.
+
+    Parameters
+    ----------
+    file : str
+        File containing energy or force outputs from nnp-dataset to read.
+    Returns
+    -------
+    tuple of ndarray
+        The first entry is the array of reference values, the second is the array of network
+        predictions.
+    """
+    with open(file, "r") as file:
+        lines = file.readlines()
+        for i, line in enumerate(lines):
+            if not line.startswith("#"):
+                start_idx = i
+                break
+        lines = lines[start_idx:]
+        ref = np.zeros(len(lines))
+        n2p2 = np.zeros(len(lines))
+        for i, line in enumerate(lines):
+            ref[i] = float(line.split()[2])
+            n2p2[i] = float(line.split()[3])
+    return ref, n2p2
+
+
+def plot_dataset_predictions(
+    n2p2_directory: str,
+    bins: int = 50,
+    density: bool = True,
+    range: List[float] = None,
+    alpha: float = 0.5,
+    ec: str = 'k',
+    histtype: str = "stepfilled",
+    quantities: dict = {"energy": "Ha"},
+    plot_type: str = "raw",
+):
+    """
+    For `n2p2_directory`, load the files corresponding to energies or forces predicted by
+    nnp-dataset and histogram plot the reference values against the network predictions.
+
+    Parameters
+    ----------
+    n2p2_directory: str
+        Directory containing energy.comp and forces.comp created by nnp-dataset.
+    bins: int = 50
+        The number of energy or force bins. Optional, default is 50.
+    density: bool = True
+        Whether to plot the probability density. Optional, default is `True`.
+    range: List[float] = None
+        Histogram x-axis range. Optional, default is `None`.
+    alpha: float = 0.5
+        Sets the transparency of the plotted bars. `1.0` is opaque. Optional, default is `0.5`.
+    ec: str = 'k'
+        Edge colour of histogram. Optional, default is `k`.
+    histtype: str = "stepfilled"
+        Type of histogram to draw. Optional, default is "stepfilled".
+    """
+    for quantity, unit in quantities.items():
+
+        if quantity.lower() == "energy":
+            comp_file = "energy.comp"
+        elif quantity.lower() == "force":
+            comp_file = "forces.comp"
+        else:
+            raise ValueError(
+                f"{quantity} is not a valid quantity. Options: 'energy', 'force'"
+        )
+        ref, n2p2 = _read_predict_file(f'{n2p2_directory}/{comp_file}')
+        plt.figure(figsize=(8, 6))
+        plt.rcParams.update({'font.size': 14})
+        label = None
+
+        if plot_type == "raw":
+            plt.hist(
+                ref,
+                bins=bins,
+                label='Reference',
+                density=density,
+                range=range,
+                alpha=alpha,
+                ec=ec,
+                histtype=histtype,
+            )
+            data = n2p2
+            label = "Prediction"
+            xlabel = f'{quantity} / {unit}'
+
+        elif plot_type == "diff":
+            data = np.abs(ref - n2p2)
+            symbol = quantity.upper()[0]
+            xlabel= "$|" + symbol + "_{ref} - " + symbol + "_{n2p2}|$"
+
+        elif plot_type == "percentage_diff":
+            data = np.where(ref==0, np.nan, 100 * (ref - n2p2) / ref)
+            symbol = quantity.upper()[0]
+            xlabel = "$" + symbol + "_{n2p2}$ error / %"
+
+        else:
+            raise ValueError(
+                f"{plot_type} is not a valid plot type. "
+                "Options: 'raw', 'diff', 'percentage_diff"
+        )
+
+        plt.hist(
+            data,
+            bins=bins,
+            label=label,
+            density=density,
+            range=range,
+            alpha=alpha,
+            ec=ec,
+            histtype=histtype,
+        )
+        if plot_type == "raw":
+            plt.legend()
+        plt.xlabel(xlabel)
+        if density:
+            plt.ylabel('Density')
+        else:
+            plt.ylabel('Count')
+        plt.show()
