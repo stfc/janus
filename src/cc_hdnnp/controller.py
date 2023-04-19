@@ -65,7 +65,6 @@ class Controller:
         Path for the directory to read/write LAMMPS files from/to, relative to the
         `main_directory`. Default is "lammps".
     """
-
     def __init__(
         self,
         structures: AllStructures,
@@ -1437,7 +1436,6 @@ class Controller:
               - exclusive
               - commands
         """
-
         n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
         common_commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
@@ -1654,7 +1652,6 @@ class Controller:
               - exclusive
               - commands
         """
-
         n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
         common_commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
