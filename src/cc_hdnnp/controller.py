@@ -607,7 +607,7 @@ class Controller:
                 'mixing_beta'       : 0.25,
                 'startingwfc'       : 'atomic+random',
                 'startingpot'       : 'atomic',
-                'nbnd'              : 400,
+                'nbnd'              : None,
                 'ecutwfc'           : 80,
                 'ecutrho'           : 480,
                 'input_dft'         : 'VDW-DF2-B86R',
@@ -630,7 +630,7 @@ class Controller:
             "mixing_beta": 0.25,
             "startingwfc": "atomic+random",
             "startingpot": "atomic",
-            "nbnd": 400,
+            "nbnd": None,
             "ecutwfc": 80,
             "ecutrho": 480,
             "input_dft": "VDW-DF2-B86R",
@@ -653,6 +653,10 @@ class Controller:
                     "options: {}".format(key, value, list(options))
                 )
             options[key] = value
+
+        for key, value in options.copy().items():
+            if value is None:
+                options.pop(key)
 
         write(
             filename=join_paths(frame_directory, "{}.in".format(structure.name)),
