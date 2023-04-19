@@ -17,10 +17,11 @@ def plot_lammps_data(
     lammps_directory: str,
     log_file: str,
     timesteps_range: Tuple[int, int] = (0, None),
-    output_headers= ["Temp"]
+    keys: List[str] = ["Temp"],
+    units: List[str] = None,
 ):
     """
-    Plots temperatures from a single LAMMPS log file.
+    Plots data from a single LAMMPS log file.
 
     Parameters
     ----------
@@ -31,49 +32,34 @@ def plot_lammps_data(
     timesteps_range: Tuple[int, int] = None
         Sets the upper and lower limit on the timesteps to plot.
         Optional, default is `(0, None)` which plots all timesteps.
+    keys: List[str] = ["Temp"]
+        List of log keys to plot. Default is `["Temp"]`.
+    units: List[str] = None
+        List of units for axis labels, corresponding to each key. Default is `None`.
     """
     _, _, _, dataset = read_lammps_log(
         dump_lammpstrj=1,
         log_lammps_file=join(lammps_directory, log_file),
-        output_headers = output_headers
+        output_headers=keys,
     )
-    for key in dataset.keys():
+    if units is not None:
+        if isinstance(keys, str):
+            keys = [keys]
+        if isinstance(units, str):
+            units = [units]
+        if len(units) != len(keys):
+            raise ValueError("`keys` and `units` must have the same length")
+
+    for i, key in enumerate(dataset.keys()):
         ds = dataset[key]
         plt.figure(figsize=(12, 6))
         plt.plot(ds[timesteps_range[0] : timesteps_range[1]])
-        plt.ylabel(key)
+        ylabel = key
+        if units is not None:
+            ylabel += f" / {units[i]}"
+        plt.ylabel(ylabel)
         plt.title(log_file)
         plt.show()
-
-
-def plot_lammps_temperature(
-    lammps_directory: str,
-    log_file: str,
-    timesteps_range: Tuple[int, int] = (0, None),
-):
-    """
-    Plots temperatures from a single LAMMPS log file.
-
-    Parameters
-    ----------
-    lammps_directory: str
-        The directory containing `log_file`.
-    log_file: str
-        The filepath of the LAMMPS log file, relative to `lammps_directory`.
-    timesteps_range: Tuple[int, int] = None
-        Sets the upper and lower limit on the timesteps to plot.
-        Optional, default is `(0, None)` which plots all timesteps.
-    """
-    _, _, _, dataset = read_lammps_log(
-        dump_lammpstrj=1,
-        log_lammps_file=join(lammps_directory, log_file),
-    )
-    temperatures = dataset["Temp"]
-    plt.figure(figsize=(12, 6))
-    plt.plot(temperatures[timesteps_range[0] : timesteps_range[1]])
-    plt.ylabel("Temperature (k)")
-    plt.title(log_file)
-    plt.show()
 
 
 def plot_lammps_temperature_multiple(
