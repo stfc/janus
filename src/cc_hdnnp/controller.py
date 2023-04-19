@@ -1526,7 +1526,6 @@ class Controller:
               - exclusive
               - commands
         """
-
         n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
         common_commands = self.n2p2_module_commands + [
             f"n2p2_directories=({n2p2_directory_str})",
@@ -1535,7 +1534,7 @@ class Controller:
 
         predict_commands = common_commands.copy()
         predict_commands += [
-            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-dataset") + 
+            "mpirun -np ${SLURM_NTASKS} " + join_paths(self.n2p2_bin, "nnp-dataset") +
             (" 1" if shuffle else " 0")
         ]
 
@@ -1548,6 +1547,69 @@ class Controller:
         )
 
         return f"sbatch {file_predict}"
+
+    def write_n2p2_atomenv_script(
+        self,
+        n_bins: int = 500,
+        n_neighbours: str = "0 0 0  0 0 0  0 0 0",
+        file_atomenv: str = "n2p2_atomenv.sh",
+        **kwargs,
+    ):
+        """
+        Write batch script for creating atomic environment data files.
+        Returns the command to submit the script.
+
+        Can also use `**kwargs` to set optional arguments for the SLURM batch script.
+
+        Parameters
+        ----------
+        n_bins: int, optional
+            Number of bins for symmetry function histograms. Default is `500`.
+        n_neighbours: str, optional
+            Number of nearest neighbours for each output for each element.
+            Default is `0 0 0  0 0 0  0 0 0`.
+        file_atomenv: str, optional
+            File location to batch script to. Default is 'n2p2_atomenv.sh'.
+        **kwargs:
+            Used to set optional str arguments for the batch script:
+              - constraint
+              - nodes
+              - ntasks_per_node
+              - time
+              - out
+              - account
+              - reservation
+              - exclusive
+              - commands
+        """
+        n2p2_directory_str = " ".join((f"'{d}'" for d in self.n2p2_directories))
+        common_commands = self.n2p2_module_commands + [
+            f"n2p2_directories=({n2p2_directory_str})",
+            "cd ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}",
+            'for file in "input.nn" "input.data" "scaling.data"; do',
+            '    if [[ ! -f ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}/${file} ]] ; then',
+            '        echo "${file} must be present in ${n2p2_directories[${SLURM_ARRAY_TASK_ID}]}, aborting."',
+            '        exit',
+            '    fi',
+            'done'
+        ]
+
+        atomenv_commands = common_commands.copy()
+        atomenv_commands += [
+            "mpirun -np ${SLURM_NTASKS} "
+            + join_paths(self.n2p2_bin, "nnp-atomenv")
+            + f" {n_bins} {n_neighbours}"
+        ]
+
+        format_slurm_input(
+            formatted_file=join_paths(self.scripts_directory, file_atomenv),
+            commands=atomenv_commands,
+            job_name="n2p2_atomenv",
+            array=f"0-{len(self.n2p2_directories) - 1}",
+            **kwargs,
+        )
+
+        return f"sbatch {file_atomenv}"
 
     def write_lammps_data(
         self,
