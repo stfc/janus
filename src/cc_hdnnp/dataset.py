@@ -1011,16 +1011,11 @@ class Dataset(List[Frame]):
         samples: int
             Estimated number of samples to take from each bin. Default is 25.
         """
-        
-        energies = np.zeros([len(self)])
-        bin_edges = []
-
-        for i, frame in enumerate(self):
-            energies[i] = frame.energy
-
+        energies = self.all_energies
         E_min = np.min(energies)
         E_max = np.max(energies)
 
+        bin_edges = []
         for i in range(bins + 1):
             bin_edges.append(E_min + (i * (E_max - E_min) / bins))
 
@@ -1031,12 +1026,9 @@ class Dataset(List[Frame]):
             bin_indicies = np.where(energy_mask)[0]
 
             if len(bin_indicies) > samples:
-                bin_num = len(bin_indicies)
-                bin_mask = np.arange(bin_num)
-                bin_mask = np.where(bin_mask % (bin_num // samples) == 0, True, False)
-                bin_indicies = bin_indicies[bin_mask]
-            
+                bin_indicies = np.random.choice(bin_indicies, samples, replace=False)
+
             sample_indicies = np.append(sample_indicies, bin_indicies)
 
-        conditions=(i in sample_indicies for i, _ in enumerate(self))
+        conditions=[i in sample_indicies for i, _ in enumerate(self)]
         return conditions
