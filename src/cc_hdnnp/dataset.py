@@ -49,6 +49,8 @@ class Frame(Atoms):
     statistics: List[str] = None
         Statistics of extrapolations associated with this structure from the AL process.
         Optional, default is None.
+    pbc: List[bool] = [True, True, True]
+        True if there are periodic boundary conditions along each of the three axes.
     """
 
     def __init__(
@@ -63,7 +65,7 @@ class Frame(Atoms):
         frame_file: str = None,
         units: Dict[str, str] = None,
         statistics: List[str] = None,
-        pbc: List[bool] = [True,True,True],
+        pbc: List[bool] = [True, True, True],
     ):
         super().__init__(
             symbols=symbols, positions=positions, cell=lattice, charges=charges
@@ -580,7 +582,7 @@ class Dataset(List[Frame]):
                     try:
                         frames.append(
                             Frame(
-                                pbc = atoms.get_pbc(),
+                                pbc=atoms.get_pbc(),
                                 lattice=atoms.cell,
                                 symbols=atoms.symbols,
                                 positions=atoms.positions,
@@ -594,7 +596,7 @@ class Dataset(List[Frame]):
                     except:
                         frames.append(
                             Frame(
-                                pbc = atoms.get_pbc(),
+                                pbc=atoms.get_pbc(),
                                 lattice=atoms.cell,
                                 symbols=atoms.symbols,
                                 positions=atoms.positions,
@@ -1113,7 +1115,7 @@ class Dataset(List[Frame]):
         verbose: bool = True,
     ):
         """
-        Compares the distance of a list  of structures to a single structure.
+        Compares the distance of a list of structures to a single structure.
 
         Parameters
         ----------

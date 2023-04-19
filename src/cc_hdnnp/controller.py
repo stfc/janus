@@ -2254,7 +2254,7 @@ class Controller:
         common_commands = self.n2p2_module_commands
         distance_commands = common_commands.copy()
         distance_commands += [
-            "srun python3 calc_distances.py " + 
+            "srun python3 calc_distances.py " +
             "${SLURM_ARRAY_TASK_ID} " +
             files_in[0] + " " + files_in[1]
         ]
@@ -2269,7 +2269,7 @@ class Controller:
             array=f"{structure_indicies}-{structure_indicies}"
         else:
             if len(structure_indicies) > 2:
-                raise IOError("structure_indicies cannot contain more than two indicies.")
+                raise ValueError("structure_indicies cannot contain more than two indicies.")
             if len(structure_indicies) == 1:
                 array=f"{structure_indicies[0]}-{structure_indicies[0]}"
             else:
