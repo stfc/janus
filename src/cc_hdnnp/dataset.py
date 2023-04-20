@@ -1110,9 +1110,11 @@ class Dataset(List[Frame]):
     def compare_structure(
         self,
         frame: Frame,
-        file_out: str = "../distances.csv",
-        permute: bool = True,
-        verbose: bool = True,
+        permute: bool = False,
+        file_out: str = None,
+        append: bool = False,
+        delimiter: str = ',',
+        use_mpi: bool = False,
     ):
         """
         Compares the distance of a list of structures to a single structure.
@@ -1121,16 +1123,24 @@ class Dataset(List[Frame]):
         ----------
         frame: Frame
             Frame to compare list of frames in self to.
-        file_out: str, optional
-            The complete filepath to write the dataset to. Default is "../distances.csv".
-        permute: bool, optional
-            Whether to minimise the distance by permuting same elements. Default is True.
-        verbose: bool, optional
-            Whether to save distances to a text file. Default is True.
+        permute: bool = False
+            Whether to minimise the distance by permuting same elements. Default is `False`.
+        file_out: str = None
+            The complete filepath to write the dataset to. Default is `None`.
+        append: bool = False
+            Whether to append if writing out the data. Default is `False`.
+        delimiter: str = ','
+            Delimiter separating values if writing out data. Default is ','.
+        use_mpi: bool = False
+            Whether to parallelise using MPI. Default is `False`.
         """
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        size = comm.Get_size()
+        if use_mpi:
+            comm = MPI.COMM_WORLD
+            rank = comm.Get_rank()
+            size = comm.Get_size()
+        else:
+            rank = 0
+            size = 1
 
         compare_atms = Atoms(
             positions = frame.get_positions(),
@@ -1162,19 +1172,21 @@ class Dataset(List[Frame]):
             )
             dist[i + init_idx] = distance(self_atms, compare_atms, permute)
 
-        if rank == 0:
-            for i in range(1, size):
-                init_idx = indicies[i][0]
-                final_idx = indicies[i][-1] + 1
-                comm.Recv(dist[init_idx:final_idx], i, 0)
-        else:
-            comm.Ssend(dist[init_idx:final_idx], 0, 0)
+        if use_mpi:
+            if rank == 0:
+                for i in range(1, size):
+                    init_idx = indicies[i][0]
+                    final_idx = indicies[i][-1] + 1
+                    comm.Recv(dist[init_idx:final_idx], i, 0)
+            else:
+                comm.Ssend(dist[init_idx:final_idx], 0, 0)
 
-        comm.barrier()
+            comm.barrier()
 
-        if verbose and rank==0:
-            f = open(file_out, 'a')
-            np.savetxt(f, dist, delimiter=",")
+        if file_out is not None and rank==0:
+            mode = "a" if append else "w"
+            f = open(file_out, mode)
+            np.savetxt(f, dist, delimiter=delimiter)
             f.close()
 
         return dist
