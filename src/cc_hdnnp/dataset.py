@@ -1136,7 +1136,7 @@ class Dataset(List[Frame]):
             positions = frame.get_positions(),
             symbols = frame.get_chemical_symbols(),
             cell = frame.get_cell(),
-            pbc = frame.get_pbc()
+            pbc = [True, True, True] if frame.get_pbc() is None else frame.get_pbc()
         )
 
         num_struct = len(self)
@@ -1147,11 +1147,18 @@ class Dataset(List[Frame]):
         final_idx = indicies[rank][-1] + 1
 
         for i, s1 in enumerate(itertools.islice(self, init_idx, final_idx)):
+            if len(s1) != len(frame):
+                warnings.warn(
+                    f"Dataset structure {i} has a different number of atoms "
+                    f"to the frame being compared. Skipping."
+                )
+                dist[i + init_idx] = np.nan
+                continue
             self_atms = Atoms(
                 positions = s1.get_positions(),
                 symbols = s1.get_chemical_symbols(),
                 cell = s1.get_cell(),
-                pbc = s1.get_pbc()
+                pbc = [True, True, True] if s1.get_pbc() is None else s1.get_pbc()
             )
             dist[i + init_idx] = distance(self_atms, compare_atms, permute)
 
