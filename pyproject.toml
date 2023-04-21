@@ -20,6 +20,7 @@ jupyter-core = "4.11.2"
 nbconvert = "6.5.1"
 pyzmq = "25"
 pandas = "^2.0.0"
+mpi4py = "^3.1.4"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.2.4"

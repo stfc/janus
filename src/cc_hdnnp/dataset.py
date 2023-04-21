@@ -8,10 +8,12 @@ from copy import deepcopy
 from typing import Dict, Iterable, Iterator, List, Tuple
 
 from ase.atoms import Atoms
-from ase.geometry import is_orthorhombic
+from ase.geometry import is_orthorhombic, distance
 from ase.io.formats import read, write
 import numpy as np
 import warnings
+from mpi4py import MPI
+import itertools
 
 from cc_hdnnp.structure import AllStructures, Structure
 from .units import UNITS
@@ -47,6 +49,8 @@ class Frame(Atoms):
     statistics: List[str] = None
         Statistics of extrapolations associated with this structure from the AL process.
         Optional, default is None.
+    pbc: List[bool] = [True, True, True]
+        True if there are periodic boundary conditions along each of the three axes.
     """
 
     def __init__(
@@ -61,7 +65,7 @@ class Frame(Atoms):
         frame_file: str = None,
         units: Dict[str, str] = None,
         statistics: List[str] = None,
-        pbc: List[bool] = [True,True,True],
+        pbc: List[bool] = [True, True, True],
     ):
         super().__init__(
             symbols=symbols, positions=positions, cell=lattice, charges=charges
@@ -578,7 +582,7 @@ class Dataset(List[Frame]):
                     try:
                         frames.append(
                             Frame(
-                                pbc = atoms.get_pbc(),
+                                pbc=atoms.get_pbc(),
                                 lattice=atoms.cell,
                                 symbols=atoms.symbols,
                                 positions=atoms.positions,
@@ -592,7 +596,7 @@ class Dataset(List[Frame]):
                     except:
                         frames.append(
                             Frame(
-                                pbc = atoms.get_pbc(),
+                                pbc=atoms.get_pbc(),
                                 lattice=atoms.cell,
                                 symbols=atoms.symbols,
                                 positions=atoms.positions,
@@ -1102,3 +1106,94 @@ class Dataset(List[Frame]):
 
         conditions=[i in sample_indicies for i, _ in enumerate(self)]
         return conditions
+
+    def compare_structure(
+        self,
+        frame: Frame,
+        idx_range: List[int] = None,
+        permute: bool = False,
+        file_out: str = None,
+        append: bool = False,
+        delimiter: str = ',',
+        use_mpi: bool = False,
+    ):
+        """
+        Compares the distance of a list of structures to a single structure.
+
+        Parameters
+        ----------
+        frame: Frame
+            Frame to compare list of frames in self to.
+        idx_range: List[int] = None
+            Indicies of self to compare to frame.
+        permute: bool = False
+            Whether to minimise the distance by permuting same elements. Default is `False`.
+        file_out: str = None
+            The complete filepath to write the dataset to. Default is `None`.
+        append: bool = False
+            Whether to append if writing out the data. Default is `False`.
+        delimiter: str = ','
+            Delimiter separating values if writing out data. Default is ','.
+        use_mpi: bool = False
+            Whether to parallelise using MPI. Default is `False`.
+        """
+        if use_mpi:
+            comm = MPI.COMM_WORLD
+            rank = comm.Get_rank()
+            size = comm.Get_size()
+        else:
+            rank = 0
+            size = 1
+
+        compare_atms = Atoms(
+            positions = frame.get_positions(),
+            symbols = frame.get_chemical_symbols(),
+            cell = frame.get_cell(),
+            pbc = [True, True, True] if frame.get_pbc() is None else frame.get_pbc()
+        )
+
+        if idx_range is None:
+            min_idx, max_idx = 0, len(self) - 1
+        else:
+            min_idx, max_idx = idx_range[0], idx_range[1]
+        dists = np.zeros(max_idx - min_idx + 1)
+
+        # Divide among MPI processes
+        indicies = np.array_split(range(len(dists)), size)
+        init_idx = indicies[rank][0]
+        final_idx = indicies[rank][-1] + 1
+
+        for i, s1 in enumerate(itertools.islice(
+            self, init_idx + min_idx, final_idx + min_idx
+        )):
+            if len(s1) != len(frame):
+                warnings.warn(
+                    f"Dataset structure {i} has a different number of atoms "
+                    f"to the frame being compared. Skipping."
+                )
+                dists[i + init_idx] = np.nan
+                continue
+            self_atms = Atoms(
+                positions = s1.get_positions(),
+                symbols = s1.get_chemical_symbols(),
+                cell = s1.get_cell(),
+                pbc = [True, True, True] if s1.get_pbc() is None else s1.get_pbc()
+            )
+            dists[i + init_idx] = distance(self_atms, compare_atms, permute)
+
+        if use_mpi:
+            if rank == 0:
+                for i in range(1, size):
+                    init_idx = indicies[i][0]
+                    final_idx = indicies[i][-1] + 1
+                    comm.Recv(dists[init_idx:final_idx], i, 0)
+            else:
+                comm.Ssend(dists[init_idx:final_idx], 0, 0)
+
+        if file_out is not None and rank==0:
+            mode = "a" if append else "w"
+            f = open(file_out, mode)
+            np.savetxt(f, dists, delimiter=delimiter)
+            f.close()
+
+        return dists
