@@ -2212,33 +2212,43 @@ class Controller:
     def write_distance_script(
         self,
         files_in: List[str],
-        structure_indicies: List[int] = [0],
+        formats: List[str] = [None, None],
+        structure_indicies: List[List[int]] = [None, None],
+        file_out: str = '../distances.csv',
+        delimiter: str = ',',
         file_shell: str = "calc_distances.sh",
-        file_out: str = None,
         permute: bool = None,
-        verbose: bool = None,
         **kwargs,
     ):
         """
-        Write batch script for calculating distances
-        network. Returns the command to submit the script.
+        Write batch script for calculating distances network.
+        Returns the command to submit the script.
+
         Can also use `**kwargs` to set optional arguments for the SLURM batch script.
 
         Parameters
         ----------
         files_in: List[str]
             File locations of structures to be compared.
-        structure_indicies: List[int], optional
-            First (and last indicies) of structures to compare from second input file.
-            Optional, default is [0].
+        formats: List[str], optional
+            Formats of the two input files. If either format is unspecified,
+            "n2p2" will be used as the default value.
+            Optional, default is `[None, None]`.
+        structure_indicies: List[List[int]], optional
+            First (and last indicies) of structures to compare from each input file.
+            If either set of indicies is unspecified, all structures will be compared.
+            Optional, default is `[None, None]`.
+        file_out: str, optional
+            Filepath to write the dataset to. For each frame of the second file
+            being compared, this will be appeneded with ".i", where i is the
+            frame index.
+            Optional, defailt is '../distances.csv'
+        delimiter: str = ',', optional
+            Delimiter separating values if writing out data. Default is ','
         file_shell: str, optional
             File location to write batch script to. Default is 'calc_distances.sh'.
-        file_out: str, optional
-            The complete filepath to write the dataset to.
         permute: bool, optional
             Whether to minimise the distance by permuting same elements.
-        verbose: bool, optional
-            Whether to save distances to a csv file. Default is True.
         **kwargs:
             Used to set optional str arguments for the batch script:
               - constraint
@@ -2251,30 +2261,53 @@ class Controller:
               - exclusive
               - commands
         """
+        if len(formats) != 2:
+            raise ValueError("`formats` must be of length 2.")
+        for i, format in enumerate(formats):
+            if format is None:
+                formats[i] = "n2p2"
+
+        if len(structure_indicies) != 2:
+            raise ValueError("`structure_indicies` must be of length 2.")
+
+        if structure_indicies[0] is not None:
+            if len(structure_indicies[0]) != 2:
+                raise ValueError("`structure_indicies[0]` must be `None` or of length 2.")
+            else:
+                idx_1 = structure_indicies[0]
+        else:
+            dataset = Dataset(
+                data_file=files_in[0],
+                format=formats[0]
+            )
+            idx_1 = [0, len(dataset) - 1]
+
+        if structure_indicies[1] is not None:
+            if len(structure_indicies[1]) != 2:
+                raise ValueError("`structure_indicies[1]` must be `None` or of length 2.")
+            else:
+                idx_2 = structure_indicies[1]
+        else:
+            dataset = Dataset(
+                data_file=files_in[1],
+                format=formats[1]
+            )
+            idx_2 = [0, len(dataset) - 1]
+
         common_commands = self.n2p2_module_commands
         distance_commands = common_commands.copy()
         distance_commands += [
             "srun python3 calc_distances.py " +
             "${SLURM_ARRAY_TASK_ID} " +
-            files_in[0] + " " + files_in[1]
+            f"{files_in[0]} {files_in[1]} " +
+            f"{formats[0]} {formats[1]} " +
+            f"{idx_1[0]} {idx_1[1]}"
         ]
-        if file_out is not None:
-            distance_commands[-1] += " " + file_out
+        distance_commands[-1] += f" {file_out} {delimiter}"
         if permute is not None:
             distance_commands[-1] += " -p " + str(int(permute))
-        if verbose is not None:
-            distance_commands[-1] += " -v " + str(int(verbose))
 
-        if isinstance(structure_indicies, int):
-            array=f"{structure_indicies}-{structure_indicies}"
-        else:
-            if len(structure_indicies) > 2:
-                raise ValueError("structure_indicies cannot contain more than two indicies.")
-            if len(structure_indicies) == 1:
-                array=f"{structure_indicies[0]}-{structure_indicies[0]}"
-            else:
-                array=f"{structure_indicies[0]}-{structure_indicies[1]}"
-
+        array = f"{idx_2[0]}-{idx_2[1]}"
         format_slurm_input(
             formatted_file=join_paths(self.scripts_directory, file_shell),
             commands=distance_commands,
@@ -2284,3 +2317,58 @@ class Controller:
         )
 
         return f"sbatch {file_shell}"
+
+    def combine_distance_files(
+        self,
+        file_in: str,
+        format: str = "n2p2",
+        indicies: List[int] = None,
+        file_out: str = '../distances.csv',
+    ):
+        """
+        Combines output files created by `write_distance_script`
+        into a single file.
+
+        Parameters
+        ----------
+        file_in: str
+            File locations of second input file. Required only if `indicies` is
+            not specified, to determine the number of frames compared.
+        format: str, optional
+            Format of the second input file.
+            Optional, default is "n2p2".
+        indicies: List[int], optional
+            Indicies of structures compared from second input file.
+            If no index is given, it is assumed all structures were compared.
+            Optional, default is `None`.
+        file_out: str, optional
+            Filepath to write the dataset to. It is assumed that, for each frame
+            of `file_in`, there is a file "file_out.i", where i is the
+            frame index.
+            Optional, default is '../distances.csv'
+        """
+        if indicies is not None:
+            if len(indicies) != 2:
+                raise ValueError("`indicies` must be `None` or of length 2.")
+            else:
+                idx = indicies
+        else:
+            dataset = Dataset(
+                data_file=file_in,
+                format=format,
+            )
+            if len(dataset) < 1:
+                raise ValueError(
+                    "Dataset not read successfully. Please check `data_file` and `format`"
+                )
+            idx = [0, len(dataset) - 1]
+
+        files = []
+        for i in range(idx[0], idx[1] + 1):
+            files.append(f"{file_out}.{i}")
+
+        with open(file_out, 'w') as outfile:
+            for file in files:
+                with open(file) as f:
+                    for line in f:
+                        outfile.write(line)

@@ -1110,6 +1110,7 @@ class Dataset(List[Frame]):
     def compare_structure(
         self,
         frame: Frame,
+        idx_range: List[int] = None,
         permute: bool = False,
         file_out: str = None,
         append: bool = False,
@@ -1123,6 +1124,8 @@ class Dataset(List[Frame]):
         ----------
         frame: Frame
             Frame to compare list of frames in self to.
+        idx_range: List[int] = None
+            Indicies of self to compare to frame.
         permute: bool = False
             Whether to minimise the distance by permuting same elements. Default is `False`.
         file_out: str = None
@@ -1149,20 +1152,26 @@ class Dataset(List[Frame]):
             pbc = [True, True, True] if frame.get_pbc() is None else frame.get_pbc()
         )
 
-        num_struct = len(self)
-        dist = np.zeros(num_struct)
+        if idx_range is None:
+            min_idx, max_idx = 0, len(self) - 1
+        else:
+            min_idx, max_idx = idx_range[0], idx_range[1]
+        dists = np.zeros(max_idx - min_idx + 1)
 
-        indicies = np.array_split(range(num_struct), size)
+        # Divide among MPI processes
+        indicies = np.array_split(range(len(dists)), size)
         init_idx = indicies[rank][0]
         final_idx = indicies[rank][-1] + 1
 
-        for i, s1 in enumerate(itertools.islice(self, init_idx, final_idx)):
+        for i, s1 in enumerate(itertools.islice(
+            self, init_idx + min_idx, final_idx + min_idx
+        )):
             if len(s1) != len(frame):
                 warnings.warn(
                     f"Dataset structure {i} has a different number of atoms "
                     f"to the frame being compared. Skipping."
                 )
-                dist[i + init_idx] = np.nan
+                dists[i + init_idx] = np.nan
                 continue
             self_atms = Atoms(
                 positions = s1.get_positions(),
@@ -1170,23 +1179,21 @@ class Dataset(List[Frame]):
                 cell = s1.get_cell(),
                 pbc = [True, True, True] if s1.get_pbc() is None else s1.get_pbc()
             )
-            dist[i + init_idx] = distance(self_atms, compare_atms, permute)
+            dists[i + init_idx] = distance(self_atms, compare_atms, permute)
 
         if use_mpi:
             if rank == 0:
                 for i in range(1, size):
                     init_idx = indicies[i][0]
                     final_idx = indicies[i][-1] + 1
-                    comm.Recv(dist[init_idx:final_idx], i, 0)
+                    comm.Recv(dists[init_idx:final_idx], i, 0)
             else:
-                comm.Ssend(dist[init_idx:final_idx], 0, 0)
-
-            comm.barrier()
+                comm.Ssend(dists[init_idx:final_idx], 0, 0)
 
         if file_out is not None and rank==0:
             mode = "a" if append else "w"
             f = open(file_out, mode)
-            np.savetxt(f, dist, delimiter=delimiter)
+            np.savetxt(f, dists, delimiter=delimiter)
             f.close()
 
-        return dist
+        return dists
