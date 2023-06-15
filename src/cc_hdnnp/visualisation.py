@@ -1155,11 +1155,9 @@ def plot_all_RDFs_combined(
                 data = pickle.load(f)
                 try:
                     test = data['test_rdf'][name]
-                    error = data['rdf_errors'][name]
                 except KeyError:
                     swap_name = name.rsplit('-')[1] + "-" + name.rsplit('-')[0]
                     test = data['test_rdf'][swap_name]
-                    error = data['rdf_errors'][swap_name]
 
             dist_masked, test_masked = _truncate_data(ref, test)
 
@@ -1267,6 +1265,74 @@ def plot_average_RDFs(
     # Formatting
     plt.ylabel("RDF")
     plt.xlabel(f"Distance / {units}")
+    if labels is not None:
+        plt.legend()
+
+    if file_out is not None:
+        plt.savefig(
+            fname=f"{file_out}_sum.pdf",
+            format="pdf",
+            dpi=300,
+            bbox_inches = "tight",
+        )
+    plt.show()
+
+
+def plot_average_ADFs(
+    directories: List[str],
+    elements: List[str],
+    labels: List[str] = None,
+    max_1: bool = False,
+    file_out: str = None,
+):
+    """
+    Plots comparisons of the average ADFs across all sets of three atoms
+    calculated using nnp-dist.
+
+    Parameters
+    ----------
+    directories: List[str]
+        Directories to find ADF data in.
+    elements: List[str]
+        List of elements to determine sets of three atoms for ADF plots.
+    labels: List[str]
+        Labels for plot legend, with the reference label first,
+        followed by the labels for the files listed in `files_in`. Default is `None`.
+    max_1: bool = False,
+        Whether to normalise maximum to 1. Default is `False`.
+    file_out: str = None
+        File to save plots. Default is `None`.
+    """
+    plt.figure(figsize=(8, 6))
+    plt.rcParams.update({'font.size': 14})
+
+    # Plot prediction data
+    for idx, directory in enumerate(directories):
+        data_sum = None
+        for i in range(len(elements)):
+            for j in range(len(elements)):
+                for k in range(j, len(elements)):
+                    angle, adf = _read_DF_file(
+                        file=f"{directory}/adf_{elements[i]}_{elements[j]}_{elements[k]}.out",
+                        max_1=max_1,
+                    )
+                    if data_sum is None:
+                        data_sum = np.zeros(len(adf))
+                    data_sum = np.add(data_sum, adf)
+
+        if labels is not None:
+            label = labels[idx]
+        plt.plot(
+            angle,
+            data_sum,
+            linestyle="--",
+            lw=1.5,
+            label=label,
+        )
+
+    # Formatting
+    plt.ylabel("ADF")
+    plt.xlabel("Angle / $^\circ$")
     if labels is not None:
         plt.legend()
 
@@ -1414,7 +1480,7 @@ def plot_nnp_ADFs(
     n2p2_directory: str
         Directory to find ADF data in.
     elements: List[str]
-        List of elements to determine pairs for ADF plots.
+        List of elements to determine sets of three atoms for ADF plots.
     max_1: bool = False,
         Whether to normalise maximum to 1. Default is `False`.
     file_out: str = None
@@ -1480,7 +1546,7 @@ def plot_all_ADFs_combined(
     ref_directory: str
         Directory to find reference ADF data in.
     elements: List[str]
-        List of elements to determine pairs for ADF errors.
+        List of elements to determine sets of three atoms for ADF errors.
     max_1: bool = False,
         Whether to normalise maximum to 1. Default is `False`.
     labels: List[str]
@@ -1547,7 +1613,7 @@ def calc_ADF_errors(
     ref_directory: str
         Directory to find reference ADF data in.
     elements: List[str]
-        List of elements to determine pairs for ADF errors.
+        List of elements to determine sets of three atoms for ADF errors.
     max_1: bool = False,
         Whether to normalise maximum to 1. Default is `False`.
     """
