@@ -18,14 +18,15 @@ from .dataset import Dataset
 from .sfcalc import SymFuncCalculator
 from .file_readers import read_lammps_log, read_nn_settings
 
-
-def plot_lammps_temperature(
+def plot_lammps_data(
     lammps_directory: str,
     log_file: str,
     timesteps_range: Tuple[int, int] = (0, None),
+    keys: List[str] = ["Temp"],
+    units: List[str] = None,
 ):
     """
-    Plots temperatures from a single LAMMPS log file.
+    Plots data from a single LAMMPS log file.
 
     Parameters
     ----------
@@ -36,15 +37,34 @@ def plot_lammps_temperature(
     timesteps_range: Tuple[int, int] = None
         Sets the upper and lower limit on the timesteps to plot.
         Optional, default is `(0, None)` which plots all timesteps.
+    keys: List[str] = ["Temp"]
+        List of log keys to plot. Default is `["Temp"]`.
+    units: List[str] = None
+        List of units for axis labels, corresponding to each key. Default is `None`.
     """
-    _, _, _, temperatures = read_lammps_log(
+    _, _, _, dataset = read_lammps_log(
         dump_lammpstrj=1,
         log_lammps_file=join(lammps_directory, log_file),
+        output_headers=keys,
     )
-    plt.figure(figsize=(12, 6))
-    plt.plot(temperatures[timesteps_range[0] : timesteps_range[1]])
-    plt.ylabel("Temperature (K)")
-    plt.title(log_file)
+    if units is not None:
+        if isinstance(keys, str):
+            keys = [keys]
+        if isinstance(units, str):
+            units = [units]
+        if len(units) != len(keys):
+            raise ValueError("`keys` and `units` must have the same length")
+
+    for i, key in enumerate(dataset.keys()):
+        ds = dataset[key]
+        plt.figure(figsize=(12, 6))
+        plt.plot(ds[timesteps_range[0] : timesteps_range[1]])
+        ylabel = key
+        if units is not None:
+            ylabel += f" / {units[i]}"
+        plt.ylabel(ylabel)
+        plt.title(log_file)
+        plt.show()
 
 
 def plot_lammps_temperature_multiple(
@@ -79,12 +99,13 @@ def plot_lammps_temperature_multiple(
     for ensemble in ensembles:
         for t in temperatures:
             plt.subplot(len(ensembles) * len(temperatures), 1, i)
-            _, _, _, lammps_temperatures = read_lammps_log(
+            _, _, _, lammps_dataset = read_lammps_log(
                 dump_lammpstrj=1,
                 log_lammps_file=join(
                     lammps_directory, log_file.format(ensemble=ensemble, t=t)
                 ),
             )
+            lammps_temperatures = lammps_dataset["Temp"]
             plt.plot(lammps_temperatures[timesteps_range[0] : timesteps_range[1]])
             plt.ylabel("Temperature (K)")
             plt.title(f"{ensemble}: {t}K")

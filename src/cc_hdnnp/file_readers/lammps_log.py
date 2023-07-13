@@ -2,16 +2,17 @@
 Reads lammps.log files for information used in the workflow.
 """
 
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 import numpy as np
 
-
 def read_lammps_log(
-    dump_lammpstrj: int, log_lammps_file: str
-) -> Tuple[np.ndarray, int, int, np.ndarray]:
+    dump_lammpstrj: int,
+    log_lammps_file: str,
+    output_headers: List[str] = ["Temp"],
+) -> Tuple[np.ndarray, int, int, Dict[str, np.ndarray]]:
     """
-    Reads a "log.lammps"and extracts information about if and at
+    Reads a "log.lammps" and extracts information about if and at
     what timestep extrapolation of the network potential occurred.
 
     Parameters
@@ -21,13 +22,16 @@ def read_lammps_log(
         extrapolation occurred.
     log_lammps_file : str
         The file path to the "log.lammps" file.
+    output_headers: List[str] = ["Temp"]
+        List of log headers for variable(s) to return. Default is `["Temp"]`.
 
     Returns
     -------
-    (np.ndarray, int, int, np.ndarray)
+    (np.ndarray, int, int, Dict[str, np.ndarray])
         First element is array of int corresponding to timesteps, second is the number of
         extrapolation free lines and the third is the timestep that corresponds to that
-        line. The fourth is the temperate at each timestep of the simulation.
+        line. The fourth is a dictionary, with log headers as keys, and header values
+        at each timestep of the simulation as dictionary values.
     """
     with open(log_lammps_file) as f:
         data = f.readlines()
@@ -37,7 +41,7 @@ def read_lammps_log(
 
     # Count the number of lines that precede the simulation so they can be skipped
     step_index = 0
-    temp_index = 1
+
     header_line_number = 0
     n_lines = len(data)
     while header_line_number < n_lines and "Step" not in data[header_line_number]:
@@ -50,9 +54,10 @@ def read_lammps_log(
         )
     headers = data[header_line_number].split()
     step_index = headers.index("Step")
-    temp_index = headers.index("Temp")
+
+    header_indices = [headers.index(output_header) for output_header in output_headers]
+    output_list = np.array([[]])
     timesteps_list = []
-    temp_list = []
     accept_next = False
     extrapolation = False
     i = header_line_number + 1
@@ -84,7 +89,11 @@ def read_lammps_log(
                 extrapolation_free_timesteps = -1
         else:
             try:
-                temp_list.append(float(line.split()[temp_index]))
+                for header_index in header_indices:
+                    output_list = np.append(
+                        output_list,
+                        np.array([float(line.split()[header_index])])
+                    )
                 timestep = int(line.split()[step_index])
                 if accept_next or timestep % dump_lammpstrj == 0:
                     timesteps_list.append(timestep)
@@ -97,7 +106,6 @@ def read_lammps_log(
                         break
                     else:
                         i += 1
-
                 elif (
                     line.startswith("### NNP EXTRAPOLATION WARNING ###")
                     or (
@@ -113,23 +121,31 @@ def read_lammps_log(
                     # valid timestep regardless of dump settings
                     accept_next = True
             except IndexError as e:
-                # Do not expect an IndexError here, as expected EW lines will have sufficient
-                # length and so will cause a ValueError instead, so re-raise with more info if
-                # this ever happens.
-                raise IndexError(
-                    f"Cannot access entries {step_index}, {temp_index} from line number "
-                    f"{header_line_number + 1 + i}: '{line}'"
-                ) from e
+                if line.startswith("Last command:"):
+                    break
+                else:
+                    # Do not expect an IndexError otherwise, as expected EW lines will
+                    # have sufficient length and so will cause a ValueError instead,
+                    # so re-raise with more info if this ever happens.
+                    raise IndexError(
+                        f"Cannot access entries {step_index} or {header_index} "
+                        f"from line number {header_line_number + 1 + i}: '{line}'"
+                    ) from e
 
             i += 1
+    output_list.shape = ((int(len(output_list) / len(output_headers)), len(output_headers)))
 
     # Set `extrapolation_free_lines` and `extrapolation_free_timesteps` if no extrapolation
     if not extrapolation:
         extrapolation_free_lines = -1
         extrapolation_free_timesteps = timesteps_list[-1]
 
-    temperatures = np.array(temp_list)
     timesteps = np.unique(timesteps_list)
+    dataset = {}
+
+    for header_index, output_header in enumerate(output_headers):
+        dataset[output_header] = output_list[:, header_index]
+
     if len(timesteps) == 0:
         # `timesteps` should have length here, as crashing between printing the headers
         # and the 0th timestep is unlikely. However, still raise an error for cases that
@@ -140,5 +156,5 @@ def read_lammps_log(
         timesteps,
         extrapolation_free_lines,
         extrapolation_free_timesteps,
-        temperatures,
+        dataset,
     )
