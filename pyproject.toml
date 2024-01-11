@@ -21,6 +21,7 @@ nbconvert = "6.5.1"
 pyzmq = "25"
 pandas = "^2.0.0"
 scipy = ">=1.10.0"
+pygments = ">=2.15.0"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.2.4"
