@@ -5,40 +5,40 @@ description = ""
 authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.12"
+aml = {path = "../aml", develop = true}
 ase = "^3.22.0"
 ipykernel = "^6.0.3"
-matplotlib = "^3.4.2"
-aml = {path = "../aml", develop = true}
-sklearn = "^0.0"
-jupyter = "^1.0.0"
-notebook = "6.4.12"
-joblib = "1.2"
-pillow = "9.3"
 ipython = "8.10"
+joblib = "1.2"
+jupyter = "^1.0.0"
 jupyter-core = "4.11.2"
+matplotlib = "^3.4.2"
 nbconvert = "6.5.1"
-pyzmq = "25"
+notebook = "6.4.12"
 pandas = "^2.0.0"
+pillow = "9.3"
+pygments = ">=2.15.0"
+python = ">=3.8,<3.12"
+pyzmq = "25"
 scipy = ">=1.10.0"
+sklearn = "^0.0"
+tornado = ">=6.3.3"
 
-[tool.poetry.dev-dependencies]
-pytest = ">=6.2.4"
-coverage = {extras = ["toml"], version = "5.5"}
-pytest-cov = "^2.12.1"
-nox = "^2022.11.21"
+[tool.poetry.group.dev.dependencies]
 black = "^21.7b0"
+certifi = ">=2023.07.22"
+coverage = {extras = ["toml"], version = "5.5"}
 flake8 = "^3.9.2"
 flake8-bandit = "^2.1.2"
 flake8-black = "^0.2.3"
 flake8-bugbear = "^21.4.3"
 flake8-import-order = "^0.18.1"
-safety = "^1.10.3"
+GitPython = ">=3.1.32"
+nox = ">=2022.11.21"
+pytest = ">=7.2.0"
+pytest-cov = "^2.12.1"
 pytest-mock = "^3.6.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "7.2.0"
-nox = "2022.11.21"
+safety = "^1.10.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
