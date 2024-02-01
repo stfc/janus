@@ -4,7 +4,7 @@ Unit tests for `file_readers/lammps_log.py`
 import numpy as np
 import pytest
 
-from cc_hdnnp.file_readers import (
+from janus.file_readers import (
     read_lammps_log,
 )
 

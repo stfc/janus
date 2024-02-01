@@ -10,9 +10,9 @@ from typing import List
 from genericpath import isdir
 import pytest
 
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.data_selection.dataselector import DataSelector
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.controller import Controller
+from janus.data_selection.dataselector import DataSelector
+from janus.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture

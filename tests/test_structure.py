@@ -4,7 +4,7 @@ Unit tests for `structure.py`
 
 import pytest
 
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.structure import AllStructures, Species, Structure
 
 
 def test_all_structures_same_name():

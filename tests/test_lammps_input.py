@@ -7,7 +7,7 @@ from os.path import isfile
 
 import pytest
 
-from cc_hdnnp.lammps_input import format_lammps_input
+from janus.lammps_input import format_lammps_input
 
 
 @pytest.mark.parametrize("integrator", ["nve", "nvt", "npt"])

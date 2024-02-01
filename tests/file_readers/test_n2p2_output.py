@@ -5,7 +5,7 @@ Unit tests for `file_readers/n2p2_output.py`
 import numpy as np
 import pytest
 
-from cc_hdnnp.file_readers import read_energies, read_forces
+from janus.file_readers import read_energies, read_forces
 
 
 @pytest.mark.parametrize("format", ["point", "Conf.", "###"])

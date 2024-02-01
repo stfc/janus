@@ -9,8 +9,8 @@ from typing import List
 import numpy as np
 
 
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.dataset import Dataset
+from janus.controller import Controller
+from janus.dataset import Dataset
 from ..file_readers import read_atomenv
 
 

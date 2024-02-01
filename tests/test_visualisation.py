@@ -5,7 +5,7 @@ Unit tests for `visualisation.py`
 import matplotlib.pyplot as plt
 import pytest
 
-from cc_hdnnp.visualisation import (
+from janus.visualisation import (
     plot_clustering,
     plot_data_histogram,
     plot_environments_histogram_2D,

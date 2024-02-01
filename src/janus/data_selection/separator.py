@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Literal, Union
 
 import numpy as np
 
-from cc_hdnnp.dataset import Dataset
+from janus.dataset import Dataset
 from .dataselector import DataSelector
 from ..file_readers import read_nn_settings, read_scaling
 

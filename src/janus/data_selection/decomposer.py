@@ -12,7 +12,7 @@ import numpy as np
 from sklearn.decomposition import TruncatedSVD
 
 
-from cc_hdnnp.dataset import Dataset
+from janus.dataset import Dataset
 from .dataselector import DataSelector
 
 

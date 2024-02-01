@@ -3,7 +3,7 @@ Unit tests for `file_operations.py`
 """
 from os import remove
 
-from cc_hdnnp.slurm_input import format_slurm_input
+from janus.slurm_input import format_slurm_input
 
 
 def test_template_file():

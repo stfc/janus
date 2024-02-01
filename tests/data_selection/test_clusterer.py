@@ -10,9 +10,9 @@ from genericpath import isdir
 import numpy as np
 import pytest
 
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.data_selection import Clusterer
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.controller import Controller
+from janus.data_selection import Clusterer
+from janus.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture

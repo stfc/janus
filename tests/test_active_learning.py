@@ -10,10 +10,10 @@ from typing import List, Tuple, Union
 import numpy as np
 import pytest
 
-from cc_hdnnp.active_learning import ActiveLearning
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.dataset import Dataset, Frame
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.active_learning import ActiveLearning
+from janus.controller import Controller
+from janus.dataset import Dataset, Frame
+from janus.structure import AllStructures, Species, Structure
 
 
 # The headers used in N2P2 energy and force files
