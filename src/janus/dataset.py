@@ -13,7 +13,7 @@ from ase.io.formats import read, write
 import numpy as np
 import warnings
 
-from cc_hdnnp.structure import AllStructures, Structure
+from janus.structure import AllStructures, Structure
 from .units import UNITS
 
 

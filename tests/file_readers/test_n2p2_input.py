@@ -1,7 +1,7 @@
 """
 Unit tests for `file_readers/n2p2_input.py`
 """
-from cc_hdnnp.file_readers import read_nn_settings
+from janus.file_readers import read_nn_settings
 
 
 def test_read_nn_settings_normalisation_defaults():

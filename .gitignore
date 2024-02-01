@@ -7,4 +7,4 @@ examples/MOF/
 tests/data/tests_output/
 build/
 dist/
-src/CC_HDNNP.egg-info/
+src/janus.egg-info/

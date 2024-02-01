@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "cc_hdnnp"
+name = "janus"
 version = "0.1.0"
 description = ""
 authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
@@ -51,7 +51,7 @@ source = ["src"]
 
 [tool.coverage.run]
 branch = true
-source = ["cc_hdnnp"]
+source = ["janus"]
 
 [tool.coverage.report]
 show_missing = true

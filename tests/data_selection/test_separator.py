@@ -10,9 +10,9 @@ from typing import Dict, List, Literal, Union
 import numpy as np
 import pytest
 
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.data_selection import Separator
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.controller import Controller
+from janus.data_selection import Separator
+from janus.structure import AllStructures, Species, Structure
 
 
 @pytest.fixture

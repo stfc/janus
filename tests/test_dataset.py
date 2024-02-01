@@ -8,8 +8,8 @@ from typing import List, Tuple
 import numpy as np
 import pytest
 
-from cc_hdnnp.dataset import Dataset, Frame
-from cc_hdnnp.structure import AllStructures, Species, Structure
+from janus.dataset import Dataset, Frame
+from janus.structure import AllStructures, Species, Structure
 
 
 def test_frame_units_error():

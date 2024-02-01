@@ -1,6 +1,6 @@
-# CC_HDNNP
+# janus
 
-CC_HDNNP is a collection of utility scripts for Machine Learnt Potential (MLP) workflows using SLURM for job submission, and interfacing with the following software:
+janus is a collection of utility scripts for Machine Learnt Potential (MLP) workflows using SLURM for job submission, and interfacing with the following software:
   - CP2K and Quantum Espresso to generate training and testing data
   - N2P2 for the ML
   - LAMMPS for using the MLP as a classical forcefield
@@ -34,12 +34,12 @@ For the functional details, see the notebooks in `examples/example_directory/scr
       mdtraj = "^1.9.6"
       ```
 
-### CC_HDNNP
+### janus
 
-- Download the CC_HDNNP repository:
+- Download the janus repository:
   - `cd ..`
-  - `git clone https://github.com/stfc/CC_HDNNP`
-  - `cd CC_HDNNP`
+  - `git clone https://github.com/stfc/janus`
+  - `cd janus`
 - Install poetry:
   - https://python-poetry.org/docs/
   - e.g. `curl -sSL https://install.python-poetry.org | python3 -`

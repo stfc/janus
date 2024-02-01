@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 import pytest
 
-from cc_hdnnp.sfparamgen import SymFuncParamGenerator
+from janus.sfparamgen import SymFuncParamGenerator
 
 
 @pytest.fixture

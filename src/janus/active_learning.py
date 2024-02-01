@@ -7,10 +7,10 @@ import warnings
 
 import numpy as np
 
-from cc_hdnnp.controller import Controller
-from cc_hdnnp.lammps_input import format_lammps_input
-from cc_hdnnp.structure import Structure
-from cc_hdnnp.units import UNITS
+from janus.controller import Controller
+from janus.lammps_input import format_lammps_input
+from janus.structure import Structure
+from janus.units import UNITS
 from .dataset import Dataset, Frame
 from .file_readers import read_energies, read_forces, read_lammps_log, read_nn_settings
 

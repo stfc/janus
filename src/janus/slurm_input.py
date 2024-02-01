@@ -28,7 +28,7 @@ def format_slurm_input(
     formatted_file: str,
     commands: Iterable[str],
     template_file: str = None,
-    job_name: str = "cc_hdnnp_job",
+    job_name: str = "janus_job",
     constraint: str = "intel",
     nodes: str = "1",
     ntasks_per_node: str = "24",
@@ -58,8 +58,8 @@ def format_slurm_input(
     template_file: str = None
         If provided, this file will be used as a template to format with the provided arguments
         rather than the default template. Optional, default is None.
-    job_name: str = "cc_hdnnp_job"
-        The name to give the SLURM job. Optional, default "cc_hdnnp_job".
+    job_name: str = "janus_job"
+        The name to give the SLURM job. Optional, default "janus_job".
     constraint: str = "intel"
         The constraint to apply to node selection. Optional, default is "intel".
     nodes: str = "1"

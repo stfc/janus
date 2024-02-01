@@ -14,10 +14,10 @@ from ase.atoms import Atoms
 from ase.io import read, write
 import numpy as np
 
-from cc_hdnnp.lammps_input import format_lammps_input
-from cc_hdnnp.sfparamgen import SymFuncParamGenerator
-from cc_hdnnp.slurm_input import format_slurm_input
-from cc_hdnnp.structure import AllStructures, Structure
+from janus.lammps_input import format_lammps_input
+from janus.sfparamgen import SymFuncParamGenerator
+from janus.slurm_input import format_slurm_input
+from janus.structure import AllStructures, Structure
 from .dataset import Dataset
 from .file_readers import read_lammps_log
 from .units import UNITS
