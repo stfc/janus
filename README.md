@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/379893984.svg)](https://zenodo.org/badge/latestdoi/379893984)
+
 # janus
 
 janus is a collection of utility scripts for Machine Learnt Potential (MLP) workflows using SLURM for job submission, and interfacing with the following software:
