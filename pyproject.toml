@@ -6,7 +6,7 @@ authors = ["Patrick Austin <patrick.austin@stfc.ac.uk>"]
 
 [tool.poetry.dependencies]
 aml = {path = "../aml", develop = true}
-ase = "^3.22.0"
+ase = "3.22.1"
 fonttools = ">=4.43.0"
 ipykernel = "^6.0.3"
 ipython = "8.10"
