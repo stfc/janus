@@ -44,6 +44,7 @@ pytest-cov = "^2.12.1"
 pytest-mock = "^3.6.1"
 requests = "^2.32.0"
 safety = "^1.10.3"
+setuptools = ">=70.0.0"
 urllib3 = ">=1.26.18"
 
 [build-system]
