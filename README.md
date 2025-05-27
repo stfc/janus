@@ -2,6 +2,9 @@
 
 # janus
 
+> [!NOTE]
+> This repository has been archived, as it is superseded by https://github.com/stfc/janus-core.
+
 janus is a collection of utility scripts for Machine Learnt Potential (MLP) workflows using SLURM for job submission, and interfacing with the following software:
   - CP2K and Quantum Espresso to generate training and testing data
   - N2P2 for the ML
